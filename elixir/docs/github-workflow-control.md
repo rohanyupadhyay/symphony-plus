@@ -4,6 +4,11 @@ GitHub workflow control is an optional layer for workflows that need durable que
 gates, and pull-request review loops. GitHub issues are the human interface; Symphony's dashboard
 continues to show runtime execution and logs.
 
+To onboard a Spec Kit repository with an AI coding agent, follow the
+[agent installation runbook](agent-installation.md). It covers host setup, local Spec Kit
+verification, workflow customization, App registration, startup, restart recovery, and a
+disposable end-to-end smoke test. This document defines the underlying protocol and operations.
+
 ## Configure it
 
 ```yaml

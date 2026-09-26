@@ -36,9 +36,11 @@ help with the setup:
 > Set up Symphony Plus for my repository based on
 > https://github.com/rohanyupadhyay/symphony-plus/blob/main/elixir/README.md
 
-See [GitHub workflow control](elixir/docs/github-workflow-control.md) for the Symphony Plus
-extensions, built-in GitHub App setup, and the reusable workflow template. Each operator creates
-and owns a private App; Symphony Plus never ships or hosts a shared private key.
+For a complete agent-operated installation in a Spec Kit repository, use the
+[AI-agent installation runbook](elixir/docs/agent-installation.md). See
+[GitHub workflow control](elixir/docs/github-workflow-control.md) for the protocol and security
+model. Each operator creates and owns a private App; Symphony Plus never ships or hosts a shared
+private key.
 
 ---
 

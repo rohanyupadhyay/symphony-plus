@@ -288,6 +288,9 @@ private `profile.json` and `private-key.pem`. One profile may be reused for repo
 the same GitHub App installation. See the workflow-control guide for permissions, rotation, and
 PAT fallback.
 
+For a complete new-repository procedure designed to be executed and verified by an AI coding
+agent, follow the [agent installation runbook](docs/agent-installation.md).
+
 ### Jira Cloud adapter
 
 - Config: use `tracker.kind: jira` with provider `base_url`, `email`, `api_token`, and required
