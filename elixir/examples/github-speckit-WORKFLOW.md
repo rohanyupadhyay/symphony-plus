@@ -49,18 +49,50 @@ Use one branch named `symphony/gh-{{ issue.id }}-<short-slug>` and one feature d
 `specs/gh-{{ issue.id }}-<short-slug>`. Set `SPECIFY_FEATURE_DIRECTORY` for the first specify run;
 the repository-local `.specify/feature.json` preserves it for later sessions.
 
+Every `github_workflow_checkpoint` summary is an operator-facing audit record. Begin it with this
+exact structure and fill every field; use `none` or `not run` instead of omitting a field:
+
+```text
+### Spec Kit progress
+- Phases:
+  - specify: <completed | not run | skipped: reason; run count; outcome>
+  - clarify: <completed | not run | skipped: reason; run count; outcome>
+  - plan: <completed | not run | skipped: reason; run count; outcome>
+  - checklist: <completed | not run | skipped: reason; run count; outcome>
+  - tasks: <completed | not run | skipped: reason; run count; outcome>
+  - analyze: <completed | not run | skipped: reason; run count; outcome>
+  - implement: <completed | not run | skipped: reason; run count; outcome>
+  - converge: <completed | not run | skipped: reason; run count; outcome>
+- Current checkpoint: <waiting state, phase, and approval gate when applicable>
+- Questions asked: <count by specify, clarify, and checklist; explain every zero>
+- Assumptions adopted: <material defaults inferred without an answer, or none>
+- Analyze cycles: <count, findings, and remediations, or not run>
+- Convergence cycles: <count and tasks appended, or not run>
+- Validation: <checks performed and omissions>
+- Next phase: <what an answer or approval will run>
+```
+
+Never omit a phase from the ledger or claim that a phase ran when it was skipped. Mark every phase
+as `completed`, `not run`, or `skipped: <reason>`, including its cumulative run count and outcome,
+rather than collapsing phases into broad labels such as “planning” or “implementation.” If a phase
+asks zero questions, record `zero questions` and the concrete reason. Include the same report in `awaiting_input`, `blocked`,
+`awaiting_approval`, `awaiting_review`, `/symphony status`, and final merged-PR comments.
+
 Advance exactly one state machine:
 
-1. Run the repository's local `speckit-specify` and `speckit-clarify` skills.
+1. Run the repository's local `speckit-specify` and `speckit-clarify` skills. At the spec gate,
+   report each phase separately, its question count, and every material assumption adopted.
 2. Commit the specification artifacts, call `github_git_push`, then checkpoint `awaiting_approval`
    at gate `spec`.
 3. After `/symphony approve spec`, run `speckit-plan`, commit, call `github_git_push`, then
    checkpoint gate `plan`.
-4. After plan approval, run `speckit-checklist`, `speckit-tasks`, and `speckit-analyze`. Remediate
+4. After plan approval, run `speckit-checklist`, `speckit-tasks`, and `speckit-analyze`. At the
+   implementation gate, report each phase separately and the analyze cycle count. Remediate
    critical or high findings by rerunning the owning phase, at most three times.
 5. Commit all planning artifacts, call `github_git_push`, then checkpoint gate `implementation`.
 6. After implementation approval, run `speckit-implement`, then `speckit-converge`. If converge
-   appends tasks, repeat implement/converge, at most three times.
+   appends tasks, repeat implement/converge, at most three times. At review, report both phases and
+   the convergence cycle count.
 7. Validate, commit, call `github_git_push`, and open a pull request without auto-merge keywords. Post an
    `awaiting_review` checkpoint containing its number.
 8. Apply implementation-only review feedback directly. Requirements or design feedback re-enters
@@ -69,10 +101,16 @@ Advance exactly one state machine:
    merge, ask for revise, replacement, or cancellation instead.
 
 When a Spec Kit skill needs input, do not invoke an in-process input request. Post an
-`awaiting_input` checkpoint and end the turn. `specify` may ask one batch of up to three questions;
-`clarify` asks one at a time up to five; `checklist` may ask three initial and two follow-up
-questions. Treat `/symphony approve implementation` as permission to proceed past intentionally
-unchecked reviewer-owned checklists.
+`awaiting_input` checkpoint and end the turn. `specify` may ask one batch of up to three questions.
+`clarify` asks one at a time, up to five, but may ask zero when its structured scan finds no
+material ambiguity; report that outcome and its reason. Before `checklist`, determine whether
+authorized issue input already specifies checklist focus, depth, and audience. If any dimension is
+missing, `checklist` must ask one initial batch of up to three questions covering the missing
+dimensions; GitHub checkpoints make interaction possible, so do not silently apply its fallback
+defaults. It may ask one follow-up batch of up to two only when necessary. If all three dimensions
+were explicit, report zero questions and cite the controlling issue input. Treat `/symphony
+approve implementation` as permission to proceed past intentionally unchecked reviewer-owned
+checklists.
 
 Use `blocked` only with a concrete recovery prompt. `/symphony status` reports current artifacts
 and validation and then restores the same checkpoint. `/symphony cancel` removes the `symphony`

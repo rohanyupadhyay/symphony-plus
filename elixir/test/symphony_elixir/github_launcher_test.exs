@@ -14,6 +14,48 @@ defmodule SymphonyElixir.GitHubLauncherTest do
            }
   end
 
+  test "GitHub Spec Kit template makes every phase and interaction auditable" do
+    template =
+      "../../examples/github-speckit-WORKFLOW.md"
+      |> Path.expand(__DIR__)
+      |> File.read!()
+
+    normalized = String.replace(template, ~r/\s+/, " ")
+
+    assert [_, report] =
+             Regex.run(~r/```text\n### Spec Kit progress\n(.*?)\n```/s, template)
+
+    for phase <- ~w(specify clarify plan checklist tasks analyze implement converge) do
+      assert report =~ "- #{phase}:"
+    end
+
+    for field <- [
+          "Phases",
+          "Current checkpoint",
+          "Questions asked",
+          "Assumptions adopted",
+          "Analyze cycles",
+          "Convergence cycles",
+          "Validation",
+          "Next phase"
+        ] do
+      assert normalized =~ field
+    end
+
+    assert normalized =~ "zero questions"
+    assert normalized =~ "checklist focus, depth, and audience"
+    assert normalized =~ "must ask one initial batch"
+    assert normalized =~ "Never omit a phase from the ledger"
+    assert normalized =~ "including its cumulative run count and outcome"
+
+    for context <- ~w(awaiting_input blocked awaiting_approval awaiting_review) do
+      assert normalized =~ context
+    end
+
+    assert normalized =~ "/symphony status"
+    assert normalized =~ "final merged-PR comments"
+  end
+
   test "AI-agent runbook installs repository files under .symphony" do
     runbook =
       "../../docs/agent-installation.md"
