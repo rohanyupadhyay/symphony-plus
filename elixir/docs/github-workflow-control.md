@@ -103,6 +103,13 @@ fields are `prompt`, `gate`, `branch`, `head_sha`, and `pr_number`. Approval che
 checkpoints record the current PR conversation, inline-comment, and formal-review IDs so old events
 are not handled twice.
 
+For Spec Kit workflows, each readable checkpoint summary is also the operator's audit trail. It
+must name every phase actually invoked, the current checkpoint and next phase, question counts and
+zero-question reasons, material assumptions, analyze and convergence cycle counts, validation, and
+omissions. Phases must be reported separately; a broad label such as “planning” must not hide
+whether `clarify`, `checklist`, or `analyze` ran. The reusable template contains the canonical
+`Spec Kit progress` format.
+
 Supported commands are:
 
 ```text
