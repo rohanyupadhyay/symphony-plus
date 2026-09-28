@@ -14,6 +14,18 @@ defmodule SymphonyElixir.GitHubLauncherTest do
            }
   end
 
+  test "AI-agent runbook installs repository files under .symphony" do
+    runbook =
+      "../../docs/agent-installation.md"
+      |> Path.expand(__DIR__)
+      |> File.read!()
+
+    assert runbook =~ ~s(mkdir -p "$TARGET_REPO_DIR/.symphony")
+    assert runbook =~ ~s("$TARGET_REPO_DIR/.symphony/WORKFLOW.md")
+    assert runbook =~ ~s("$TARGET_REPO_DIR/.symphony/README.md")
+    assert runbook =~ "Do not install a new root-level `WORKFLOW.md`"
+  end
+
   test "launcher supplies the gh token to Symphony without printing it" do
     temp_root =
       Path.join(System.tmp_dir!(), "symphony-github-launcher-#{System.unique_integer([:positive])}")

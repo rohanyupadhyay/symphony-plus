@@ -85,6 +85,31 @@ defmodule SymphonyElixir.GitHub.AppProfileTest do
     refute File.exists?(Path.join([config_root, "symphony-plus", "github-apps", "default"]))
   end
 
+  test "removes staged key material when verification exits", context do
+    config_root = Path.join(context.root, "config")
+
+    result =
+      try do
+        AppProfile.create(
+          "octo/repo",
+          "default",
+          123,
+          456,
+          context.source_key,
+          config_root: config_root,
+          verify_fun: fn _profile, _repo -> exit(:http_runtime_missing) end
+        )
+      catch
+        :exit, reason -> {:uncaught_exit, reason}
+      end
+
+    assert result ==
+             {:error, {:github_app_profile_verification_failed, :http_runtime_missing}}
+
+    profiles_root = Path.join([config_root, "symphony-plus", "github-apps"])
+    assert File.ls!(profiles_root) == []
+  end
+
   test "rejects invalid profile names, repositories, IDs, keys, and overwrite attempts", context do
     opts = [
       config_root: Path.join(context.root, "config"),

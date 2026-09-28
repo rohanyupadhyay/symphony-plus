@@ -4,6 +4,11 @@ GitHub workflow control is an optional layer for workflows that need durable que
 gates, and pull-request review loops. GitHub issues are the human interface; Symphony's dashboard
 continues to show runtime execution and logs.
 
+To onboard a Spec Kit repository with an AI coding agent, follow the
+[agent installation runbook](agent-installation.md). It covers host setup, local Spec Kit
+verification, workflow customization, App registration, startup, restart recovery, and a
+disposable end-to-end smoke test. This document defines the underlying protocol and operations.
+
 ## Configure it
 
 ```yaml
@@ -40,8 +45,22 @@ repository, and enter the App and installation IDs when prompted:
 ```bash
 ./bin/symphony github-app setup owner/repository --profile default
 ./bin/symphony github-app verify owner/repository --profile default
-./scripts/run-github --app-profile default /absolute/path/to/WORKFLOW.md --port 4000
+./scripts/run-github --app-profile default /absolute/path/to/repository/.symphony/WORKFLOW.md --port 4000
 ```
+
+For repository-local GitHub/Spec Kit workflows, Symphony Plus recommends this visible contract:
+
+```text
+.symphony/
+├── README.md
+└── WORKFLOW.md
+```
+
+`WORKFLOW.md` is the executable configuration and agent prompt. `README.md` is the operator guide
+for startup, commands, workspace locations, and repository-specific policy. Link the guide from the
+repository's root README so contributors can discover the otherwise hidden tool directory. This is
+a Symphony Plus repository convention, not a GitHub or Spec Kit requirement; the launcher still
+accepts any explicit workflow path.
 
 Profiles are stored under
 `${XDG_CONFIG_HOME:-~/.config}/symphony-plus/github-apps/<profile>/`. Directories use mode `0700`;
@@ -62,7 +81,7 @@ without `--app-profile`:
 
 ```bash
 gh auth login
-./scripts/run-github /absolute/path/to/WORKFLOW.md --port 4000
+./scripts/run-github /absolute/path/to/repository/.symphony/WORKFLOW.md --port 4000
 ```
 
 The reusable Spec Kit workflow template uses `danger-full-access` for its Codex thread and turns.

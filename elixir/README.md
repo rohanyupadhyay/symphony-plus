@@ -275,18 +275,34 @@ codex:
   supply answers or commands. See [the workflow-control guide](docs/github-workflow-control.md)
   and the [reusable Spec Kit template](examples/github-speckit-WORKFLOW.md).
 
+For repository-local GitHub/Spec Kit automation, keep the executable workflow and operator guide
+under the tool-owned `.symphony/` directory:
+
+```text
+.symphony/
+├── README.md
+└── WORKFLOW.md
+```
+
+Link `.symphony/README.md` from the repository's root README for contributor discoverability. The
+AI-agent installation runbook creates this layout; generic Symphony workflows may still use any
+explicit path, and the backward-compatible CLI default remains `./WORKFLOW.md`.
+
 Create and verify an operator-owned GitHub App profile, then start an App-authenticated workflow:
 
 ```bash
 ./bin/symphony github-app setup owner/repository --profile default
 ./bin/symphony github-app verify owner/repository --profile default
-./scripts/run-github --app-profile default /absolute/path/to/WORKFLOW.md --port 4000
+./scripts/run-github --app-profile default /absolute/path/to/repository/.symphony/WORKFLOW.md --port 4000
 ```
 
 The profile lives under `${XDG_CONFIG_HOME:-~/.config}/symphony-plus/github-apps/<profile>` with a
 private `profile.json` and `private-key.pem`. One profile may be reused for repositories covered by
 the same GitHub App installation. See the workflow-control guide for permissions, rotation, and
 PAT fallback.
+
+For a complete new-repository procedure designed to be executed and verified by an AI coding
+agent, follow the [agent installation runbook](docs/agent-installation.md).
 
 ### Jira Cloud adapter
 
