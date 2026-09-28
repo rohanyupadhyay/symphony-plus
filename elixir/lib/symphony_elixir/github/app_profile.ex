@@ -101,8 +101,6 @@ defmodule SymphonyElixir.GitHub.AppProfile do
   @spec verify(profile(), String.t()) ::
           {:ok, %{id: pos_integer(), login: String.t(), slug: String.t()}} | {:error, term()}
   def verify(profile, repository) do
-    :ok = ensure_auth_cache()
-
     tracker_settings = %{
       kind: "github",
       provider: %{
@@ -118,7 +116,8 @@ defmodule SymphonyElixir.GitHub.AppProfile do
       terminal_states: ["closed"]
     }
 
-    with {:ok, auth} <- Auth.config(tracker_settings.provider, repository),
+    with :ok <- ensure_runtime(),
+         {:ok, auth} <- Auth.config(tracker_settings.provider, repository),
          {:ok, identity} <- Auth.identity(auth),
          {:ok, %{status: status}} <-
            Client.request("GET", "/repos/#{encoded_repo(repository)}", %{}, nil, tracker_settings: tracker_settings),
@@ -126,6 +125,15 @@ defmodule SymphonyElixir.GitHub.AppProfile do
       {:ok, identity}
     else
       {:error, _reason} = error -> error
+    end
+  end
+
+  defp ensure_runtime do
+    with {:ok, _apps} <- Application.ensure_all_started(:req),
+         :ok <- ensure_auth_cache() do
+      :ok
+    else
+      {:error, reason} -> {:error, {:github_app_runtime_start_failed, reason}}
     end
   end
 
@@ -165,17 +173,19 @@ defmodule SymphonyElixir.GitHub.AppProfile do
           {:ok, final_profile}
 
         {:error, _reason} = error ->
-          File.rm_rf(staging)
           error
 
         _ ->
-          File.rm_rf(staging)
           {:error, :github_app_verification_failed}
       end
     rescue
       error ->
-        File.rm_rf(staging)
         {:error, {:github_app_profile_write_failed, Exception.message(error)}}
+    catch
+      :exit, reason ->
+        {:error, {:github_app_profile_verification_failed, reason}}
+    after
+      File.rm_rf(staging)
     end
   end
 
@@ -203,7 +213,7 @@ defmodule SymphonyElixir.GitHub.AppProfile do
         case AuthCache.start_link() do
           {:ok, _pid} -> :ok
           {:error, {:already_started, _pid}} -> :ok
-          {:error, reason} -> raise "could not start GitHub App auth cache: #{inspect(reason)}"
+          {:error, reason} -> {:error, reason}
         end
 
       _pid ->

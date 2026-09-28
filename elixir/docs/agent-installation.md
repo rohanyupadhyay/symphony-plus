@@ -227,6 +227,12 @@ recognizable operator- or organization-owned name. Required repository permissio
 
 Webhooks remain disabled because Symphony Plus polls GitHub.
 
+Profile creation is atomic. If verification fails, Symphony Plus removes its staged key copy and
+does not create the named profile. Preserve the operator's original downloaded PEM, correct the
+reported problem, and rerun the same command. If the App was already created and installed before
+the failure, do not create another App: close the newly opened registration page and enter the
+existing App and installation IDs and the original PEM path into the terminal.
+
 If the profile already exists, the operator should add `TARGET_REPO` to that App installation's
 repository selection. A single profile can be reused only when the App ID and installation ID are
 the same. Use a new profile for a different installation ID.
