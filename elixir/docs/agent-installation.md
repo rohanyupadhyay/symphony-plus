@@ -86,6 +86,29 @@ Also inspect the project constitution, templates, script variant, integration ma
 local skill instructions support `.specify/feature.json` or `SPECIFY_FEATURE_DIRECTORY`, because
 concurrent issues use explicit `specs/gh-<issue>-<slug>` directories.
 
+Treat the installed script variant as a host-runtime requirement, not only as repository metadata.
+Identify the variant actually referenced by the installed skills and verify its interpreter before
+starting Symphony:
+
+```bash
+if rg -q '\.specify/scripts/powershell/' "$TARGET_REPO_DIR/.agents/skills"; then
+  command -v pwsh
+  pwsh -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
+elif rg -q '\.specify/scripts/bash/' "$TARGET_REPO_DIR/.agents/skills"; then
+  command -v bash
+  bash --version | head -n 1
+else
+  echo "unable to determine the Spec Kit script runtime from installed skills" >&2
+  exit 1
+fi
+```
+
+Stop if the referenced interpreter is absent. Install it using the platform vendor's supported
+instructions, then rerun this gate. Do not start a smoke test expecting an issue agent to install
+host software. For example, a PowerShell-variant installation on Linux requires `pwsh`; Windows
+PowerShell on the mounted Windows path does not satisfy a Linux/WSL workflow unless `pwsh` itself is
+available inside that Linux environment.
+
 If Spec Kit is absent, stop and ask the operator to approve a version and initialization diff.
 Then follow the official [Spec Kit installation guide](https://github.com/github/spec-kit/blob/main/docs/installation.md), pin an explicit release, and initialize Codex skills in a clean installation
 branch. For the current Codex integration, the non-interactive shape is:
@@ -306,9 +329,12 @@ the same checkpoint. Stop and restart Symphony Plus with the same command, then 
 checkpoint is reconstructed without a duplicate agent run.
 
 Finally post `/symphony cancel` as an authorized human. Confirm the bot removes the `symphony`
-label and reports cancellation. Close the issue, allow one poll interval, and verify that its local
-workspace is removed. Do not merge the smoke branch or its artifacts. Delete the remote smoke
-branch only with explicit operator approval.
+label and reports cancellation. Wait for the cancellation turn to finish, then close the issue.
+Because the cancelled issue no longer has the dispatch label, ordinary active polling will not see
+its later closed state. Stop and restart Symphony Plus with the same launch command; startup
+terminal cleanup must remove the local smoke-test workspace without redispatching the issue. Do not
+manually delete the workspace before verifying this recovery behavior. Do not merge the smoke
+branch or its artifacts. Delete the remote smoke branch only with explicit operator approval.
 
 ## 9. Completion report
 
