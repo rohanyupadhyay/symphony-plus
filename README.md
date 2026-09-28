@@ -40,7 +40,9 @@ For a complete agent-operated installation in a Spec Kit repository, use the
 [AI-agent installation runbook](elixir/docs/agent-installation.md). See
 [GitHub workflow control](elixir/docs/github-workflow-control.md) for the protocol and security
 model. Each operator creates and owns a private App; Symphony Plus never ships or hosts a shared
-private key.
+private key. Target repositories should keep their workflow and operator guide together as
+`.symphony/WORKFLOW.md` and `.symphony/README.md`; this tool-owned directory is the documented
+Symphony Plus convention.
 
 ---
 

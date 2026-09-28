@@ -5,9 +5,9 @@ Follow it in order. Treat every verification as a gate: do not continue after a 
 not replace missing operator input with an assumption.
 
 Symphony Plus itself is installed once outside target repositories. Each target repository owns
-its `WORKFLOW.md`, GitHub label, App installation access, workspace root, and project-specific
-commands. The official GitHub Spec Kit extension is not required and must not be installed as part
-of this runbook.
+its `.symphony/WORKFLOW.md`, `.symphony/README.md`, GitHub label, App installation access,
+workspace root, and project-specific commands. The official GitHub Spec Kit extension is not
+required and must not be installed as part of this runbook.
 
 ## Responsibility and security contract
 
@@ -23,9 +23,9 @@ Never ask the operator to paste a PEM, PAT, installation token, or private-key c
 Never place those values in a repository, issue workspace, process argument, log, issue, or pull
 request. The local App profile is host configuration and must not be committed.
 
-Do not overwrite an existing `WORKFLOW.md`, Spec Kit installation, workspace, or profile. Inspect
-and reconcile it. Preserve unrelated changes, stop when a dirty tree makes the intended change
-ambiguous, and use the target repository's normal branch and review process.
+Do not overwrite an existing Symphony workflow, operator guide, Spec Kit installation, workspace,
+or profile. Inspect and reconcile it. Preserve unrelated changes, stop when a dirty tree makes the
+intended change ambiguous, and use the target repository's normal branch and review process.
 
 ## 1. Establish installation values
 
@@ -153,18 +153,38 @@ mise exec -- mix test
 Expected evidence: `bin/symphony` exists and the tests finish with zero failures. Dependency audit
 warnings must be reported separately; a successful build does not resolve them.
 
-## 4. Create the repository-owned workflow
+## 4. Create the repository-owned Symphony directory
 
-If the target has no `WORKFLOW.md`, copy the reusable template without modifying the template in
-the Symphony Plus checkout:
+Use this repository convention:
 
-```bash
-cp "$SYMPHONY_PLUS_DIR/elixir/examples/github-speckit-WORKFLOW.md" \
-  "$TARGET_REPO_DIR/WORKFLOW.md"
+```text
+.symphony/
+├── README.md
+└── WORKFLOW.md
 ```
 
-If the target already has `WORKFLOW.md`, compare it with the template and preserve repository
-customizations. Do not replace it wholesale.
+`WORKFLOW.md` is executable configuration and the issue-agent prompt. `README.md` is the
+human-facing operator guide. Link `.symphony/README.md` from the target's root README so the hidden
+directory remains discoverable. Do not install a new root-level `WORKFLOW.md`; that generic path
+does not identify which tool owns it.
+
+For a new installation, create the directory and copy both reusable templates without modifying
+the templates in the Symphony Plus checkout:
+
+```bash
+mkdir -p "$TARGET_REPO_DIR/.symphony"
+cp "$SYMPHONY_PLUS_DIR/elixir/examples/github-speckit-WORKFLOW.md" \
+  "$TARGET_REPO_DIR/.symphony/WORKFLOW.md"
+cp "$SYMPHONY_PLUS_DIR/elixir/examples/github-speckit-README.md" \
+  "$TARGET_REPO_DIR/.symphony/README.md"
+```
+
+If the target already has `.symphony/WORKFLOW.md` or `.symphony/README.md`, compare it with the
+corresponding template and preserve repository customizations. Do not replace either file
+wholesale. If an existing Symphony installation uses a root-level `WORKFLOW.md`, move that file to
+`.symphony/WORKFLOW.md`, move or create its operator guide as `.symphony/README.md`, and update all
+launch commands and documentation in the same change. Confirm no running process still uses the old
+path before deleting it.
 
 The target workflow must customize all of the following:
 
@@ -194,14 +214,16 @@ Retain these security and lifecycle requirements:
 Review the resulting YAML front matter and prompt as code. Confirm no placeholder remains:
 
 ```bash
-rg -n 'OWNER/REPOSITORY|/absolute/path|PROJECT|TODO|TBD' "$TARGET_REPO_DIR/WORKFLOW.md"
+rg -n 'OWNER/REPOSITORY|/absolute/path|PROJECT|TODO|TBD' \
+  "$TARGET_REPO_DIR/.symphony/WORKFLOW.md" \
+  "$TARGET_REPO_DIR/.symphony/README.md"
 git -C "$TARGET_REPO_DIR" diff --check
 ```
 
 The `rg` command must return no unresolved template placeholder. Commit the target workflow and an
-operator guide through the repository's normal review process. The workflow may be tested from a
-local absolute path, but onboarding is not durable until those files are merged into the target's
-default branch.
+operator guide through the repository's normal review process. Confirm the root README links to the
+operator guide. The workflow may be tested from a local absolute path, but onboarding is not durable
+until those files are merged into the target's default branch.
 
 ## 5. Create the dispatch label
 
@@ -283,7 +305,7 @@ Start App mode from the Symphony Plus checkout:
 cd "$SYMPHONY_PLUS_DIR/elixir"
 ./scripts/run-github \
   --app-profile "$APP_PROFILE" \
-  "$TARGET_REPO_DIR/WORKFLOW.md" \
+  "$TARGET_REPO_DIR/.symphony/WORKFLOW.md" \
   --port 4000
 ```
 
