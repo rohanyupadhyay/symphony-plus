@@ -100,6 +100,18 @@ defmodule SymphonyElixir.GitHubLauncherTest do
     assert normalized_prompt =~ "cursor includes the handled approval"
   end
 
+  test "repository self-hosting guide uses the dedicated GitHub App profile" do
+    guide =
+      "../../../.symphony/README.md"
+      |> Path.expand(__DIR__)
+      |> File.read!()
+
+    assert guide =~ "`symphony-plus` profile"
+    assert guide =~ "--profile symphony-plus"
+    assert guide =~ "--app-profile symphony-plus"
+    refute guide =~ "veritycx"
+  end
+
   test "GitHub Spec Kit template permits Git metadata writes in isolated workspaces" do
     template = Path.expand("../../examples/github-speckit-WORKFLOW.md", __DIR__)
 

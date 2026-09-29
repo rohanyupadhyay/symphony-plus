@@ -6,9 +6,10 @@ GitHub issue comments.
 
 ## Start the service
 
-The `veritycx` profile is an operator-owned local GitHub App profile already installed for
-`rohanyupadhyay/symphony-plus`. It is stored outside this repository and MUST NOT be copied into an
-issue, log, commit, or pull request.
+The `symphony-plus` profile is an operator-owned local GitHub App profile dedicated to
+`rohanyupadhyay/symphony-plus`. Its App installation is restricted to this repository so its key,
+permissions, audit identity, and rotation lifecycle are isolated from VerityCX. The profile is
+stored outside this repository and MUST NOT be copied into an issue, log, commit, or pull request.
 
 From the source checkout:
 
@@ -16,9 +17,9 @@ From the source checkout:
 cd /home/rohan/code/symphony-plus/elixir
 mise exec -- mix setup
 mise exec -- mix build
-./bin/symphony github-app verify rohanyupadhyay/symphony-plus --profile veritycx
+./bin/symphony github-app verify rohanyupadhyay/symphony-plus --profile symphony-plus
 ./scripts/run-github \
-  --app-profile veritycx \
+  --app-profile symphony-plus \
   /home/rohan/code/symphony-plus/.symphony/WORKFLOW.md \
   --port 4001
 ```
