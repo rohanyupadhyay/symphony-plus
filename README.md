@@ -44,6 +44,10 @@ private key. Target repositories should keep their workflow and operator guide t
 `.symphony/WORKFLOW.md` and `.symphony/README.md`; this tool-owned directory is the documented
 Symphony Plus convention.
 
+This repository also uses Symphony Plus to update itself through GitHub Issues. The
+[self-hosting operator guide](.symphony/README.md) documents its approval-gated Spec Kit workflow,
+manual startup command, issue controls, and isolated workspace boundary.
+
 ---
 
 ## License

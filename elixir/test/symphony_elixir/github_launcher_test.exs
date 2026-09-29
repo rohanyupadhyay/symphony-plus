@@ -3,6 +3,67 @@ defmodule SymphonyElixir.GitHubLauncherTest do
 
   alias SymphonyElixir.Workflow
 
+  test "repository self-hosting workflow loads and renders its GitHub issue contract" do
+    workflow_path = Path.expand("../../../.symphony/WORKFLOW.md", __DIR__)
+
+    assert {:ok, workflow} = Workflow.load(workflow_path)
+
+    assert get_in(workflow.config, ["tracker", "kind"]) == "github"
+
+    assert get_in(workflow.config, ["tracker", "provider", "repo"]) ==
+             "rohanyupadhyay/symphony-plus"
+
+    assert get_in(workflow.config, ["tracker", "provider", "auth", "kind"]) == "github_app"
+    assert get_in(workflow.config, ["tracker", "required_labels"]) == ["symphony"]
+    assert get_in(workflow.config, ["tracker", "active_states"]) == ["open"]
+    assert get_in(workflow.config, ["tracker", "terminal_states"]) == ["closed"]
+    assert get_in(workflow.config, ["polling", "interval_ms"]) == 30_000
+
+    assert get_in(workflow.config, ["workspace", "root"]) ==
+             "/home/rohan/code/symphony-workspaces/symphony-plus"
+
+    assert get_in(workflow.config, ["agent", "max_concurrent_agents"]) == 1
+    assert get_in(workflow.config, ["agent", "max_turns"]) == 20
+    assert get_in(workflow.config, ["codex", "thread_sandbox"]) == "danger-full-access"
+
+    assert get_in(workflow.config, ["codex", "turn_sandbox_policy"]) == %{
+             "type" => "dangerFullAccess"
+           }
+
+    rendered =
+      workflow.prompt_template
+      |> Solid.parse!()
+      |> Solid.render!(
+        %{
+          "issue" => %{
+            "id" => 42,
+            "identifier" => "GH-42",
+            "title" => "Exercise self-hosting",
+            "state" => "open",
+            "labels" => ["symphony"],
+            "url" => "https://github.com/rohanyupadhyay/symphony-plus/issues/42",
+            "description" => "Verify the durable workflow.",
+            "native_ref" => %{
+              "workflow_control" => %{
+                "state" => "ready",
+                "phase" => "specify",
+                "trigger" => "dispatch"
+              }
+            }
+          }
+        },
+        strict_variables: true,
+        strict_filters: true
+      )
+      |> IO.iodata_to_binary()
+
+    assert rendered =~ "GitHub issue `GH-42`"
+    assert rendered =~ "Exercise self-hosting"
+    assert rendered =~ "State: ready"
+    assert rendered =~ "Phase: specify"
+    assert rendered =~ "Trigger: dispatch"
+  end
+
   test "GitHub Spec Kit template permits Git metadata writes in isolated workspaces" do
     template = Path.expand("../../examples/github-speckit-WORKFLOW.md", __DIR__)
 
