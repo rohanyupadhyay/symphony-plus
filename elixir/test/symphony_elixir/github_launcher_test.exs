@@ -30,7 +30,7 @@ defmodule SymphonyElixir.GitHubLauncherTest do
              "type" => "dangerFullAccess"
            }
 
-    rendered =
+    first_dispatch =
       workflow.prompt_template
       |> Solid.parse!()
       |> Solid.render!(
@@ -45,9 +45,9 @@ defmodule SymphonyElixir.GitHubLauncherTest do
             "description" => "Verify the durable workflow.",
             "native_ref" => %{
               "workflow_control" => %{
-                "state" => "ready",
-                "phase" => "specify",
-                "trigger" => "dispatch"
+                "state" => nil,
+                "phase" => nil,
+                "trigger" => nil
               }
             }
           }
@@ -57,11 +57,47 @@ defmodule SymphonyElixir.GitHubLauncherTest do
       )
       |> IO.iodata_to_binary()
 
-    assert rendered =~ "GitHub issue `GH-42`"
-    assert rendered =~ "Exercise self-hosting"
-    assert rendered =~ "State: ready"
-    assert rendered =~ "Phase: specify"
-    assert rendered =~ "Trigger: dispatch"
+    assert first_dispatch =~ "GitHub issue `GH-42`"
+    assert first_dispatch =~ "Exercise self-hosting"
+
+    resumed =
+      workflow.prompt_template
+      |> Solid.parse!()
+      |> Solid.render!(
+        %{
+          "issue" => %{
+            "id" => 42,
+            "identifier" => "GH-42",
+            "title" => "Exercise self-hosting",
+            "state" => "open",
+            "labels" => ["symphony"],
+            "url" => "https://github.com/rohanyupadhyay/symphony-plus/issues/42",
+            "description" => "Verify the durable workflow.",
+            "native_ref" => %{
+              "workflow_control" => %{
+                "state" => "awaiting_input",
+                "phase" => "clarify",
+                "trigger" => %{
+                  "kind" => "command",
+                  "command" => "status",
+                  "body" => "/symphony status"
+                }
+              }
+            }
+          }
+        },
+        strict_variables: true,
+        strict_filters: true
+      )
+      |> IO.iodata_to_binary()
+
+    assert resumed =~ "State: awaiting_input"
+    assert resumed =~ "Phase: clarify"
+    assert resumed =~ "status"
+
+    normalized_prompt = String.replace(workflow.prompt_template, ~r/\s+/, " ")
+    assert normalized_prompt =~ "fresh `awaiting_review` checkpoint"
+    assert normalized_prompt =~ "cursor includes the handled approval"
   end
 
   test "GitHub Spec Kit template permits Git metadata writes in isolated workspaces" do

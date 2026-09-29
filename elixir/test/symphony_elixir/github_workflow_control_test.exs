@@ -130,7 +130,7 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
              WorkflowControl.derive([malformed_id_checkpoint], %{}, @authorized)
   end
 
-  test "awaiting input resumes only for a later authorized non-marker comment" do
+  test "awaiting input distinguishes control commands from ordinary answers" do
     checkpoint = checkpoint_comment(10, "awaiting_input", %{"prompt" => "Which retention period?"})
 
     unauthorized = comment(11, "NONE", "Forever")
@@ -142,6 +142,15 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
 
     assert %{dispatchable: true, trigger: %{"kind" => "answer", "id" => 13, "body" => "Use 30 days."}} =
              WorkflowControl.derive([checkpoint, unauthorized, marker, answer], %{}, @authorized)
+
+    for command <- ["status", "cancel"] do
+      assert %{dispatchable: true, trigger: %{"kind" => "command", "command" => ^command}} =
+               WorkflowControl.derive(
+                 [checkpoint, comment(14, "OWNER", "/symphony #{command}")],
+                 %{},
+                 @authorized
+               )
+    end
   end
 
   test "trusts exact App bot checkpoints without allowing the bot to answer itself" do
@@ -306,6 +315,27 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
              dispatchable: true,
              trigger: %{"kind" => "review", "state" => "approved", "id" => 103}
            } = WorkflowControl.derive([checkpoint], superseded, @authorized)
+  end
+
+  test "a refreshed review checkpoint consumes an acknowledged formal approval" do
+    original = checkpoint_comment(40, "awaiting_review", %{"pr_number" => 7})
+
+    context = %{
+      "pull_request" => %{"number" => 7, "state" => "open", "merged" => false},
+      "reviews" => [review(101, "alice", "COLLABORATOR", "APPROVED")]
+    }
+
+    assert %{dispatchable: true, trigger: %{"kind" => "review", "state" => "approved"}} =
+             WorkflowControl.derive([original], context, @authorized)
+
+    refreshed =
+      checkpoint_comment(41, "awaiting_review", %{
+        "pr_number" => 7,
+        "cursor" => %{"review_id" => 101}
+      })
+
+    assert %{dispatchable: false, trigger: nil} =
+             WorkflowControl.derive([original, refreshed], context, @authorized)
   end
 
   test "a new approval does not override another reviewer's pre-checkpoint change request" do

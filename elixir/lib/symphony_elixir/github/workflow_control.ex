@@ -208,20 +208,31 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
       |> Enum.sort_by(&event_id/1)
 
     case checkpoint["state"] do
-      "awaiting_input" -> latest_answer(later_comments)
+      "awaiting_input" -> latest_input_trigger(later_comments, checkpoint)
       "awaiting_approval" -> latest_valid_command(later_comments, checkpoint)
       "blocked" -> latest_valid_command(later_comments, checkpoint)
       "awaiting_review" -> review_trigger(checkpoint, later_comments, review_context, authorized)
     end
   end
 
-  defp latest_answer(comments) do
+  defp latest_input_trigger(comments, checkpoint) do
     comments
     |> List.last()
     |> case do
-      nil -> nil
-      comment -> event_payload(comment, "answer")
+      nil ->
+        nil
+
+      comment ->
+        input_trigger(comment, checkpoint)
     end
+  end
+
+  defp input_trigger(comment, checkpoint) do
+    command = command_event(comment)
+
+    if command && valid_command_for_checkpoint?(command, checkpoint),
+      do: command,
+      else: event_payload(comment, "answer")
   end
 
   defp latest_valid_command(comments, checkpoint) do

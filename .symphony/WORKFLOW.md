@@ -35,8 +35,9 @@ agent:
 codex:
   command: codex app-server
   approval_policy: never
-  # Agents create branches and commits. Codex's workspace-write sandbox makes .git read-only,
-  # so full access is restricted to the dedicated per-issue workspace root above.
+  # Agents create branches and commits, which requires trusted-host access because the
+  # workspace-write sandbox makes .git read-only. The launcher validates the per-issue cwd,
+  # but danger-full-access is not a filesystem-security boundary.
   thread_sandbox: danger-full-access
   turn_sandbox_policy:
     type: dangerFullAccess
@@ -148,6 +149,8 @@ Interpret only the normalized trigger in `issue.native_ref.workflow_control`:
   `awaiting_input`.
 
 Ignore stale or duplicate events and general comments that were not normalized as triggers.
+At an `awaiting_input` checkpoint, `/symphony status` and `/symphony cancel` are normalized as
+commands before an ordinary authorized comment is classified as an answer.
 
 ## Phase sequence
 
@@ -214,7 +217,9 @@ Formal requested changes or `/symphony revise` start one revision cycle on the s
 Use Spec Kit again only when requirements or architecture changed. After updates, rerun targeted
 tests and `make -C elixir all`, call `github_git_push`, and create a fresh awaiting-review
 checkpoint. A formal approval with no unresolved change request marks the PR ready for human merge
-but never merges it.
+but never merges it. After acknowledging that approval, create a fresh `awaiting_review`
+checkpoint for the same PR and end the turn; its automatically captured cursor includes the
+handled approval so it cannot dispatch again while the PR waits for human merge.
 
 ## Failure handling
 

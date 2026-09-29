@@ -58,6 +58,12 @@ The launcher supplies App identifiers and the private-key path only to the Symph
 short-lived installation tokens and removes App credentials from Codex. Agents commit locally and
 push only through the host-authenticated `github_git_push` tool.
 
+`danger-full-access` is trusted-host execution, not filesystem confinement. The launcher validates
+that each agent starts in its dedicated issue workspace, but a process running as the operator can
+still access files allowed to that account. Keep unrelated credentials out of the operator's
+environment and filesystem wherever practical; environment scrubbing alone is not a security
+boundary.
+
 Questions, approvals, status, and review cursors are stored in hidden markers in ordinary GitHub
 comments. Restarting the process reconstructs waiting work without a workflow database. The
 integration polls every 30 seconds; it does not use webhooks.
