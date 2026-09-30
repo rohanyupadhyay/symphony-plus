@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://symphony.local/contracts/quota-wait-state.schema.json",
+  "title": "Quota Wait State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "issue_id", "issue_identifier", "harness", "pool_key", "status", "next_recheck_at", "workspace_key", "last_outcome", "observed_at", "updated_at"],
+  "properties": {
+    "version": { "const": 1 },
+    "issue_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "issue_identifier": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "harness": { "const": "codex" },
+    "pool_key": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "status": { "enum": ["waiting", "eligible", "resuming", "operator_blocked"] },
+    "renewal_at": { "type": ["string", "null"], "format": "date-time" },
+    "next_recheck_at": { "type": "string", "format": "date-time" },
+    "workspace_key": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "continuation": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["harness", "native_id", "issue_id", "workspace_key"],
+          "properties": {
+            "harness": { "const": "codex" },
+            "native_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "issue_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "workspace_key": { "type": "string", "minLength": 1, "maxLength": 256 }
+          }
+        }
+      ]
+    },
+    "last_outcome": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  }
+}
