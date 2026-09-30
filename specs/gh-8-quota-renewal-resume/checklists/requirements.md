@@ -13,8 +13,8 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
-- [ ] Requirements are testable and unambiguous
+- [x] No [NEEDS CLARIFICATION] markers remain
+- [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
 - [x] All acceptance scenarios are defined
@@ -31,6 +31,6 @@
 
 ## Notes
 
-- FR-015 requires a delivery-scope decision before the specification can be treated as unambiguous.
-- FR-016 requires a degraded-continuation policy before unsupported native resume behavior is testable.
+- FR-015 scopes end-to-end delivery to Codex behind a harness-neutral contract and defers Claude and GitHub Copilot adapters.
+- FR-016 requires operator blocking with workspace and checkpoint preservation when native Codex resume is unavailable; automatic fresh or reconstructed continuation is prohibited.
 - Items marked incomplete require spec updates before `$speckit-clarify` or `$speckit-plan`.

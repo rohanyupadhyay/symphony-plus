@@ -4,9 +4,16 @@
 
 **Created**: 2026-09-30
 
-**Status**: Draft — clarification required
+**Status**: Draft — ready for approval
 
 **Input**: User description: "Once quota exhausts and renews, tasks such as GitHub issue workflows should automatically pause or save state where necessary and continue using the previous context without starting fresh. This should account for harnesses such as Codex, Claude, and GitHub Copilot."
+
+## Clarifications
+
+### Session 2026-09-30
+
+- Q: Which delivery breadth should this issue require? → A: Implement Codex end-to-end behind a harness-neutral quota/resume contract; defer Claude and GitHub Copilot adapters.
+- Q: If an included harness cannot resume its prior native conversation, what should Symphony do? → A: Block for operator action and preserve the workspace and durable checkpoint.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -39,6 +46,7 @@ As an operator, I want quota-paused work to resume after renewal with the prior 
 1. **Given** a quota-paused task with a resumable harness conversation, **When** its renewal time arrives and capacity is available, **Then** Symphony resumes that conversation in the same issue workspace with continuation guidance.
 2. **Given** a quota-paused task whose first post-renewal attempt still reports exhaustion, **When** Symphony processes that report, **Then** it safely returns the task to quota-paused state using the latest valid renewal information without duplicating execution.
 3. **Given** multiple quota-paused tasks become eligible together, **When** quota renews, **Then** normal global and per-state concurrency rules bound their resumption.
+4. **Given** a quota-paused task whose preserved native conversation cannot be resumed, **When** Symphony validates the continuation before dispatch, **Then** it blocks for operator action while preserving the issue workspace and durable workflow checkpoint and does not start a fresh conversation.
 
 ---
 
@@ -86,16 +94,16 @@ As an operator, I want quota-wait status and recovery decisions to be visible so
 - **FR-012**: Quota-paused work MUST continue to obey cancellation, terminal cleanup, required-label, dispatchability, and dynamic concurrency rules.
 - **FR-013**: Status and structured logs MUST expose quota-wait entry, reason category, harness, quota-pool scope, renewal availability, recovery decision, and outcome with applicable issue and session identifiers, while excluding credentials and unnecessary provider payloads.
 - **FR-014**: Configuration that governs quota rechecks or recovery MUST flow through the existing service configuration contract and apply to future scheduling decisions after dynamic reload.
-- **FR-015**: The initial delivery scope MUST be [NEEDS CLARIFICATION: choose whether to implement Codex end-to-end first behind a harness-neutral quota/resume contract, or require end-to-end support for Codex, Claude, and GitHub Copilot in this feature].
-- **FR-016**: When a selected harness cannot resume its prior native conversation, Symphony MUST [NEEDS CLARIFICATION: choose whether to block for operator action, or permit a documented degraded continuation reconstructed from the durable workspace and workflow checkpoint].
-- **FR-017**: The specification, operator documentation, and implementation documentation MUST define the selected quota signal mapping, scope semantics, renewal/recheck behavior, persistence guarantees, and degraded recovery policy for every harness included in the delivery scope.
+- **FR-015**: The initial delivery MUST implement Codex quota exhaustion and native-context resume end-to-end behind a harness-neutral quota/resume contract; Claude and GitHub Copilot adapters are deferred to future work.
+- **FR-016**: When Codex cannot resume the preserved native conversation, Symphony MUST block for operator action, preserve the issue workspace and durable workflow checkpoint, expose the blocking reason, and MUST NOT start a fresh or reconstructed conversation automatically.
+- **FR-017**: The specification, operator documentation, and implementation documentation MUST define the Codex quota signal mapping, scope semantics, renewal/recheck behavior, persistence guarantees, and operator-blocking recovery policy; the harness-neutral contract MUST document the obligations future adapters must satisfy.
 
 ### Key Entities
 
 - **Quota Pool**: A provider-defined allowance shared by one or more tasks; identified by harness plus a stable, non-secret scope and associated with current availability and optional renewal timing.
 - **Quota Wait**: Durable scheduler state linking an affected issue to a quota pool, renewal or recheck timing, reason category, attempt metadata, and last transition outcome.
 - **Continuation Reference**: Non-secret durable identity needed to continue prior harness context, bound to one issue workspace and validated before reuse.
-- **Run Attempt**: One execution attempt extended to distinguish new work, normal continuation, ordinary failure retry, quota resume, and degraded continuation.
+- **Run Attempt**: One execution attempt extended to distinguish new work, normal continuation, ordinary failure retry, and quota resume; operator-blocked recovery does not create an execution attempt.
 
 ## Success Criteria *(mandatory)*
 
@@ -117,10 +125,12 @@ As an operator, I want quota-wait status and recovery decisions to be visible so
 - Existing per-issue workspace safety, tracker reconciliation, and terminal cleanup rules remain authoritative.
 - Durable state must not contain harness credentials or raw provider responses.
 - A task may remain active in its tracker while Symphony internally marks it quota-paused.
+- Native conversation continuation is required for automatic post-renewal progress; durable workspace and workflow artifacts support operator recovery but are not a substitute for native conversation resume.
 
 ## Out of Scope
 
 - Purchasing quota, changing provider billing plans, rotating credentials, or automatically switching to a different account.
 - Moving work to a different model or harness unless separately specified and approved.
+- Implementing Claude or GitHub Copilot quota/resume adapters in this issue.
 - Persisting complete prompts, model outputs, or secret-bearing provider payloads as a substitute for a supported continuation identity.
 - Replacing tracker-owned workflow checkpoints or issue state with a new general-purpose workflow engine.
