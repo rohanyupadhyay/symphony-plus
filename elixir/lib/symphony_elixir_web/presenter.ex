@@ -16,11 +16,13 @@ defmodule SymphonyElixirWeb.Presenter do
           counts: %{
             running: length(snapshot.running),
             retrying: length(snapshot.retrying),
-            blocked: length(Map.get(snapshot, :blocked, []))
+            blocked: length(Map.get(snapshot, :blocked, [])),
+            quota_waiting: length(Map.get(snapshot, :quota_waiting, []))
           },
           running: Enum.map(snapshot.running, &running_entry_payload/1),
           retrying: Enum.map(snapshot.retrying, &retry_entry_payload/1),
           blocked: Enum.map(Map.get(snapshot, :blocked, []), &blocked_entry_payload/1),
+          quota_waiting: Enum.map(Map.get(snapshot, :quota_waiting, []), &quota_wait_entry_payload/1),
           codex_totals: snapshot.codex_totals,
           rate_limits: snapshot.rate_limits
         }
@@ -40,11 +42,12 @@ defmodule SymphonyElixirWeb.Presenter do
         running = Enum.find(snapshot.running, &(&1.identifier == issue_identifier))
         retry = Enum.find(snapshot.retrying, &(&1.identifier == issue_identifier))
         blocked = Enum.find(Map.get(snapshot, :blocked, []), &(&1.identifier == issue_identifier))
+        quota_wait = Enum.find(Map.get(snapshot, :quota_waiting, []), &(&1.identifier == issue_identifier))
 
-        if is_nil(running) and is_nil(retry) and is_nil(blocked) do
+        if is_nil(running) and is_nil(retry) and is_nil(blocked) and is_nil(quota_wait) do
           {:error, :issue_not_found}
         else
-          {:ok, issue_payload_body(issue_identifier, running, retry, blocked)}
+          {:ok, issue_payload_body(issue_identifier, running, retry, blocked, quota_wait)}
         end
 
       _ ->
@@ -63,14 +66,14 @@ defmodule SymphonyElixirWeb.Presenter do
     end
   end
 
-  defp issue_payload_body(issue_identifier, running, retry, blocked) do
+  defp issue_payload_body(issue_identifier, running, retry, blocked, quota_wait) do
     %{
       issue_identifier: issue_identifier,
-      issue_id: issue_id_from_entries(running, retry, blocked),
-      status: issue_status(running, retry, blocked),
+      issue_id: issue_id_from_entries(running, retry, blocked, quota_wait),
+      status: issue_status(running, retry, blocked, quota_wait),
       workspace: %{
-        path: workspace_path(issue_identifier, running, retry, blocked),
-        host: workspace_host(running, retry, blocked)
+        path: workspace_path(issue_identifier, running, retry, blocked, quota_wait),
+        host: workspace_host(running, retry, blocked, quota_wait)
       },
       attempts: %{
         restart_count: restart_count(retry),
@@ -79,6 +82,7 @@ defmodule SymphonyElixirWeb.Presenter do
       running: running && running_issue_payload(running),
       retry: retry && retry_issue_payload(retry),
       blocked: blocked && blocked_issue_payload(blocked),
+      quota_wait: quota_wait && quota_wait_entry_payload(quota_wait),
       logs: %{
         codex_session_logs: []
       },
@@ -88,16 +92,19 @@ defmodule SymphonyElixirWeb.Presenter do
     }
   end
 
-  defp issue_id_from_entries(running, retry, blocked),
-    do: (running && running.issue_id) || (retry && retry.issue_id) || (blocked && blocked.issue_id)
+  defp issue_id_from_entries(running, retry, blocked, quota_wait),
+    do:
+      (running && running.issue_id) || (retry && retry.issue_id) || (blocked && blocked.issue_id) ||
+        (quota_wait && quota_wait.issue_id)
 
   defp restart_count(retry), do: max(retry_attempt(retry) - 1, 0)
   defp retry_attempt(nil), do: 0
   defp retry_attempt(retry), do: retry.attempt || 0
 
-  defp issue_status(running, _retry, _blocked) when not is_nil(running), do: "running"
-  defp issue_status(nil, retry, _blocked) when not is_nil(retry), do: "retrying"
-  defp issue_status(nil, nil, _blocked), do: "blocked"
+  defp issue_status(running, _retry, _blocked, _quota_wait) when not is_nil(running), do: "running"
+  defp issue_status(nil, retry, _blocked, _quota_wait) when not is_nil(retry), do: "retrying"
+  defp issue_status(nil, nil, blocked, _quota_wait) when not is_nil(blocked), do: "blocked"
+  defp issue_status(nil, nil, nil, quota_wait), do: Atom.to_string(quota_wait.status)
 
   defp running_entry_payload(entry) do
     %{
@@ -151,6 +158,24 @@ defmodule SymphonyElixirWeb.Presenter do
     }
   end
 
+  defp quota_wait_entry_payload(entry) do
+    %{
+      issue_id: entry.issue_id,
+      issue_identifier: entry.identifier,
+      issue_url: Map.get(entry, :issue_url),
+      status: entry.status,
+      harness: entry.harness,
+      pool_key: entry.pool_key,
+      renewal_at: iso8601(entry.renewal_at),
+      next_recheck_at: iso8601(entry.next_recheck_at),
+      native_context_available: entry.native_context_available,
+      workspace_path: entry.workspace_path,
+      worker_host: entry.worker_host,
+      last_outcome: entry.last_outcome,
+      updated_at: iso8601(entry.updated_at)
+    }
+  end
+
   defp running_issue_payload(running) do
     %{
       worker_host: Map.get(running, :worker_host),
@@ -194,17 +219,19 @@ defmodule SymphonyElixirWeb.Presenter do
     }
   end
 
-  defp workspace_path(issue_identifier, running, retry, blocked) do
+  defp workspace_path(issue_identifier, running, retry, blocked, quota_wait) do
     (running && Map.get(running, :workspace_path)) ||
       (retry && Map.get(retry, :workspace_path)) ||
       (blocked && Map.get(blocked, :workspace_path)) ||
+      (quota_wait && Map.get(quota_wait, :workspace_path)) ||
       Path.join(Config.settings!().workspace.root, Workspace.workspace_key(issue_identifier))
   end
 
-  defp workspace_host(running, retry, blocked) do
+  defp workspace_host(running, retry, blocked, quota_wait) do
     (running && Map.get(running, :worker_host)) ||
       (retry && Map.get(retry, :worker_host)) ||
-      (blocked && Map.get(blocked, :worker_host))
+      (blocked && Map.get(blocked, :worker_host)) ||
+      (quota_wait && Map.get(quota_wait, :worker_host))
   end
 
   defp recent_events_payload(nil), do: []

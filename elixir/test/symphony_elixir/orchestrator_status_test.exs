@@ -1,5 +1,7 @@
 defmodule SymphonyElixir.OrchestratorStatusTest do
   use SymphonyElixir.TestSupport
+  alias SymphonyElixir.Harness.Quota.QuotaSignal
+  alias SymphonyElixir.QuotaWaitStore
 
   test "snapshot returns :timeout when snapshot server is unresponsive" do
     server_name = Module.concat(__MODULE__, :UnresponsiveSnapshotServer)
@@ -19,6 +21,83 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
     assert Orchestrator.snapshot(server_name, 10) == :timeout
 
     send(pid, :stop)
+  end
+
+  test "recognized quota exhaustion durably releases the worker slot and exposes a wait" do
+    workspace_root =
+      Path.join(System.tmp_dir!(), "symphony-quota-orchestrator-#{System.unique_integer([:positive])}")
+
+    write_workflow_file!(Workflow.workflow_file_path(), workspace_root: workspace_root)
+    issue_id = "issue-quota-wait"
+
+    issue = %Issue{
+      id: issue_id,
+      identifier: "MT-QUOTA",
+      title: "Wait for quota",
+      state: "In Progress",
+      url: "https://example.org/issues/MT-QUOTA"
+    }
+
+    workspace = Path.join(workspace_root, Workspace.workspace_key(issue.identifier))
+    File.mkdir_p!(workspace)
+    orchestrator_name = Module.concat(__MODULE__, :QuotaWaitOrchestrator)
+    {:ok, orchestrator} = Orchestrator.start_link(name: orchestrator_name)
+    {:ok, worker} = Task.Supervisor.start_child(SymphonyElixir.TaskSupervisor, fn -> Process.sleep(:infinity) end)
+    ref = Process.monitor(worker)
+    initial = :sys.get_state(orchestrator)
+
+    running_entry = %{
+      pid: worker,
+      ref: ref,
+      identifier: issue.identifier,
+      issue: issue,
+      worker_host: nil,
+      workspace_path: workspace,
+      session_id: "thread-quota-turn-1",
+      started_at: DateTime.utc_now()
+    }
+
+    :sys.replace_state(orchestrator, fn _ ->
+      %{initial | running: %{issue_id => running_entry}, claimed: MapSet.put(initial.claimed, issue_id)}
+    end)
+
+    observed_at = DateTime.utc_now()
+    renewal_at = DateTime.add(observed_at, 3_600, :second)
+
+    {:ok, signal} =
+      QuotaSignal.new(%{
+        harness: :codex,
+        pool_key: "codex:account:default",
+        renewal_at: renewal_at,
+        observed_at: observed_at
+      })
+
+    send(orchestrator, {
+      :codex_worker_update,
+      issue_id,
+      %{
+        event: :quota_exhausted,
+        timestamp: observed_at,
+        quota_signal: signal,
+        thread_id: "thread-quota",
+        workspace: workspace
+      }
+    })
+
+    snapshot = GenServer.call(orchestrator, :snapshot)
+    assert snapshot.running == []
+    assert [wait] = snapshot.quota_waiting
+    assert wait.status == :waiting
+    assert wait.native_context_available
+    assert wait.renewal_at == renewal_at
+    refute Process.alive?(worker)
+
+    assert {:ok, record} = QuotaWaitStore.fetch(workspace_root, issue_id)
+    assert record["status"] == "waiting"
+    assert record["continuation"]["native_id"] == "thread-quota"
+
+    Process.exit(orchestrator, :normal)
+    File.rm_rf(workspace_root)
   end
 
   test "orchestrator snapshot reflects last codex update and session id" do

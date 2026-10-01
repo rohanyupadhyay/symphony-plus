@@ -315,6 +315,7 @@ defmodule SymphonyElixir.StatusDashboard do
            %{
              running: running,
              retrying: retrying,
+             quota_waiting: Map.get(snapshot, :quota_waiting, []),
              codex_totals: codex_totals,
              rate_limits: Map.get(snapshot, :rate_limits),
              polling: Map.get(snapshot, :polling)
@@ -346,6 +347,7 @@ defmodule SymphonyElixir.StatusDashboard do
         running_rows = format_running_rows(running, running_event_width)
         running_to_backoff_spacer = if(running == [], do: [], else: ["│"])
         backoff_rows = format_retry_rows(retrying)
+        quota_rows = format_quota_rows(Map.get(snapshot, :quota_waiting, []))
 
         ([
            colorize("╭─ SYMPHONY STATUS", @ansi_bold),
@@ -374,6 +376,8 @@ defmodule SymphonyElixir.StatusDashboard do
            running_to_backoff_spacer ++
            [colorize("├─ Backoff queue", @ansi_bold), "│"] ++
            backoff_rows ++
+           [colorize("├─ Quota waits", @ansi_bold), "│"] ++
+           quota_rows ++
            [closing_border()])
         |> List.flatten()
         |> Enum.join("\n")
@@ -561,6 +565,7 @@ defmodule SymphonyElixir.StatusDashboard do
            %{
              running: running,
              retrying: retrying,
+             quota_waiting: Map.get(snapshot, :quota_waiting, []),
              codex_totals: codex_totals,
              rate_limits: Map.get(snapshot, :rate_limits),
              polling: Map.get(snapshot, :polling)
@@ -656,6 +661,26 @@ defmodule SymphonyElixir.StatusDashboard do
       |> String.split(", ")
     end
   end
+
+  defp format_quota_rows([]), do: ["│  " <> colorize("No quota waits", @ansi_gray)]
+
+  defp format_quota_rows(waits) do
+    Enum.map(waits, fn wait ->
+      renewal = wait.renewal_at || wait.next_recheck_at
+
+      "│  " <>
+        colorize("◷", @ansi_orange) <>
+        " " <>
+        colorize(wait.identifier || wait.issue_id || "unknown", @ansi_yellow) <>
+        " " <>
+        colorize("#{wait.status} #{wait.harness}/#{wait.pool_key}", @ansi_dim) <>
+        colorize(" next=#{format_datetime(renewal)}", @ansi_cyan) <>
+        colorize(" native_context=#{wait.native_context_available}", @ansi_dim)
+    end)
+  end
+
+  defp format_datetime(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  defp format_datetime(_value), do: "unknown"
 
   defp format_retry_summary(retry_entry) do
     issue_id = retry_entry.issue_id || "unknown"

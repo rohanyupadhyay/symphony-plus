@@ -55,6 +55,9 @@ defmodule SymphonyElixir.Config do
 
   def max_concurrent_agents_for_state(_state_name), do: settings!().agent.max_concurrent_agents
 
+  @spec quota_unknown_recheck_ms() :: pos_integer()
+  def quota_unknown_recheck_ms, do: settings!().quota.unknown_recheck_ms
+
   @spec codex_turn_sandbox_policy(Path.t() | nil) :: map()
   def codex_turn_sandbox_policy(workspace \\ nil) do
     case Schema.resolve_runtime_turn_sandbox_policy(settings!(), workspace) do

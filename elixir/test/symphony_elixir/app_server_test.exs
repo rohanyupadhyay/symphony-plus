@@ -1,6 +1,181 @@
 defmodule SymphonyElixir.AppServerTest do
   use SymphonyElixir.TestSupport
 
+  test "normalizes only pinned quota failures and validates renewal time" do
+    observed_at = ~U[2026-10-01 00:00:00Z]
+
+    assert {:ok, signal} =
+             AppServer.normalize_quota_failure(
+               %{
+                 "error" => %{
+                   "code" => 429,
+                   "type" => "usage_limit_reached",
+                   "resets_at" => "2026-10-01T01:00:00Z",
+                   "scope" => "account"
+                 }
+               },
+               observed_at
+             )
+
+    assert signal.harness == :codex
+    assert signal.pool_key == "codex:account:default"
+    assert signal.renewal_at == ~U[2026-10-01 01:00:00Z]
+
+    assert {:ok, unknown} =
+             AppServer.normalize_quota_failure(
+               %{"error" => %{"code" => 429, "type" => "rate_limit_exceeded"}},
+               observed_at
+             )
+
+    assert unknown.renewal_at == nil
+    assert unknown.pool_key == "codex:default:default"
+
+    for payload <- [
+          %{"error" => %{"code" => 401, "type" => "authentication_error"}},
+          %{"error" => %{"code" => 403, "type" => "permission_error"}},
+          %{"error" => %{"code" => 402, "type" => "billing_error"}},
+          %{"error" => %{"code" => 500, "message" => "quota exhausted"}},
+          %{"error" => %{"code" => 429, "type" => "unknown_limit"}}
+        ] do
+      assert :not_quota = AppServer.normalize_quota_failure(payload, observed_at)
+    end
+
+    assert {:ok, invalid_renewal} =
+             AppServer.normalize_quota_failure(
+               %{
+                 "error" => %{
+                   "code" => 429,
+                   "type" => "usage_limit_reached",
+                   "resets_at" => "2025-01-01T00:00:00Z"
+                 }
+               },
+               observed_at
+             )
+
+    assert invalid_renewal.renewal_at == nil
+
+    assert {:ok, malformed_renewal} =
+             AppServer.normalize_quota_failure(
+               %{
+                 "error" => %{
+                   "code" => 429,
+                   "type" => "usage_limit_reached",
+                   "resets_at" => "not-a-time"
+                 }
+               },
+               observed_at
+             )
+
+    assert malformed_renewal.renewal_at == nil
+  end
+
+  test "resumes the preserved native thread without starting a fresh thread" do
+    test_root =
+      Path.join(System.tmp_dir!(), "symphony-elixir-native-resume-#{System.unique_integer([:positive])}")
+
+    try do
+      workspace_root = Path.join(test_root, "workspaces")
+      workspace = Path.join(workspace_root, "MT-RESUME")
+      codex_binary = Path.join(test_root, "fake-codex")
+      trace = Path.join(test_root, "requests.log")
+      File.mkdir_p!(workspace)
+
+      File.write!(codex_binary, """
+      #!/bin/sh
+      count=0
+      while IFS= read -r line; do
+        printf '%s\n' "$line" >> "#{trace}"
+        count=$((count + 1))
+        case "$count" in
+          1) printf '%s\n' '{"id":1,"result":{}}' ;;
+          2) ;;
+          3) printf '%s\n' '{"id":4,"result":{"thread":{"id":"thread-resume"}}}' ;;
+          4)
+            printf '%s\n' '{"id":3,"result":{"turn":{"id":"turn-resume"}}}'
+            printf '%s\n' '{"method":"turn/completed","params":{}}'
+            ;;
+        esac
+      done
+      """)
+
+      File.chmod!(codex_binary, 0o755)
+
+      write_workflow_file!(Workflow.workflow_file_path(),
+        workspace_root: workspace_root,
+        codex_command: "#{codex_binary} app-server"
+      )
+
+      issue = %Issue{
+        id: "issue-native-resume",
+        identifier: "MT-RESUME",
+        title: "Resume native context",
+        state: "In Progress",
+        labels: ["backend"]
+      }
+
+      assert {:ok, session} =
+               AppServer.start_session(workspace, continuation_native_id: "thread-resume")
+
+      assert {:ok, %{thread_id: "thread-resume"}} = AppServer.run_turn(session, "continue", issue)
+      :ok = AppServer.stop_session(session)
+
+      requests = File.read!(trace)
+      assert requests =~ "thread/resume"
+      refute requests =~ "thread/start"
+      assert requests =~ "thread-resume"
+    after
+      File.rm_rf(test_root)
+    end
+  end
+
+  test "emits an allowlisted quota event for a structured failed turn" do
+    test_root =
+      Path.join(System.tmp_dir!(), "symphony-elixir-quota-turn-#{System.unique_integer([:positive])}")
+
+    try do
+      workspace_root = Path.join(test_root, "workspaces")
+      workspace = Path.join(workspace_root, "MT-QUOTA")
+      codex_binary = Path.join(test_root, "fake-codex")
+      File.mkdir_p!(workspace)
+
+      File.write!(codex_binary, """
+      #!/bin/sh
+      count=0
+      while IFS= read -r _line; do
+        count=$((count + 1))
+        case "$count" in
+          1) printf '%s\n' '{"id":1,"result":{}}' ;;
+          2) ;;
+          3) printf '%s\n' '{"id":2,"result":{"thread":{"id":"thread-quota"}}}' ;;
+          4)
+            printf '%s\n' '{"id":3,"result":{"turn":{"id":"turn-quota"}}}'
+            printf '%s\n' '{"method":"turn/failed","params":{"error":{"code":429,"type":"usage_limit_reached","scope":"account","resets_at":"2099-01-01T00:00:00Z"}}}'
+            ;;
+        esac
+      done
+      """)
+
+      File.chmod!(codex_binary, 0o755)
+
+      write_workflow_file!(Workflow.workflow_file_path(),
+        workspace_root: workspace_root,
+        codex_command: "#{codex_binary} app-server"
+      )
+
+      issue = %Issue{id: "issue-quota", identifier: "MT-QUOTA", title: "Pause on quota", state: "In Progress"}
+      recipient = self()
+
+      assert {:error, {:turn_failed, _}} =
+               AppServer.run(workspace, "work", issue, on_message: fn update -> send(recipient, {:update, update}) end)
+
+      assert_receive {:update, %{event: :quota_exhausted, thread_id: "thread-quota", quota_signal: signal}}
+      assert signal.pool_key == "codex:account:default"
+      assert signal.renewal_at == ~U[2099-01-01 00:00:00Z]
+    after
+      File.rm_rf(test_root)
+    end
+  end
+
   test "app server rejects the workspace root and paths outside workspace root" do
     test_root =
       Path.join(

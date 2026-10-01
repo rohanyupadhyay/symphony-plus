@@ -16,5 +16,8 @@
 ├─ Backoff queue
 │
 │  No queued retries
+├─ Quota waits
+│
+│  No quota waits
 ╰─
 ```

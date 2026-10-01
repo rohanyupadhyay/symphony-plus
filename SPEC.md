@@ -623,6 +623,10 @@ not require recognizing or validating extension fields unless that extension is 
 - `agent.max_concurrent_agents`: integer, default `10`
 - `agent.max_turns`: integer, default `20`
 - `agent.max_retry_backoff_ms`: integer, default `300000` (5m)
+- `quota.unknown_recheck_ms`: positive integer, default `300000` (5m)
+  - Controls the bounded recheck interval when Codex reports quota exhaustion without a valid
+    future renewal time.
+  - Reloaded values apply to future quota decisions; existing durable deadlines are preserved.
 - `agent.max_concurrent_agents_by_state`: map of positive integers, default `{}`
 - `codex.command`: shell command string, default `codex app-server`
 - `codex.approval_policy`: Codex `AskForApproval` value, default implementation-defined
@@ -690,6 +694,26 @@ A run attempt transitions through these phases:
 11. `CanceledByReconciliation`
 
 Distinct terminal reasons are important because retry logic and logs differ.
+
+### Quota Waiting and Native Resume
+
+Recognized Codex quota exhaustion is a scheduler wait, not a worker failure. Before releasing the
+worker slot, the orchestrator MUST atomically persist an allowlisted issue-scoped record beneath
+`<workspace-root>/.symphony/quota-waits/`. The record identifies the issue, Codex quota pool,
+renewal or bounded recheck time, workspace key, native thread identity, and stable outcome; it MUST
+NOT contain credentials, prompts, model output, or raw provider payloads.
+
+A quota wait consumes no active-agent slot and does not increment the ordinary failure retry
+counter. Waiting records survive restart and are reconciled against current tracker routing before
+dispatch. When due, the orchestrator MUST persist a `resuming` reservation before launching the
+worker, reuse the same issue workspace, and invoke the Codex `thread/resume` path with continuation
+guidance. It MUST NOT fall back to `thread/start`. A missing, mismatched, or unavailable native
+thread becomes an operator-visible `operator_blocked` state while preserving workspace and durable
+workflow state. Repeated exhaustion returns the issue to waiting with the latest valid deadline.
+
+Status surfaces MUST distinguish `waiting`, `resuming`, and `operator_blocked` quota state from
+ordinary retries and report harness, pool, renewal/recheck timing, native-context availability, and
+stable outcome without exposing provider payloads.
 
 ### 7.3 Transition Triggers
 

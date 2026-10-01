@@ -5,9 +5,11 @@ defmodule SymphonyElixir.Codex.AppServer do
 
   require Logger
   alias SymphonyElixir.{Codex.DynamicTool, Config, PathSafety, SSH}
+  alias SymphonyElixir.Harness.Quota.QuotaSignal
 
   @initialize_id 1
   @thread_start_id 2
+  @thread_resume_id 4
   @turn_start_id 3
   @port_line_bytes 1_048_576
   @max_stream_log_bytes 1_000
@@ -23,6 +25,27 @@ defmodule SymphonyElixir.Codex.AppServer do
           worker_host: String.t() | nil,
           dynamic_tool_binding: map()
         }
+
+  @recognized_quota_types ~w(usage_limit_reached rate_limit_exceeded)
+
+  @spec normalize_quota_failure(map(), DateTime.t()) ::
+          {:ok, QuotaSignal.t()} | {:error, :invalid_renewal_time} | :not_quota
+  def normalize_quota_failure(%{"error" => error}, %DateTime{} = observed_at) when is_map(error) do
+    if error["code"] == 429 and error["type"] in @recognized_quota_types do
+      with {:ok, renewal_at} <- parse_renewal(error["resets_at"] || error["reset_at"], observed_at) do
+        QuotaSignal.new(%{
+          harness: :codex,
+          pool_key: quota_pool_key(error),
+          renewal_at: renewal_at,
+          observed_at: observed_at
+        })
+      end
+    else
+      :not_quota
+    end
+  end
+
+  def normalize_quota_failure(_payload, %DateTime{}), do: :not_quota
 
   @spec run(Path.t(), String.t(), map(), keyword()) :: {:ok, map()} | {:error, term()}
   def run(workspace, prompt, issue, opts \\ []) do
@@ -46,7 +69,13 @@ defmodule SymphonyElixir.Codex.AppServer do
 
       with {:ok, session_policies} <- session_policies(expanded_workspace, worker_host),
            {:ok, thread_id} <-
-             do_start_session(port, expanded_workspace, session_policies, dynamic_tool_binding) do
+             do_start_session(
+               port,
+               expanded_workspace,
+               session_policies,
+               dynamic_tool_binding,
+               Keyword.get(opts, :continuation_native_id)
+             ) do
         {:ok,
          %{
            port: port,
@@ -125,6 +154,7 @@ defmodule SymphonyElixir.Codex.AppServer do
              }}
 
           {:error, reason} ->
+            maybe_emit_quota_exhausted(on_message, reason, thread_id, issue, workspace, metadata)
             Logger.warning("Codex session ended with error for #{issue_context(issue)} session_id=#{session_id}: #{inspect(reason)}")
 
             emit_message(
@@ -141,6 +171,7 @@ defmodule SymphonyElixir.Codex.AppServer do
         end
 
       {:error, reason} ->
+        maybe_emit_quota_exhausted(on_message, reason, thread_id, issue, workspace, metadata)
         Logger.error("Codex session failed for #{issue_context(issue)}: #{inspect(reason)}")
         emit_message(on_message, :startup_failed, %{reason: reason}, metadata)
         {:error, reason}
@@ -261,6 +292,41 @@ defmodule SymphonyElixir.Codex.AppServer do
     end)
   end
 
+  defp parse_renewal(nil, _observed_at), do: {:ok, nil}
+
+  defp parse_renewal(value, observed_at) when is_binary(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, renewal_at, 0} ->
+        if DateTime.after?(renewal_at, observed_at),
+          do: {:ok, renewal_at},
+          else: {:ok, nil}
+
+      _ ->
+        {:ok, nil}
+    end
+  end
+
+  defp parse_renewal(_value, _observed_at), do: {:ok, nil}
+
+  defp quota_pool_key(error) do
+    scope = stable_pool_part(error["scope"], "default")
+    model = stable_pool_part(error["model"], "default")
+    "codex:#{scope}:#{model}"
+  end
+
+  defp stable_pool_part(value, fallback) when is_binary(value) do
+    normalized =
+      value
+      |> String.trim()
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9._-]+/, "-")
+      |> String.trim("-")
+
+    if normalized == "", do: fallback, else: String.slice(normalized, 0, 128)
+  end
+
+  defp stable_pool_part(_value, fallback), do: fallback
+
   defp port_metadata(port, worker_host) when is_port(port) do
     base_metadata =
       case :erlang.port_info(port, :os_pid) do
@@ -309,12 +375,85 @@ defmodule SymphonyElixir.Codex.AppServer do
     Config.codex_runtime_settings(workspace, remote: true)
   end
 
-  defp do_start_session(port, workspace, session_policies, dynamic_tool_binding) do
+  defp do_start_session(port, workspace, session_policies, dynamic_tool_binding, continuation_native_id) do
     case send_initialize(port) do
-      :ok -> start_thread(port, workspace, session_policies, dynamic_tool_binding)
-      {:error, reason} -> {:error, reason}
+      :ok when is_binary(continuation_native_id) ->
+        resume_thread(port, workspace, session_policies, dynamic_tool_binding, continuation_native_id)
+
+      :ok ->
+        start_thread(port, workspace, session_policies, dynamic_tool_binding)
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
+
+  defp resume_thread(
+         port,
+         workspace,
+         %{approval_policy: approval_policy, thread_sandbox: thread_sandbox},
+         dynamic_tool_binding,
+         thread_id
+       ) do
+    send_message(port, %{
+      "method" => "thread/resume",
+      "id" => @thread_resume_id,
+      "params" => %{
+        "threadId" => thread_id,
+        "approvalPolicy" => approval_policy,
+        "sandbox" => thread_sandbox,
+        "cwd" => workspace,
+        "dynamicTools" => dynamic_tool_binding.tool_specs
+      }
+    })
+
+    case await_response(port, @thread_resume_id) do
+      {:ok, %{"thread" => %{"id" => ^thread_id}}} -> {:ok, thread_id}
+      {:ok, %{"thread" => %{"id" => other}}} -> {:error, {:continuation_mismatch, other}}
+      {:error, reason} -> {:error, {:native_resume_unavailable, reason}}
+      other -> {:error, {:native_resume_unavailable, other}}
+    end
+  end
+
+  defp maybe_emit_quota_exhausted(on_message, reason, thread_id, issue, workspace, metadata) do
+    case quota_error_from_reason(reason) do
+      nil ->
+        :ok
+
+      error ->
+        emit_normalized_quota(on_message, error, thread_id, issue, workspace, metadata)
+    end
+  end
+
+  defp emit_normalized_quota(on_message, error, thread_id, issue, workspace, metadata) do
+    case normalize_quota_failure(%{"error" => error}, DateTime.utc_now()) do
+      {:ok, signal} ->
+        emit_message(
+          on_message,
+          :quota_exhausted,
+          %{
+            quota_signal: signal,
+            thread_id: thread_id,
+            issue_id: issue.id,
+            workspace: workspace
+          },
+          metadata
+        )
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp quota_error_from_reason({:response_error, error}) when is_map(error), do: error
+  defp quota_error_from_reason({:turn_failed, params}) when is_map(params), do: nested_error(params)
+  defp quota_error_from_reason(_reason), do: nil
+
+  defp nested_error(%{"error" => error}) when is_map(error), do: error
+  defp nested_error(%{error: error}) when is_map(error), do: error
+  defp nested_error(%{"turn" => value}) when is_map(value), do: nested_error(value)
+  defp nested_error(%{"failure" => value}) when is_map(value), do: nested_error(value)
+  defp nested_error(_value), do: nil
 
   defp start_thread(
          port,

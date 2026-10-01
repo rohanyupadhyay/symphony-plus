@@ -5,6 +5,21 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
   alias SymphonyElixir.Config.Schema.{Codex, StringOrMap}
   alias SymphonyElixir.Linear.Client
 
+  test "quota unknown renewal recheck defaults to five minutes and must be positive" do
+    write_workflow_file!(Workflow.workflow_file_path())
+
+    assert Config.settings!().quota.unknown_recheck_ms == 300_000
+    assert Config.quota_unknown_recheck_ms() == 300_000
+
+    write_workflow_file!(Workflow.workflow_file_path(), quota_unknown_recheck_ms: 45_000)
+    assert Config.settings!().quota.unknown_recheck_ms == 45_000
+    assert Config.quota_unknown_recheck_ms() == 45_000
+
+    write_workflow_file!(Workflow.workflow_file_path(), quota_unknown_recheck_ms: 0)
+    assert {:error, {:invalid_workflow_config, message}} = Config.validate!()
+    assert message =~ "quota.unknown_recheck_ms"
+  end
+
   test "workspace bootstrap can be implemented in after_create hook" do
     test_root =
       Path.join(

@@ -36,6 +36,13 @@ issue claimed and exposes it as blocked in the runtime state, JSON API, and dash
 entries are in memory only; restarting the orchestrator clears that blocked map, so any still-active
 tracker issue can become a dispatch candidate again after restart.
 
+Recognized Codex quota exhaustion follows a separate recovery path. Symphony persists a non-secret
+quota-wait record under `<workspace-root>/.symphony/quota-waits/`, releases the worker slot without
+incrementing failure retries, and resumes the saved native thread after its validated renewal time.
+When Codex omits a valid renewal time, `quota.unknown_recheck_ms` controls the bounded recheck
+interval (default: 300000 ms). Native resume failure is operator-blocking; Symphony never starts a
+fresh thread as an automatic fallback. See [Quota waits and native resume](docs/quota-resume.md).
+
 ## How to use it
 
 1. Make sure your codebase is set up to work well with agents: see

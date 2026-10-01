@@ -27,6 +27,7 @@ defmodule SymphonyElixir.MixProject do
           SymphonyElixir.SpecsCheck,
           SymphonyElixir.Orchestrator,
           SymphonyElixir.Orchestrator.State,
+          SymphonyElixir.QuotaWaitStore,
           SymphonyElixir.AgentRunner,
           SymphonyElixir.Application,
           SymphonyElixir.CLI,

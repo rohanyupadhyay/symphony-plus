@@ -7,7 +7,8 @@ defmodule SymphonyElixir.Orchestrator do
   require Logger
   import Bitwise, only: [<<<: 2]
 
-  alias SymphonyElixir.{AgentRunner, Config, StatusDashboard, Tracker, Workspace}
+  alias SymphonyElixir.{AgentRunner, Config, QuotaWaitStore, StatusDashboard, Tracker, Workspace}
+  alias SymphonyElixir.Harness.Quota.{ContinuationReference, QuotaSignal}
   alias SymphonyElixir.Tracker.Issue
 
   @continuation_retry_delay_ms 1_000
@@ -38,6 +39,8 @@ defmodule SymphonyElixir.Orchestrator do
       completed: MapSet.new(),
       claimed: MapSet.new(),
       blocked: %{},
+      quota_waits: %{},
+      quota_store_error: nil,
       retry_attempts: %{},
       codex_totals: nil,
       codex_rate_limits: nil
@@ -68,6 +71,8 @@ defmodule SymphonyElixir.Orchestrator do
           codex_totals: @empty_codex_totals,
           codex_rate_limits: nil
         }
+
+        state = load_quota_waits(state)
 
         run_terminal_workspace_cleanup()
         state = schedule_tick(state, 0)
@@ -165,6 +170,21 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   def handle_info(
+        {:codex_worker_update, issue_id, %{event: :quota_exhausted, quota_signal: %QuotaSignal{} = signal} = update},
+        %{running: running} = state
+      ) do
+    case Map.get(running, issue_id) do
+      nil ->
+        {:noreply, state}
+
+      running_entry ->
+        state = enter_quota_wait(state, issue_id, running_entry, signal, update)
+        notify_dashboard()
+        {:noreply, state}
+    end
+  end
+
+  def handle_info(
         {:codex_worker_update, issue_id, %{event: _, timestamp: _} = update},
         %{running: running} = state
       ) do
@@ -206,6 +226,8 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   defp handle_agent_down(:normal, state, issue_id, running_entry, session_id) do
+    state = maybe_complete_quota_resume(state, issue_id, running_entry)
+
     if input_required_blocker?(running_entry) do
       block_input_required_agent_down(state, issue_id, running_entry, session_id, :normal)
     else
@@ -224,10 +246,35 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   defp handle_agent_down(reason, state, issue_id, running_entry, session_id) do
-    if input_required_blocker?(running_entry) do
-      block_input_required_agent_down(state, issue_id, running_entry, session_id, reason)
+    cond do
+      Map.get(running_entry, :run_kind) == :quota_resume ->
+        wait = Map.get(state.quota_waits, issue_id)
+
+        if wait do
+          block_quota_wait(
+            state,
+            issue_id,
+            wait,
+            "native quota continuation failed: #{inspect(reason)}"
+          )
+        else
+          block_input_required_agent_down(state, issue_id, running_entry, session_id, reason)
+        end
+
+      input_required_blocker?(running_entry) ->
+        block_input_required_agent_down(state, issue_id, running_entry, session_id, reason)
+
+      true ->
+        retry_agent_down(state, issue_id, running_entry, session_id, reason)
+    end
+  end
+
+  defp maybe_complete_quota_resume(state, issue_id, running_entry) do
+    if Map.get(running_entry, :run_kind) == :quota_resume do
+      :ok = QuotaWaitStore.delete(Config.settings!().workspace.root, issue_id)
+      %{state | quota_waits: Map.delete(state.quota_waits, issue_id)}
     else
-      retry_agent_down(state, issue_id, running_entry, session_id, reason)
+      state
     end
   end
 
@@ -260,9 +307,15 @@ defmodule SymphonyElixir.Orchestrator do
       |> reconcile_blocked_issues()
 
     with :ok <- Config.validate!(),
-         {:ok, issues} <- Tracker.fetch_issues_by_states(Config.settings!().tracker.active_states),
-         true <- available_slots(state) > 0 do
-      choose_issues(issues, state)
+         {:ok, issues} <- Tracker.fetch_issues_by_states(Config.settings!().tracker.active_states) do
+      state = reconcile_quota_waits(state, issues)
+
+      if available_slots(state) > 0 do
+        state = dispatch_due_quota_waits(state, issues)
+        choose_issues(issues, state)
+      else
+        state
+      end
     else
       {:error, :missing_linear_api_token} ->
         Logger.error("Tracker API token missing in WORKFLOW.md")
@@ -300,9 +353,6 @@ defmodule SymphonyElixir.Orchestrator do
 
       {:error, reason} ->
         Logger.error("Failed to fetch from issue tracker: #{inspect(reason)}")
-        state
-
-      false ->
         state
     end
   end
@@ -663,8 +713,6 @@ defmodule SymphonyElixir.Orchestrator do
         "mcpServer/elicitation/request"
   end
 
-  defp input_required_blocker?(_running_entry), do: false
-
   defp input_required_completion_outcome(completion) when is_map(completion) do
     outcome = Map.get(completion, :outcome) || Map.get(completion, "outcome")
     normalize_input_required_outcome(outcome)
@@ -693,8 +741,6 @@ defmodule SymphonyElixir.Orchestrator do
       codex_message_blocker_error(Map.get(running_entry, :last_codex_message)) ||
       fallback
   end
-
-  defp blocker_error(_running_entry, fallback), do: fallback
 
   defp codex_event_blocker_error(:turn_input_required), do: "codex turn requires operator input"
   defp codex_event_blocker_error(:approval_required), do: "codex turn requires approval"
@@ -778,6 +824,288 @@ defmodule SymphonyElixir.Orchestrator do
     }
   end
 
+  defp enter_quota_wait(state, issue_id, running_entry, signal, update) do
+    wait = build_quota_wait(issue_id, running_entry, signal, update)
+
+    case persist_quota_wait(wait) do
+      :ok ->
+        stop_running_task(running_entry.pid, running_entry.ref, state.task_supervisor)
+
+        Logger.warning(
+          "Quota wait entered issue_id=#{issue_id} issue_identifier=#{wait.identifier} " <>
+            "harness=codex pool=#{signal.pool_key} renewal_at=#{format_time(signal.renewal_at)} " <>
+            "outcome=#{wait.last_outcome}"
+        )
+
+        %{
+          state
+          | running: Map.delete(state.running, issue_id),
+            retry_attempts: Map.delete(state.retry_attempts, issue_id),
+            claimed: MapSet.put(state.claimed, issue_id),
+            quota_waits: Map.put(state.quota_waits, issue_id, wait)
+        }
+
+      {:error, reason} ->
+        stop_and_block_issue(
+          state,
+          issue_id,
+          running_entry,
+          "quota wait persistence failed: #{inspect(reason)}"
+        )
+    end
+  end
+
+  defp build_quota_wait(issue_id, running_entry, signal, update) do
+    issue = running_entry.issue
+    workspace_key = Workspace.workspace_key(issue.identifier)
+    continuation = build_continuation(update[:thread_id], issue_id, workspace_key)
+    now = DateTime.utc_now()
+
+    %{
+      issue_id: issue_id,
+      identifier: issue.identifier,
+      issue: issue,
+      harness: :codex,
+      pool_key: signal.pool_key,
+      status: if(continuation, do: :waiting, else: :operator_blocked),
+      renewal_at: signal.renewal_at,
+      next_recheck_at: signal.renewal_at || DateTime.add(now, quota_unknown_recheck_ms(), :millisecond),
+      workspace_key: workspace_key,
+      workspace_path: update[:workspace] || Map.get(running_entry, :workspace_path),
+      worker_host: Map.get(running_entry, :worker_host),
+      continuation: continuation,
+      last_outcome: if(continuation, do: "quota_exhausted", else: "continuation_missing"),
+      observed_at: signal.observed_at,
+      updated_at: now
+    }
+  end
+
+  defp build_continuation(native_id, issue_id, workspace_key) when is_binary(native_id) do
+    case ContinuationReference.new(%{
+           harness: :codex,
+           native_id: native_id,
+           issue_id: issue_id,
+           workspace_key: workspace_key
+         }) do
+      {:ok, reference} -> reference
+      _ -> nil
+    end
+  end
+
+  defp build_continuation(_native_id, _issue_id, _workspace_key), do: nil
+
+  defp load_quota_waits(state) do
+    case QuotaWaitStore.list(Config.settings!().workspace.root) do
+      {:ok, records} ->
+        waits = Map.new(records, fn record -> {record["issue_id"], wait_from_record(record)} end)
+        %{state | quota_waits: waits, claimed: MapSet.union(state.claimed, MapSet.new(Map.keys(waits)))}
+
+      {:error, reason} ->
+        Logger.error("Unable to load durable quota waits: #{inspect(reason)}")
+        %{state | quota_store_error: reason}
+    end
+  end
+
+  defp wait_from_record(record) do
+    continuation =
+      case record["continuation"] do
+        %{} = value ->
+          case ContinuationReference.new(%{
+                 harness: :codex,
+                 native_id: value["native_id"],
+                 issue_id: value["issue_id"],
+                 workspace_key: value["workspace_key"]
+               }) do
+            {:ok, reference} -> reference
+            _ -> nil
+          end
+
+        _ ->
+          nil
+      end
+
+    %{
+      issue_id: record["issue_id"],
+      identifier: record["issue_identifier"],
+      issue: nil,
+      harness: :codex,
+      pool_key: record["pool_key"],
+      status: String.to_existing_atom(record["status"]),
+      renewal_at: parse_time(record["renewal_at"]),
+      next_recheck_at: parse_time(record["next_recheck_at"]),
+      workspace_key: record["workspace_key"],
+      workspace_path: Path.join(Config.settings!().workspace.root, record["workspace_key"]),
+      worker_host: nil,
+      continuation: continuation,
+      last_outcome: record["last_outcome"],
+      observed_at: parse_time(record["observed_at"]),
+      updated_at: parse_time(record["updated_at"])
+    }
+  end
+
+  defp reconcile_quota_waits(state, issues) do
+    issue_by_id = Map.new(issues, &{&1.id, &1})
+
+    Enum.reduce(state.quota_waits, state, fn {issue_id, wait}, acc ->
+      reconcile_quota_wait(acc, issue_id, wait, issue_by_id[issue_id])
+    end)
+  end
+
+  defp reconcile_quota_wait(state, issue_id, wait, %Issue{} = issue) do
+    if issue_routable?(issue) do
+      updated = %{wait | issue: issue, identifier: issue.identifier}
+      %{state | quota_waits: Map.put(state.quota_waits, issue_id, updated)}
+    else
+      remove_quota_wait(state, issue_id)
+    end
+  end
+
+  defp reconcile_quota_wait(state, issue_id, _wait, _issue), do: remove_quota_wait(state, issue_id)
+
+  defp remove_quota_wait(state, issue_id) do
+    :ok = QuotaWaitStore.delete(Config.settings!().workspace.root, issue_id)
+
+    %{
+      state
+      | quota_waits: Map.delete(state.quota_waits, issue_id),
+        claimed: MapSet.delete(state.claimed, issue_id)
+    }
+  end
+
+  defp dispatch_due_quota_waits(state, _issues) do
+    Enum.reduce(state.quota_waits, state, fn {issue_id, wait}, acc ->
+      cond do
+        available_slots(acc) <= 0 ->
+          acc
+
+        wait.status == :operator_blocked ->
+          acc
+
+        is_nil(wait.issue) ->
+          acc
+
+        is_nil(wait.worker_host) and not File.dir?(wait.workspace_path) ->
+          block_quota_wait(acc, issue_id, wait, "preserved workspace is unavailable")
+
+        DateTime.after?(wait.next_recheck_at, DateTime.utc_now()) ->
+          acc
+
+        is_nil(wait.continuation) ->
+          block_quota_wait(acc, issue_id, wait, "native continuation unavailable")
+
+        true ->
+          dispatch_quota_resume(acc, issue_id, wait)
+      end
+    end)
+  end
+
+  defp dispatch_quota_resume(state, issue_id, wait) do
+    reserved = %{wait | status: :resuming, updated_at: DateTime.utc_now(), last_outcome: "resume_reserved"}
+
+    case persist_quota_wait(reserved) do
+      :ok ->
+        spawn_quota_resume(state, issue_id, wait, reserved)
+
+      {:error, reason} ->
+        block_quota_wait(state, issue_id, wait, "resume reservation persistence failed: #{inspect(reason)}")
+    end
+  end
+
+  defp spawn_quota_resume(state, issue_id, wait, reserved) do
+    recipient = self()
+
+    result =
+      Task.Supervisor.start_child(state.task_supervisor, fn ->
+        AgentRunner.run(wait.issue, recipient,
+          worker_host: wait.worker_host,
+          run_kind: :quota_resume,
+          continuation_reference: wait.continuation
+        )
+      end)
+
+    complete_quota_resume_spawn(result, state, issue_id, wait, reserved)
+  end
+
+  defp complete_quota_resume_spawn({:ok, pid}, state, issue_id, wait, reserved) do
+    ref = Process.monitor(pid)
+    running_entry = new_running_entry(wait.issue, pid, ref, wait.worker_host, :quota_resume)
+
+    Logger.info(
+      "Quota resume dispatched issue_id=#{issue_id} issue_identifier=#{wait.identifier} " <>
+        "harness=codex pool=#{wait.pool_key} outcome=resuming"
+    )
+
+    %{
+      state
+      | running: Map.put(state.running, issue_id, running_entry),
+        quota_waits: Map.put(state.quota_waits, issue_id, reserved)
+    }
+  end
+
+  defp complete_quota_resume_spawn({:error, reason}, state, issue_id, _wait, _reserved) do
+    Logger.warning("Quota resume spawn failed issue_id=#{issue_id}: #{inspect(reason)}")
+    state
+  end
+
+  defp block_quota_wait(state, issue_id, wait, reason) do
+    blocked = %{wait | status: :operator_blocked, last_outcome: "operator_blocked", updated_at: DateTime.utc_now()}
+    _ = persist_quota_wait(blocked)
+
+    blocked_entry = %{
+      issue_id: issue_id,
+      identifier: wait.identifier,
+      issue: wait.issue,
+      worker_host: wait.worker_host,
+      workspace_path: wait.workspace_path,
+      session_id: nil,
+      error: reason,
+      blocked_at: DateTime.utc_now(),
+      last_codex_message: nil,
+      last_codex_event: :quota_resume_blocked,
+      last_codex_timestamp: DateTime.utc_now()
+    }
+
+    %{state | quota_waits: Map.put(state.quota_waits, issue_id, blocked), blocked: Map.put(state.blocked, issue_id, blocked_entry)}
+  end
+
+  defp persist_quota_wait(wait) do
+    continuation =
+      case wait.continuation do
+        %ContinuationReference{} = reference ->
+          %{
+            "harness" => "codex",
+            "native_id" => reference.native_id,
+            "issue_id" => reference.issue_id,
+            "workspace_key" => reference.workspace_key
+          }
+
+        nil ->
+          nil
+      end
+
+    QuotaWaitStore.put(Config.settings!().workspace.root, %{
+      "version" => 1,
+      "issue_id" => wait.issue_id,
+      "issue_identifier" => wait.identifier,
+      "harness" => "codex",
+      "pool_key" => wait.pool_key,
+      "status" => Atom.to_string(wait.status),
+      "renewal_at" => format_time(wait.renewal_at),
+      "next_recheck_at" => format_time(wait.next_recheck_at),
+      "workspace_key" => wait.workspace_key,
+      "continuation" => continuation,
+      "last_outcome" => wait.last_outcome,
+      "observed_at" => format_time(wait.observed_at),
+      "updated_at" => format_time(wait.updated_at)
+    })
+  end
+
+  defp quota_unknown_recheck_ms, do: Config.settings!().quota.unknown_recheck_ms
+  defp format_time(nil), do: nil
+  defp format_time(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  defp parse_time(nil), do: nil
+  defp parse_time(value), do: elem(DateTime.from_iso8601(value), 1)
+
   defp choose_issues(issues, state) do
     active_states = active_state_set()
     terminal_states = terminal_state_set()
@@ -823,12 +1151,22 @@ defmodule SymphonyElixir.Orchestrator do
       !MapSet.member?(claimed, issue.id) and
       !Map.has_key?(running, issue.id) and
       !Map.has_key?(blocked, issue.id) and
+      quota_dispatch_available?(state) and
       available_slots(state) > 0 and
       state_slots_available?(issue, running) and
       worker_slots_available?(state)
   end
 
   defp should_dispatch_issue?(_issue, _state, _active_states, _terminal_states), do: false
+
+  # Codex does not expose an issue's pool before a run starts. Until adapters can
+  # predeclare a pool, conservatively suppress fresh Codex dispatch while any
+  # pool is exhausted; already-reserved quota resumes bypass this predicate.
+  defp quota_dispatch_available?(%State{quota_store_error: error}) when not is_nil(error), do: false
+
+  defp quota_dispatch_available?(%State{quota_waits: waits}) do
+    Enum.all?(waits, fn {_issue_id, wait} -> wait.status == :operator_blocked end)
+  end
 
   defp state_slots_available?(%Issue{state: issue_state}, running) when is_map(running) do
     limit = Config.max_concurrent_agents_for_state(issue_state)
@@ -960,28 +1298,11 @@ defmodule SymphonyElixir.Orchestrator do
         Logger.info("Dispatching issue to agent: #{issue_context(issue)} pid=#{inspect(pid)} attempt=#{inspect(attempt)} worker_host=#{worker_host || "local"}")
 
         running =
-          Map.put(state.running, issue.id, %{
-            pid: pid,
-            ref: ref,
-            identifier: issue.identifier,
-            issue: issue,
-            worker_host: worker_host,
-            workspace_path: nil,
-            session_id: nil,
-            last_codex_message: nil,
-            last_codex_timestamp: nil,
-            last_codex_event: nil,
-            codex_app_server_pid: nil,
-            codex_input_tokens: 0,
-            codex_output_tokens: 0,
-            codex_total_tokens: 0,
-            codex_last_reported_input_tokens: 0,
-            codex_last_reported_output_tokens: 0,
-            codex_last_reported_total_tokens: 0,
-            turn_count: 0,
-            retry_attempt: normalize_retry_attempt(attempt),
-            started_at: DateTime.utc_now()
-          })
+          Map.put(
+            state.running,
+            issue.id,
+            new_running_entry(issue, pid, ref, worker_host, :new, attempt)
+          )
 
         %{
           state
@@ -1001,6 +1322,32 @@ defmodule SymphonyElixir.Orchestrator do
           worker_host: worker_host
         })
     end
+  end
+
+  defp new_running_entry(issue, pid, ref, worker_host, run_kind, attempt \\ nil) do
+    %{
+      pid: pid,
+      ref: ref,
+      identifier: issue.identifier,
+      issue: issue,
+      worker_host: worker_host,
+      workspace_path: nil,
+      session_id: nil,
+      last_codex_message: nil,
+      last_codex_timestamp: nil,
+      last_codex_event: nil,
+      codex_app_server_pid: nil,
+      codex_input_tokens: 0,
+      codex_output_tokens: 0,
+      codex_total_tokens: 0,
+      codex_last_reported_input_tokens: 0,
+      codex_last_reported_output_tokens: 0,
+      codex_last_reported_total_tokens: 0,
+      turn_count: 0,
+      retry_attempt: normalize_retry_attempt(attempt),
+      run_kind: run_kind,
+      started_at: DateTime.utc_now()
+    }
   end
 
   defp revalidate_issue_for_dispatch(%Issue{id: issue_id}, issue_fetcher, terminal_states)
@@ -1469,11 +1816,32 @@ defmodule SymphonyElixir.Orchestrator do
         }
       end)
 
+    quota_waiting =
+      state.quota_waits
+      |> Enum.map(fn {issue_id, wait} ->
+        %{
+          issue_id: issue_id,
+          identifier: wait.identifier,
+          issue_url: quota_wait_issue_url(wait),
+          status: wait.status,
+          harness: wait.harness,
+          pool_key: wait.pool_key,
+          renewal_at: wait.renewal_at,
+          next_recheck_at: wait.next_recheck_at,
+          native_context_available: not is_nil(wait.continuation),
+          workspace_path: wait.workspace_path,
+          worker_host: wait.worker_host,
+          last_outcome: wait.last_outcome,
+          updated_at: wait.updated_at
+        }
+      end)
+
     {:reply,
      %{
        running: running,
        retrying: retrying,
        blocked: blocked,
+       quota_waiting: quota_waiting,
        codex_totals: state.codex_totals,
        rate_limits: Map.get(state, :codex_rate_limits),
        polling: %{
@@ -1504,6 +1872,9 @@ defmodule SymphonyElixir.Orchestrator do
 
   defp blocked_issue_url(%{issue: %Issue{url: url}}), do: url
   defp blocked_issue_url(_metadata), do: nil
+
+  defp quota_wait_issue_url(%{issue: %Issue{url: url}}), do: url
+  defp quota_wait_issue_url(_metadata), do: nil
 
   defp integrate_codex_update(running_entry, %{event: event, timestamp: timestamp} = update) do
     token_delta = extract_token_delta(running_entry, update)
