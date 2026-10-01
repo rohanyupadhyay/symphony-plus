@@ -98,6 +98,12 @@ defmodule SymphonyElixirWeb.DashboardLive do
           </article>
 
           <article class="metric-card">
+            <p class="metric-label">Quota waits</p>
+            <p class="metric-value numeric"><%= @payload.counts.quota_waiting %></p>
+            <p class="metric-detail">Issues paused for harness quota renewal.</p>
+          </article>
+
+          <article class="metric-card">
             <p class="metric-label">Total tokens</p>
             <p class="metric-value numeric"><%= format_int(@payload.codex_totals.total_tokens) %></p>
             <p class="metric-detail numeric">
@@ -110,6 +116,44 @@ defmodule SymphonyElixirWeb.DashboardLive do
             <p class="metric-value numeric"><%= format_runtime_seconds(total_runtime_seconds(@payload, @now)) %></p>
             <p class="metric-detail">Total Codex runtime across completed and active sessions.</p>
           </article>
+        </section>
+
+        <section class="section-card">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Quota waits</h2>
+              <p class="section-copy">Durable waits and native-context resume availability.</p>
+            </div>
+          </div>
+
+          <%= if @payload.quota_waiting == [] do %>
+            <p class="empty-state">No quota-paused issues.</p>
+          <% else %>
+            <div class="table-wrap">
+              <table class="data-table" style="min-width: 860px;">
+                <thead>
+                  <tr>
+                    <th>Issue</th>
+                    <th>Status</th>
+                    <th>Harness / pool</th>
+                    <th>Renewal / recheck</th>
+                    <th>Native context</th>
+                    <th>Outcome</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr :for={entry <- @payload.quota_waiting}>
+                    <td><.issue_identifier identifier={entry.issue_identifier} url={entry.issue_url} /></td>
+                    <td><span class={state_badge_class(entry.status)}><%= entry.status %></span></td>
+                    <td class="mono"><%= entry.harness %> / <%= entry.pool_key %></td>
+                    <td class="mono"><%= entry.renewal_at || entry.next_recheck_at || "unknown" %></td>
+                    <td><%= if entry.native_context_available, do: "available", else: "unavailable" %></td>
+                    <td><%= entry.last_outcome %></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          <% end %>
         </section>
 
         <section class="section-card">

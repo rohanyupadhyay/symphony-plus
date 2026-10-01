@@ -15,4 +15,7 @@
 \e[1m├─ Backoff queue\e[0m
 │
 │  \e[90mNo queued retries\e[0m
+\e[1m├─ Quota waits\e[0m
+│
+│  \e[90mNo quota waits\e[0m
 ╰─

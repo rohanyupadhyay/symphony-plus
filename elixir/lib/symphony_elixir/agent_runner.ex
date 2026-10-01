@@ -6,6 +6,7 @@ defmodule SymphonyElixir.AgentRunner do
   require Logger
   alias SymphonyElixir.Codex.AppServer
   alias SymphonyElixir.{Config, PromptBuilder, Tracker, Workspace}
+  alias SymphonyElixir.Harness.Quota.ContinuationReference
   alias SymphonyElixir.Tracker.Issue
 
   @type worker_host :: String.t() | nil
@@ -38,23 +39,39 @@ defmodule SymphonyElixir.AgentRunner do
   defp run_on_worker_host(issue, codex_update_recipient, opts, worker_host) do
     Logger.info("Starting worker attempt for #{issue_context(issue)} worker_host=#{worker_host_for_log(worker_host)}")
 
-    case Workspace.create_for_issue(issue, worker_host) do
-      {:ok, workspace} ->
-        send_worker_runtime_info(codex_update_recipient, issue, worker_host, workspace)
+    with :ok <- validate_existing_resume_workspace(issue, opts, worker_host),
+         result <- Workspace.create_for_issue(issue, worker_host) do
+      case result do
+        {:ok, workspace} ->
+          send_worker_runtime_info(codex_update_recipient, issue, worker_host, workspace)
 
-        try do
-          with :ok <- Tracker.prepare_workspace(workspace, issue, worker_host),
-               :ok <- Workspace.run_before_run_hook(workspace, issue, worker_host) do
-            run_codex_turns(workspace, issue, codex_update_recipient, opts, worker_host)
+          try do
+            with :ok <- Tracker.prepare_workspace(workspace, issue, worker_host),
+                 :ok <- Workspace.run_before_run_hook(workspace, issue, worker_host) do
+              run_codex_turns(workspace, issue, codex_update_recipient, opts, worker_host)
+            end
+          after
+            Workspace.run_after_run_hook(workspace, issue, worker_host)
           end
-        after
-          Workspace.run_after_run_hook(workspace, issue, worker_host)
-        end
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
+
+  defp validate_existing_resume_workspace(issue, opts, nil) do
+    case Keyword.get(opts, :run_kind) do
+      :quota_resume ->
+        path = Path.join(Config.settings!().workspace.root, Workspace.workspace_key(issue.identifier))
+        if File.dir?(path), do: :ok, else: {:error, :preserved_workspace_unavailable}
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp validate_existing_resume_workspace(_issue, _opts, _worker_host), do: :ok
 
   defp codex_message_handler(recipient, issue) do
     fn message ->
@@ -89,8 +106,15 @@ defmodule SymphonyElixir.AgentRunner do
   defp run_codex_turns(workspace, issue, codex_update_recipient, opts, worker_host) do
     max_turns = Keyword.get(opts, :max_turns, Config.settings!().agent.max_turns)
     issue_state_fetcher = Keyword.get(opts, :issue_state_fetcher, &Tracker.fetch_issues_by_ids/1)
+    continuation = Keyword.get(opts, :continuation_reference)
 
-    with {:ok, session} <- AppServer.start_session(workspace, worker_host: worker_host) do
+    with :ok <- validate_continuation(continuation, issue, workspace),
+         {:ok, session} <-
+           AppServer.start_session(
+             workspace,
+             worker_host: worker_host,
+             continuation_native_id: continuation_native_id(continuation)
+           ) do
       try do
         do_run_codex_turns(session, workspace, issue, codex_update_recipient, opts, issue_state_fetcher, 1, max_turns)
       after
@@ -140,7 +164,22 @@ defmodule SymphonyElixir.AgentRunner do
     end
   end
 
-  defp build_turn_prompt(issue, opts, 1, _max_turns), do: PromptBuilder.build_prompt(issue, opts)
+  defp build_turn_prompt(issue, opts, 1, _max_turns) do
+    case Keyword.get(opts, :run_kind) do
+      :quota_resume ->
+        """
+        Continuation guidance:
+
+        - Quota renewed after this existing Codex thread was paused.
+        - Resume the remaining work for #{issue.identifier} from the current workspace and durable workflow state.
+        - Do not restart the issue, recreate completed artifacts, or restate the original request.
+        - Continue until the active workflow reaches its next durable checkpoint.
+        """
+
+      _ ->
+        PromptBuilder.build_prompt(issue, opts)
+    end
+  end
 
   defp build_turn_prompt(_issue, _opts, turn_number, max_turns) do
     """
@@ -172,6 +211,26 @@ defmodule SymphonyElixir.AgentRunner do
   end
 
   defp continue_with_issue?(issue, _issue_state_fetcher), do: {:done, issue}
+
+  defp validate_continuation(nil, _issue, _workspace), do: :ok
+
+  defp validate_continuation(
+         %ContinuationReference{issue_id: issue_id, workspace_key: workspace_key},
+         %Issue{id: issue_id, identifier: identifier},
+         workspace
+       ) do
+    expected_key = Workspace.workspace_key(identifier)
+
+    if workspace_key == expected_key and Path.basename(workspace) == expected_key,
+      do: :ok,
+      else: {:error, :continuation_workspace_mismatch}
+  end
+
+  defp validate_continuation(_continuation, _issue, _workspace),
+    do: {:error, :invalid_continuation_reference}
+
+  defp continuation_native_id(%ContinuationReference{native_id: native_id}), do: native_id
+  defp continuation_native_id(nil), do: nil
 
   defp active_issue_state?(state_name) when is_binary(state_name) do
     normalized_state = normalize_issue_state(state_name)
