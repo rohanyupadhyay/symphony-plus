@@ -132,6 +132,19 @@ Removing the required label makes the issue ineligible immediately. Closing the 
 terminal. The workflow prompt remains responsible for applying `/symphony cancel` by removing the
 label, and for closing the issue after a merged PR.
 
+## Pull request tracking
+
+Every pull request created or updated by the reusable GitHub Spec Kit workflow includes exactly one
+plain `Tracks #<issue-number>` line in its template-compliant body. GitHub autolinks that
+same-repository reference and presents a reciprocal cross-reference on the issue. Updates, retries,
+and revisions preserve the existing line instead of appending another relationship.
+
+The tracking line must not use GitHub's closing keywords (`close`, `fix`, or `resolve` and their
+variants). The relationship therefore does not close the issue when the pull request is merged or
+closed. Issue closure remains a separate workflow responsibility: a merged pull request is handled
+explicitly, while a pull request closed without merge leaves the issue open for a revise, replace,
+or cancel decision.
+
 ## Recovery and API usage
 
 The latest authorized hidden marker is reconstructed from GitHub comments on every relevant poll,

@@ -93,12 +93,17 @@ Advance exactly one state machine:
 6. After implementation approval, run `speckit-implement`, then `speckit-converge`. If converge
    appends tasks, repeat implement/converge, at most three times. At review, report both phases and
    the convergence cycle count.
-7. Validate, commit, call `github_git_push`, and open a pull request without auto-merge keywords. Post an
-   `awaiting_review` checkpoint containing its number.
+7. Validate, commit, call `github_git_push`, and create or update the pull request. Every pull
+   request created or updated by this workflow must have a body that
+   follows `.github/pull_request_template.md`, passes `cd elixir && mix pr_body.check --file <path>`,
+   and contains exactly one `Tracks #{{ issue.id }}` line. The body must not use auto-closing
+   keywords for the source issue. Preserve this single reference across create, update, retry, and
+   revision. Post an `awaiting_review` checkpoint containing the pull request number.
 8. Apply implementation-only review feedback directly. Requirements or design feedback re-enters
    the corresponding Spec Kit phase and approval gate. Update the same branch and PR.
-9. After merge, comment with final validation and close the parent issue. If the PR closes without
-   merge, ask for revise, replacement, or cancellation instead.
+9. After merge, comment with final validation and close the parent issue explicitly. The tracking
+   reference never owns issue closure. If the PR is closed without merge, keep the issue open and
+   ask for revise, replacement, or cancellation instead.
 
 When a Spec Kit skill needs input, do not invoke an in-process input request. Post an
 `awaiting_input` checkpoint and end the turn. `specify` may ask one batch of up to three questions.

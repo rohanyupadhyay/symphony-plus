@@ -22,13 +22,13 @@
 
 ### Tests for User Story 1
 
-- [ ] T001 [US1] Add a focused failing workflow-contract test for the exact `Tracks #{{ issue.id }}` requirement, forbidden closing keywords, PR-template preservation, and separate merged-PR issue closure in `elixir/test/symphony_elixir/github_launcher_test.exs`
+- [X] T001 [US1] Add a focused failing workflow-contract test for the exact `Tracks #{{ issue.id }}` requirement, forbidden closing keywords, PR-template preservation, and separate merged-PR issue closure in `elixir/test/symphony_elixir/github_launcher_test.exs`
 
 ### Implementation for User Story 1
 
-- [ ] T002 [US1] Update PR create/update instructions to require exactly one same-repository `Tracks #{{ issue.id }}` line, prohibit auto-closing keywords, retain body validation, and preserve explicit merged-PR closure handling in `elixir/examples/github-speckit-WORKFLOW.md`
-- [ ] T003 [P] [US1] Document the non-closing tracking reference, the forbidden closing relationship, and separate issue-closure responsibility in `elixir/docs/github-workflow-control.md`
-- [ ] T004 [US1] Run the focused test from `specs/gh-10-link-pr-issue/quickstart.md` and confirm `elixir/test/symphony_elixir/github_launcher_test.exs` passes after T002
+- [X] T002 [US1] Update PR create/update instructions to require exactly one same-repository `Tracks #{{ issue.id }}` line, prohibit auto-closing keywords, retain body validation, and preserve explicit merged-PR closure handling in `elixir/examples/github-speckit-WORKFLOW.md`
+- [X] T003 [P] [US1] Document the non-closing tracking reference, the forbidden closing relationship, and separate issue-closure responsibility in `elixir/docs/github-workflow-control.md`
+- [X] T004 [US1] Run the focused test from `specs/gh-10-link-pr-issue/quickstart.md` and confirm `elixir/test/symphony_elixir/github_launcher_test.exs` passes after T002
 
 **Checkpoint**: The reusable workflow makes the source issue directly reachable from the PR without assigning closure semantics to the relationship.
 
@@ -42,9 +42,9 @@
 
 ### Tests and Integration for User Story 2
 
-- [ ] T005 [US2] Extend the workflow-contract assertions for create, update, retry, revision, and close-without-merge paths so they preserve one canonical reference and keep the issue open in `elixir/test/symphony_elixir/github_launcher_test.exs`
-- [ ] T006 [US2] Validate a representative body copied from `.github/pull_request_template.md` with exactly one `Tracks #10` line using `elixir/lib/mix/tasks/pr_body.check.ex`, and record the result for implementation handoff
-- [ ] T007 [US2] Run the disposable-repository create, revision, close-without-merge, and merge checks from `specs/gh-10-link-pr-issue/quickstart.md` to observe reciprocal GitHub presentation and non-closing semantics, or record the unavailable credential/repository prerequisite as a PR validation omission
+- [X] T005 [US2] Extend the workflow-contract assertions for create, update, retry, revision, and close-without-merge paths so they preserve one canonical reference and keep the issue open in `elixir/test/symphony_elixir/github_launcher_test.exs`
+- [X] T006 [US2] Validate a representative body copied from `.github/pull_request_template.md` with exactly one `Tracks #10` line using `elixir/lib/mix/tasks/pr_body.check.ex`, and record the result for implementation handoff
+- [X] T007 [US2] Run the disposable-repository create, revision, close-without-merge, and merge checks from `specs/gh-10-link-pr-issue/quickstart.md` to observe reciprocal GitHub presentation and non-closing semantics, or record the unavailable credential/repository prerequisite as a PR validation omission
 
 **Checkpoint**: The issue-facing relationship is specified as one native reciprocal cross-reference and repeated workflow activity cannot duplicate it.
 
@@ -54,9 +54,9 @@
 
 **Purpose**: Validate all lifecycle paths, governance constraints, and repository-wide quality gates.
 
-- [ ] T008 Update `SPEC.md` to document the externally visible non-closing PR-to-issue tracking contract and separate issue-closure ownership while preserving the existing tracker-write boundary
-- [ ] T009 Perform an adversarial review of create, update, resume, retry, revision, merge, close-without-merge, cancellation, reconciliation, and partial-failure behavior against `.specify/memory/constitution.md`; record any reproducible failure as an incomplete corrective task in `specs/gh-10-link-pr-issue/tasks.md`
-- [ ] T010 Run `make -C elixir all`, review the diff for secrets, unrelated changes, generated artifacts, incomplete task markers, constitution violations, and required documentation updates, then record validation and dependency-advisory output for the PR body
+- [X] T008 Update `SPEC.md` to document the externally visible non-closing PR-to-issue tracking contract and separate issue-closure ownership while preserving the existing tracker-write boundary
+- [X] T009 Perform an adversarial review of create, update, resume, retry, revision, merge, close-without-merge, cancellation, reconciliation, and partial-failure behavior against `.specify/memory/constitution.md`; record any reproducible failure as an incomplete corrective task in `specs/gh-10-link-pr-issue/tasks.md`
+- [X] T010 Run `make -C elixir all`, review the diff for secrets, unrelated changes, generated artifacts, incomplete task markers, constitution violations, and required documentation updates, then record validation and dependency-advisory output for the PR body
 
 ---
 
