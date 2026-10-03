@@ -13,8 +13,8 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
-- [x] Requirements are testable and unambiguous except for the explicitly marked completion-policy conflict
+- [x] No [NEEDS CLARIFICATION] markers remain
+- [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
 - [x] All acceptance scenarios are defined
@@ -24,12 +24,12 @@
 
 ## Feature Readiness
 
-- [x] All resolved functional requirements have clear acceptance criteria
+- [x] All functional requirements have clear acceptance criteria
 - [x] User scenarios cover primary flows
 - [x] Feature meets measurable outcomes defined in Success Criteria
 - [x] No implementation details leak into specification
 
 ## Notes
 
-- FR-012 cannot pass until the operator chooses a constitution-compliant human merge handoff or pursues a separate constitution amendment before automatic merge is specified.
+- FR-012 records the selected governance-first policy: this feature waits for human merge, while automatic merge requires a separate reviewed constitution amendment.
 - Items marked incomplete require spec updates before `$speckit-clarify` or `$speckit-plan`.

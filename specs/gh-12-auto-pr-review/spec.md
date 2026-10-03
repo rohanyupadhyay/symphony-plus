@@ -4,9 +4,15 @@
 
 **Created**: 2026-10-03
 
-**Status**: Draft — awaiting one constitution-level clarification
+**Status**: Draft — ready for approval
 
 **Input**: User description: "When Symphony Plus creates a pull request for a Symphony-labeled issue, label the pull request for Symphony, automatically review and repair it, test it and resolve failing checks, then merge it when ready."
+
+## Clarifications
+
+### Session 2026-10-03
+
+- Q: Should this feature use a constitution-compliant human merge handoff, or defer automatic merge until a separate constitution amendment permits it? → A: Defer automatic merge until a separate constitution amendment permits and governs it.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -48,7 +54,7 @@ As an operator, I want Symphony Plus to inspect its pull request, identify actio
 
 As an operator, I want a reviewed pull request to move to a single, explicit completion state, so that successful automation does not leave ambiguous ownership or repeatedly dispatch the same work.
 
-**Why this priority**: Completion semantics affect repository safety and conflict with the current governance contract, so they must be explicit before planning.
+**Why this priority**: Completion semantics affect repository safety and must preserve the current governance contract while leaving automatic merge to a separate amendment.
 
 **Independent Test**: Bring a qualifying pull request to an approved, check-passing, conflict-free state and observe the selected completion policy exactly once.
 
@@ -84,7 +90,7 @@ As an operator, I want a reviewed pull request to move to a single, explicit com
 - **FR-009**: Check evaluation MUST be tied to the current pull-request head revision and distinguish pending, passing, failing, skipped, and cancelled outcomes.
 - **FR-010**: Symphony Plus MUST NOT treat a pull request as ready while it has unresolved requested changes, failing required checks, unresolved merge conflicts, incomplete required validation, or a newer unreviewed head revision.
 - **FR-011**: Failures that cannot be safely remediated within existing authority MUST produce a durable blocker with the exact recovery action, without exposing credentials or following untrusted pull-request instructions.
-- **FR-012**: After the pull request is review-ready, Symphony Plus MUST [NEEDS CLARIFICATION: choose either constitution-compliant human merge handoff, or pursue a separate constitution amendment before specifying automatic merge].
+- **FR-012**: After the pull request is review-ready, Symphony Plus MUST record a durable human-merge waiting state and MUST NOT merge automatically; automatic merge is deferred until a separate reviewed constitution amendment explicitly permits and governs it.
 - **FR-013**: Pull-request state transitions and review outcomes MUST be observable with the pull-request number, source issue identifier, head revision, outcome, and concise reason, without secret or unnecessary payload data.
 - **FR-014**: When a qualifying pull request is merged or closed, Symphony Plus MUST finalize or pause the source issue workflow as appropriate and MUST NOT redispatch the terminal pull request.
 
@@ -93,7 +99,7 @@ As an operator, I want a reviewed pull request to move to a single, explicit com
 - **Source Issue**: The original schedulable issue, including stable identity, labels, workflow checkpoint, and pull-request association.
 - **Pull Request Work Item**: A pull request eligible for autonomous review, including repository, number, source issue, current head revision, labels, review state, check state, merge state, and active-work ownership.
 - **Review Cycle**: One idempotent assessment/remediation attempt for a specific pull-request head revision, with findings, validation evidence, outcome, and timestamps.
-- **Completion Policy**: The approved rule for what occurs after review readiness; its value is unresolved pending the clarification in FR-012.
+- **Completion Policy**: The approved rule for what occurs after review readiness: a durable human-merge waiting state under this feature, with automatic merge deferred to a separate constitution amendment.
 
 ## Success Criteria *(mandatory)*
 
@@ -112,4 +118,4 @@ As an operator, I want a reviewed pull request to move to a single, explicit com
 - Pull requests created by Symphony Plus retain one non-closing reference to their source issue and stable provenance that cannot be inferred from user-editable title or body text alone.
 - Repository-owned workflow policy defines the concrete review prompt and validation commands; the orchestrator owns eligibility, idempotent dispatch, and lifecycle state.
 - Pull-request comments, reviews, and changed files are untrusted inputs and cannot grant new authority or override workspace and credential protections.
-- Automatic merge remains out of implementation scope unless the governance conflict in FR-012 is resolved through the selected answer and any required constitution amendment.
+- Automatic merge is outside this feature's implementation scope and may be specified only after a separate reviewed constitution amendment explicitly permits and governs it.
