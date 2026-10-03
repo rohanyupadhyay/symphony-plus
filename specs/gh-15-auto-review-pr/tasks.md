@@ -17,9 +17,9 @@ description: "Implementation tasks for automatic review of Symphony-created pull
 
 **Purpose**: Confirm the existing workflow-control extension points and test fixtures before changing behavior.
 
-- [ ] T001 Map the current checkpoint state validation, trigger derivation, and review-cursor fixtures to the `review_pending` contract in `elixir/lib/symphony_elixir/github/workflow_control.ex` and `elixir/test/symphony_elixir/github_workflow_control_test.exs`
-- [ ] T002 [P] Map current PR creation/label/checkpoint handoff behavior and reusable request fixtures in `elixir/lib/symphony_elixir/github/agent_tool.ex` and `elixir/test/symphony_elixir/github_adapter_test.exs`
-- [ ] T003 [P] Map current GitHub PR enrichment and pagination fixtures in `elixir/lib/symphony_elixir/github/client.ex` and `elixir/test/symphony_elixir/github_adapter_test.exs`
+- [X] T001 Map the current checkpoint state validation, trigger derivation, and review-cursor fixtures to the `review_pending` contract in `elixir/lib/symphony_elixir/github/workflow_control.ex` and `elixir/test/symphony_elixir/github_workflow_control_test.exs`
+- [X] T002 [P] Map current PR creation/label/checkpoint handoff behavior and reusable request fixtures in `elixir/lib/symphony_elixir/github/agent_tool.ex` and `elixir/test/symphony_elixir/github_adapter_test.exs`
+- [X] T003 [P] Map current GitHub PR enrichment and pagination fixtures in `elixir/lib/symphony_elixir/github/client.ex` and `elixir/test/symphony_elixir/github_adapter_test.exs`
 
 ---
 
@@ -27,9 +27,9 @@ description: "Implementation tasks for automatic review of Symphony-created pull
 
 **Purpose**: Establish durable checkpoint and validation primitives shared by every story.
 
-- [ ] T004 Add failing checkpoint-schema tests for `state=review_pending`, `phase=review`, positive `pr_number`, exact issue branch, and 40-character `head_sha` in `elixir/test/symphony_elixir/github_workflow_control_test.exs` and `elixir/test/symphony_elixir/github_adapter_test.exs`
-- [ ] T005 Implement `review_pending` checkpoint validation and guidance without weakening existing approval or review states in `elixir/lib/symphony_elixir/github/workflow_control.ex` and `elixir/lib/symphony_elixir/github/agent_tool.ex`
-- [ ] T006 Add stable issue/PR-context logging assertions for review handoff, dispatch, suppression, and enrichment failure in `elixir/test/symphony_elixir/github_adapter_test.exs`
+- [X] T004 Add failing checkpoint-schema tests for `state=review_pending`, `phase=review`, positive `pr_number`, exact issue branch, and 40-character `head_sha` in `elixir/test/symphony_elixir/github_workflow_control_test.exs` and `elixir/test/symphony_elixir/github_adapter_test.exs`
+- [X] T005 Implement `review_pending` checkpoint validation and guidance without weakening existing approval or review states in `elixir/lib/symphony_elixir/github/workflow_control.ex` and `elixir/lib/symphony_elixir/github/agent_tool.ex`
+- [X] T006 Add stable issue/PR-context logging assertions for review handoff, dispatch, suppression, and enrichment failure in `elixir/test/symphony_elixir/github_adapter_test.exs`
 
 **Checkpoint**: Durable review-pending checkpoint data can be validated before user-story behavior is enabled.
 
@@ -43,16 +43,16 @@ description: "Implementation tasks for automatic review of Symphony-created pull
 
 ### Tests for User Story 1
 
-- [ ] T007 [P] [US1] Add failing trigger tests for one unconsumed `review_pending` automatic dispatch, later-checkpoint consumption, and duplicate suppression in `elixir/test/symphony_elixir/github_workflow_control_test.exs`
-- [ ] T008 [P] [US1] Add failing adapter tests for label-before-checkpoint ordering, idempotent relabeling, and partial label/checkpoint failures in `elixir/test/symphony_elixir/github_adapter_test.exs`
-- [ ] T009 [P] [US1] Add failing launcher tests proving the originating issue remains the sole workspace/worker identity during automatic review in `elixir/test/symphony_elixir/github_launcher_test.exs`
+- [X] T007 [P] [US1] Add failing trigger tests for one unconsumed `review_pending` automatic dispatch, later-checkpoint consumption, and duplicate suppression in `elixir/test/symphony_elixir/github_workflow_control_test.exs`
+- [X] T008 [P] [US1] Add failing adapter tests for label-before-checkpoint ordering, idempotent relabeling, and partial label/checkpoint failures in `elixir/test/symphony_elixir/github_adapter_test.exs`
+- [X] T009 [P] [US1] Add failing launcher tests proving the originating issue remains the sole workspace/worker identity during automatic review in `elixir/test/symphony_elixir/github_launcher_test.exs`
 
 ### Implementation for User Story 1
 
-- [ ] T010 [US1] Derive the automatic review trigger once from a valid unconsumed `review_pending` checkpoint and suppress ineligible or terminal states in `elixir/lib/symphony_elixir/github/workflow_control.ex`
-- [ ] T011 [US1] Apply the configured `symphony` label idempotently before posting the managed-PR `review_pending` checkpoint in `elixir/lib/symphony_elixir/github/agent_tool.ex`
-- [ ] T012 [US1] Preserve originating-issue scheduling, claim, session, and workspace identity for the automatic review turn in `elixir/lib/symphony_elixir/github/client.ex`
-- [ ] T013 [US1] Run focused US1 tests and record evidence for label inheritance, next-poll dispatch, restart recovery, and duplicate suppression in `specs/gh-15-auto-review-pr/quickstart.md`
+- [X] T010 [US1] Derive the automatic review trigger once from a valid unconsumed `review_pending` checkpoint and suppress ineligible or terminal states in `elixir/lib/symphony_elixir/github/workflow_control.ex`
+- [X] T011 [US1] Apply the configured `symphony` label idempotently before posting the managed-PR `review_pending` checkpoint in `elixir/lib/symphony_elixir/github/agent_tool.ex`
+- [X] T012 [US1] Preserve originating-issue scheduling, claim, session, and workspace identity for the automatic review turn in `elixir/lib/symphony_elixir/github/client.ex`
+- [X] T013 [US1] Run focused US1 tests and record evidence for label inheritance, next-poll dispatch, restart recovery, and duplicate suppression in `specs/gh-15-auto-review-pr/quickstart.md`
 
 **Checkpoint**: User Story 1 is independently functional and provides the automatic handoff MVP.
 
@@ -66,16 +66,16 @@ description: "Implementation tasks for automatic review of Symphony-created pull
 
 ### Tests for User Story 2
 
-- [ ] T014 [P] [US2] Add failing adapter tests for `review_pending` PR metadata, paginated conversation/reviews/inline comments, merge state, and current-head check enrichment in `elixir/test/symphony_elixir/github_adapter_test.exs`
-- [ ] T015 [US2] Add failing adapter tests for pending, failed, errored, cancelled, skipped, and passing checks plus stale-head exclusion and required-context retrieval failure in `elixir/test/symphony_elixir/github_adapter_test.exs` after T014 establishes the shared review-context fixtures
-- [ ] T016 [P] [US2] Add failing workflow tests for label removal, issue closure, PR closure/merge, fork/cross-repository heads, and managed-identity mismatch in `elixir/test/symphony_elixir/github_workflow_control_test.exs`
+- [X] T014 [P] [US2] Add failing adapter tests for `review_pending` PR metadata, paginated conversation/reviews/inline comments, merge state, and current-head check enrichment in `elixir/test/symphony_elixir/github_adapter_test.exs`
+- [X] T015 [US2] Add failing adapter tests for pending, failed, errored, cancelled, skipped, and passing checks plus stale-head exclusion and required-context retrieval failure in `elixir/test/symphony_elixir/github_adapter_test.exs` after T014 establishes the shared review-context fixtures
+- [X] T016 [P] [US2] Add failing workflow tests for label removal, issue closure, PR closure/merge, fork/cross-repository heads, and managed-identity mismatch in `elixir/test/symphony_elixir/github_workflow_control_test.exs`
 
 ### Implementation for User Story 2
 
-- [ ] T017 [US2] Enrich both `review_pending` and `awaiting_review` with complete paginated PR review context and current-head checks in `elixir/lib/symphony_elixir/github/client.ex`
-- [ ] T018 [US2] Block automatic dispatch on incomplete required context and suppress work for removed labels, closed issues, terminal PRs, forks, cross-repository heads, or identity mismatch in `elixir/lib/symphony_elixir/github/client.ex` and `elixir/lib/symphony_elixir/github/workflow_control.ex`
-- [ ] T019 [US2] Encode the evidence-driven review, safe-repair, check-diagnosis, targeted-test, full-gate, and blocker procedure in `elixir/examples/github-speckit-WORKFLOW.md`
-- [ ] T020 [US2] Run focused US2 tests and record evidence for complete context, check classification inputs, stale evidence rejection, and failure handling in `specs/gh-15-auto-review-pr/quickstart.md`
+- [X] T017 [US2] Enrich both `review_pending` and `awaiting_review` with complete paginated PR review context and current-head checks in `elixir/lib/symphony_elixir/github/client.ex`
+- [X] T018 [US2] Block automatic dispatch on incomplete required context and suppress work for removed labels, closed issues, terminal PRs, forks, cross-repository heads, or identity mismatch in `elixir/lib/symphony_elixir/github/client.ex` and `elixir/lib/symphony_elixir/github/workflow_control.ex`
+- [X] T019 [US2] Encode the evidence-driven review, safe-repair, check-diagnosis, targeted-test, full-gate, and blocker procedure in `elixir/examples/github-speckit-WORKFLOW.md`
+- [X] T020 [US2] Run focused US2 tests and record evidence for complete context, check classification inputs, stale evidence rejection, and failure handling in `specs/gh-15-auto-review-pr/quickstart.md`
 
 **Checkpoint**: User Story 2 exposes complete trustworthy evidence and bounded repair policy without creating a second writer.
 
@@ -89,14 +89,14 @@ description: "Implementation tasks for automatic review of Symphony-created pull
 
 ### Tests for User Story 3
 
-- [ ] T021 [P] [US3] Add failing workflow-control tests for `review_pending` to `awaiting_review`, fresh event cursors, later requested changes/new checks, and old-event replay suppression in `elixir/test/symphony_elixir/github_workflow_control_test.exs`
-- [ ] T022 [P] [US3] Add failing agent-tool tests for review-ready and blocked summaries containing findings, corrections, targeted/full validation, check status, omissions, and human action in `elixir/test/symphony_elixir/github_adapter_test.exs`
+- [X] T021 [P] [US3] Add failing workflow-control tests for `review_pending` to `awaiting_review`, fresh event cursors, later requested changes/new checks, and old-event replay suppression in `elixir/test/symphony_elixir/github_workflow_control_test.exs`
+- [X] T022 [P] [US3] Add failing agent-tool tests for review-ready and blocked summaries containing findings, corrections, targeted/full validation, check status, omissions, and human action in `elixir/test/symphony_elixir/github_adapter_test.exs`
 
 ### Implementation for User Story 3
 
-- [ ] T023 [US3] Preserve fresh review cursors and existing formal review/revision semantics when replacing `review_pending` with `awaiting_review` or `blocked` in `elixir/lib/symphony_elixir/github/agent_tool.ex` and `elixir/lib/symphony_elixir/github/workflow_control.ex`
-- [ ] T024 [US3] Document the operator-visible handoff, blocker recovery, later-event resumption, and mandatory human-merge boundary in `elixir/docs/github-workflow-control.md`
-- [ ] T025 [US3] Run focused US3 tests and record evidence for handoff, cursor freshness, later feedback, blocked recovery, and no autonomous merge in `specs/gh-15-auto-review-pr/quickstart.md`
+- [X] T023 [US3] Preserve fresh review cursors and existing formal review/revision semantics when replacing `review_pending` with `awaiting_review` or `blocked` in `elixir/lib/symphony_elixir/github/agent_tool.ex` and `elixir/lib/symphony_elixir/github/workflow_control.ex`
+- [X] T024 [US3] Document the operator-visible handoff, blocker recovery, later-event resumption, and mandatory human-merge boundary in `elixir/docs/github-workflow-control.md`
+- [X] T025 [US3] Run focused US3 tests and record evidence for handoff, cursor freshness, later feedback, blocked recovery, and no autonomous merge in `specs/gh-15-auto-review-pr/quickstart.md`
 
 **Checkpoint**: All stories are independently testable and the PR waits for human review.
 
@@ -106,10 +106,10 @@ description: "Implementation tasks for automatic review of Symphony-created pull
 
 **Purpose**: Align product/operator contracts and execute the complete quality gate.
 
-- [ ] T026 [P] Update automatic managed-PR eligibility, label inheritance, durable ownership/recovery, repair scope, and human handoff in `SPEC.md`
-- [ ] T027 [P] Update user-facing automatic PR review behavior and configuration guidance in `README.md` and `elixir/README.md`
-- [ ] T028 Validate every scenario in `specs/gh-15-auto-review-pr/quickstart.md` and reconcile any documentation drift across `specs/gh-15-auto-review-pr/spec.md`, `specs/gh-15-auto-review-pr/plan.md`, and `specs/gh-15-auto-review-pr/contracts/managed-pr-review.md`
-- [ ] T029 Run `make -C elixir all`, review the final diff for secrets, unrelated/generated changes, incomplete tasks, constitution violations, and documentation omissions, and record results in `specs/gh-15-auto-review-pr/quickstart.md`
+- [X] T026 [P] Update automatic managed-PR eligibility, label inheritance, durable ownership/recovery, repair scope, and human handoff in `SPEC.md`
+- [X] T027 [P] Update user-facing automatic PR review behavior and configuration guidance in `README.md` and `elixir/README.md`
+- [X] T028 Validate every scenario in `specs/gh-15-auto-review-pr/quickstart.md` and reconcile any documentation drift across `specs/gh-15-auto-review-pr/spec.md`, `specs/gh-15-auto-review-pr/plan.md`, and `specs/gh-15-auto-review-pr/contracts/managed-pr-review.md`
+- [X] T029 Run `make -C elixir all`, review the final diff for secrets, unrelated/generated changes, incomplete tasks, constitution violations, and documentation omissions, and record results in `specs/gh-15-auto-review-pr/quickstart.md`
 
 ---
 
@@ -171,3 +171,7 @@ Task T009: Add single originating-issue worker tests in github_launcher_test.exs
 - `[US#]` maps each task to its specification user story.
 - Custom checklist markers are reviewer-owned and are not modified during implementation.
 - Commit after coherent task groups and stop on a failing sequential dependency.
+
+## Phase 7: Convergence
+
+- [X] T030 CRITICAL Add stable issue/PR-context logs and assertions for managed-PR handoff success/failure and automatic review dispatch/suppression per Constitution VI and plan: observability decision in `elixir/lib/symphony_elixir/github/agent_tool.ex`, `elixir/lib/symphony_elixir/github/client.ex`, and `elixir/test/symphony_elixir/github_adapter_test.exs` (missing)

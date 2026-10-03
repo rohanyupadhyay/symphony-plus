@@ -90,7 +90,17 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
           %{"state" => "awaiting_approval", "phase" => "x", "summary" => "x"},
           %{"state" => "awaiting_approval", "phase" => "x", "summary" => "x", "gate" => "x"},
           %{"state" => "awaiting_review", "phase" => "x", "summary" => "x"},
-          %{"state" => "awaiting_review", "phase" => "x", "summary" => "x", "pr_number" => 0}
+          %{"state" => "awaiting_review", "phase" => "x", "summary" => "x", "pr_number" => 0},
+          %{"state" => "review_pending", "phase" => "review", "summary" => "x", "pr_number" => 7},
+          %{
+            "state" => "review_pending",
+            "phase" => "review",
+            "summary" => "x",
+            "pr_number" => 0,
+            "branch" => "topic",
+            "head_sha" => String.duplicate("a", 40)
+          },
+          %{"state" => "review_pending", "phase" => "review", "summary" => "x", "pr_number" => 7, "branch" => "topic", "head_sha" => "short"}
         ] do
       assert {:error, _reason} = WorkflowControl.valid_checkpoint(invalid)
     end
@@ -109,6 +119,95 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
            }) =~ "/symphony retry"
 
     assert WorkflowControl.render_comment(%{"phase" => "other"}) =~ "Symphony is waiting."
+  end
+
+  test "review pending is an automatic one-shot trigger with durable identity" do
+    checkpoint =
+      checkpoint_comment(80, "review_pending", %{
+        "phase" => "review",
+        "pr_number" => 7,
+        "branch" => "symphony/gh-15-auto-review-pr",
+        "head_sha" => String.duplicate("a", 40)
+      })
+
+    context = %{
+      "pull_request" => %{
+        "number" => 7,
+        "state" => "open",
+        "merged" => false,
+        "labels" => [%{"name" => "symphony"}],
+        "head" => %{
+          "ref" => "symphony/gh-15-auto-review-pr",
+          "sha" => String.duplicate("a", 40),
+          "repo" => %{"full_name" => "octo/repo", "fork" => false}
+        },
+        "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+      },
+      "checks" => %{"head_sha" => String.duplicate("a", 40)}
+    }
+
+    assert %{dispatchable: true, trigger: trigger} =
+             WorkflowControl.derive([checkpoint], context, @authorized)
+
+    assert trigger == %{
+             "kind" => "automatic_review",
+             "pr_number" => 7,
+             "branch" => "symphony/gh-15-auto-review-pr",
+             "head_sha" => String.duplicate("a", 40)
+           }
+
+    consumed = checkpoint_comment(81, "awaiting_review", %{"pr_number" => 7})
+    refute WorkflowControl.derive([checkpoint, consumed], context, @authorized).dispatchable
+  end
+
+  test "review pending suppresses unsafe, terminal, unlabeled, or stale managed pull requests" do
+    sha = String.duplicate("a", 40)
+
+    checkpoint =
+      checkpoint_comment(80, "review_pending", %{
+        "phase" => "review",
+        "pr_number" => 7,
+        "branch" => "topic",
+        "head_sha" => sha
+      })
+
+    valid = %{
+      "pull_request" => %{
+        "number" => 7,
+        "state" => "open",
+        "merged" => false,
+        "labels" => [%{"name" => "symphony"}],
+        "head" => %{
+          "ref" => "topic",
+          "sha" => sha,
+          "repo" => %{"full_name" => "octo/repo", "fork" => false}
+        },
+        "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+      },
+      "checks" => %{"head_sha" => sha}
+    }
+
+    mutations = [
+      fn context -> put_in(context, ["pull_request", "state"], "closed") end,
+      fn context -> put_in(context, ["pull_request", "merged"], true) end,
+      fn context -> put_in(context, ["pull_request", "labels"], []) end,
+      fn context -> put_in(context, ["pull_request", "head", "repo", "fork"], true) end,
+      fn context -> put_in(context, ["pull_request", "head", "repo", "full_name"], "fork/repo") end,
+      fn context -> put_in(context, ["pull_request", "head", "ref"], "other") end,
+      fn context -> put_in(context, ["pull_request", "head", "sha"], String.duplicate("b", 40)) end,
+      fn context -> put_in(context, ["checks", "head_sha"], String.duplicate("b", 40)) end
+    ]
+
+    for mutate <- mutations do
+      refute WorkflowControl.derive([checkpoint], mutate.(valid), @authorized).dispatchable
+    end
+
+    assert %{dispatchable: true} =
+             WorkflowControl.derive(
+               [checkpoint],
+               put_in(valid, ["pull_request", "labels"], ["symphony", 7]),
+               @authorized
+             )
   end
 
   test "derives an initially dispatchable issue and ignores malformed event fields" do

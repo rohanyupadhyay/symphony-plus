@@ -46,6 +46,11 @@ Important boundary:
   non-closing tracking reference. The workflow MUST preserve one reference across pull request
   updates and MUST NOT use an auto-closing keyword when issue closure is owned by a separate
   merged-pull-request transition.
+- An implementation MAY durably continue a workflow-created, same-repository pull request into an
+  automatic review pass. It MUST retain the originating issue as the sole scheduling/workspace
+  identity, apply required eligibility labels before the handoff, bind the handoff to the exact
+  branch and pushed head, reject fork/cross-repository or terminal pull requests, and preserve a
+  mandatory human-review/merge boundary.
 
 ## 2. Goals and Non-Goals
 

@@ -521,11 +521,25 @@ defmodule SymphonyElixir.GitHub.AdapterTest do
 
       body =
         case path do
-          "/repos/octo/repo/issues/42/comments" -> [raw_comment(10, "OWNER", marker)]
-          "/repos/octo/repo/pulls/7" -> %{"number" => 7, "state" => "open", "merged" => false}
-          "/repos/octo/repo/issues/7/comments" -> []
-          "/repos/octo/repo/pulls/7/comments" -> []
-          "/repos/octo/repo/pulls/7/reviews" -> [raw_review(101, "reviewer", "MEMBER", "CHANGES_REQUESTED")]
+          "/repos/octo/repo/issues/42/comments" ->
+            [raw_comment(10, "OWNER", marker)]
+
+          "/repos/octo/repo/pulls/7" ->
+            %{"number" => 7, "state" => "open", "merged" => false, "head" => %{"sha" => String.duplicate("a", 40)}}
+
+          "/repos/octo/repo/issues/7/comments" ->
+            []
+
+          "/repos/octo/repo/pulls/7/comments" ->
+            []
+
+          "/repos/octo/repo/pulls/7/reviews" ->
+            [raw_review(101, "reviewer", "MEMBER", "CHANGES_REQUESTED")]
+
+          "/repos/octo/repo/commits/" <> rest ->
+            if String.ends_with?(rest, "/check-runs"),
+              do: %{"check_runs" => []},
+              else: %{"sha" => String.duplicate("a", 40), "statuses" => []}
         end
 
       {:ok, %{status: 200, body: body}}
@@ -550,6 +564,63 @@ defmodule SymphonyElixir.GitHub.AdapterTest do
     assert_receive {:workflow_request, "/repos/octo/repo/issues/7/comments", %{"page" => 1}}
     assert_receive {:workflow_request, "/repos/octo/repo/pulls/7/comments", %{"page" => 1}}
     assert_receive {:workflow_request, "/repos/octo/repo/pulls/7/reviews", %{"page" => 1}}
+  end
+
+  test "review pending enriches current-head checks before automatic dispatch" do
+    sha = String.duplicate("a", 40)
+
+    marker =
+      WorkflowControl.render_comment(%{
+        "state" => "review_pending",
+        "phase" => "review",
+        "summary" => "Review PR #7.",
+        "pr_number" => 7,
+        "branch" => "topic",
+        "head_sha" => sha
+      })
+
+    request_fun = fn "GET", path, _params, nil, _settings ->
+      body =
+        case path do
+          "/repos/octo/repo/issues/42/comments" ->
+            [raw_comment(10, "OWNER", marker)]
+
+          "/repos/octo/repo/pulls/7" ->
+            %{
+              "number" => 7,
+              "state" => "open",
+              "merged" => false,
+              "labels" => [%{"name" => "symphony"}],
+              "head" => %{
+                "ref" => "topic",
+                "sha" => sha,
+                "repo" => %{"full_name" => "octo/repo", "fork" => false}
+              },
+              "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+            }
+
+          "/repos/octo/repo/issues/7/comments" ->
+            []
+
+          "/repos/octo/repo/pulls/7/comments" ->
+            []
+
+          "/repos/octo/repo/pulls/7/reviews" ->
+            []
+
+          "/repos/octo/repo/commits/" <> rest ->
+            if String.ends_with?(rest, "/check-runs"),
+              do: %{"check_runs" => [%{"id" => 1, "status" => "completed", "conclusion" => "failure", "head_sha" => sha}]},
+              else: %{"sha" => sha, "statuses" => [%{"id" => 2, "state" => "pending"}]}
+        end
+
+      {:ok, %{status: 200, body: body}}
+    end
+
+    issue = GitHubClient.normalize_issue_for_test(raw_issue(42), "octo/repo")
+    assert {:ok, enriched} = GitHubClient.enrich_issue_for_test(issue, workflow_tracker_settings(), request_fun)
+    assert enriched.native_ref["workflow_control"]["trigger"]["kind"] == "automatic_review"
+    assert get_in(enriched.native_ref, ["workflow_control", "checkpoint", "head_sha"]) == sha
   end
 
   test "github_workflow_checkpoint validates a pushed approval SHA and posts to the current issue" do
@@ -595,6 +666,214 @@ defmodule SymphonyElixir.GitHub.AdapterTest do
 
     assert_receive {:checkpoint_request, "POST", "/repos/octo/repo/issues/42/comments", %{}, %{"body" => body}}
     assert {:ok, %{"gate" => "spec"}} = WorkflowControl.decode_checkpoint(body)
+  end
+
+  test "github_workflow_checkpoint validates and labels a managed pull request before review handoff" do
+    sha = String.duplicate("a", 40)
+
+    response =
+      GitHubAgentTool.execute(
+        "github_workflow_checkpoint",
+        %{
+          "state" => "review_pending",
+          "phase" => "review",
+          "summary" => "PR #7 is ready for automatic review.",
+          "pr_number" => 7,
+          "branch" => "topic",
+          "head_sha" => sha
+        },
+        issue: %Issue{id: "42", native_ref: %{"number" => 42, "repo" => "octo/repo"}},
+        tracker_settings: Map.put(workflow_tracker_settings(), :required_labels, ["symphony"]),
+        github_client: fn method, path, _params, body, _opts ->
+          send(self(), {:managed_pr_request, method, path, body})
+
+          response_body =
+            case path do
+              "/repos/octo/repo/commits/" <> ^sha ->
+                %{"sha" => sha}
+
+              "/repos/octo/repo/branches/topic" ->
+                %{"commit" => %{"sha" => sha}}
+
+              "/repos/octo/repo/pulls/7" ->
+                %{
+                  "number" => 7,
+                  "state" => "open",
+                  "merged" => false,
+                  "head" => %{
+                    "ref" => "topic",
+                    "sha" => sha,
+                    "repo" => %{"full_name" => "octo/repo", "fork" => false}
+                  },
+                  "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+                }
+
+              "/repos/octo/repo/issues/7/labels" ->
+                [%{"name" => "symphony"}]
+
+              "/repos/octo/repo/issues/42/comments" ->
+                %{"id" => 500}
+            end
+
+          {:ok, %{status: if(method == "POST", do: 201, else: 200), body: response_body}}
+        end
+      )
+
+    assert response["success"]
+
+    assert_receive {:managed_pr_request, "POST", "/repos/octo/repo/issues/7/labels",
+                    %{
+                      "labels" => ["symphony"]
+                    }}
+
+    assert_receive {:managed_pr_request, "POST", "/repos/octo/repo/issues/42/comments",
+                    %{
+                      "body" => checkpoint_body
+                    }}
+
+    assert {:ok, %{"state" => "review_pending", "head_sha" => ^sha}} =
+             WorkflowControl.decode_checkpoint(checkpoint_body)
+  end
+
+  test "github_workflow_checkpoint rejects invalid managed pull requests and label failures" do
+    sha = String.duplicate("a", 40)
+
+    valid_pr = %{
+      "number" => 7,
+      "state" => "open",
+      "merged" => false,
+      "head" => %{
+        "ref" => "topic",
+        "sha" => sha,
+        "repo" => %{"full_name" => "octo/repo", "fork" => false}
+      },
+      "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+    }
+
+    invalid_prs = [
+      Map.put(valid_pr, "number", 8),
+      Map.put(valid_pr, "state", "closed"),
+      put_in(valid_pr, ["head", "ref"], "other"),
+      put_in(valid_pr, ["head", "sha"], String.duplicate("b", 40)),
+      put_in(valid_pr, ["base", "repo", "full_name"], "other/repo"),
+      put_in(valid_pr, ["head", "repo", "fork"], true),
+      []
+    ]
+
+    for invalid_pr <- invalid_prs do
+      result =
+        execute_review_pending(fn method, path, _params, _body, _opts ->
+          response = review_pending_fixture(path, sha, invalid_pr)
+          {:ok, %{status: if(method == "POST", do: 201, else: 200), body: response}}
+        end)
+
+      refute result["success"]
+    end
+
+    label_failure =
+      execute_review_pending(
+        fn _method, path, _params, _body, _opts ->
+          if String.ends_with?(path, "/issues/7/labels") do
+            {:error, :network}
+          else
+            {:ok, %{status: 200, body: review_pending_fixture(path, sha, valid_pr)}}
+          end
+        end,
+        []
+      )
+
+    refute label_failure["success"]
+
+    unknown =
+      execute_review_pending(fn _method, path, _params, _body, _opts ->
+        if String.ends_with?(path, "/pulls/7"),
+          do: :unexpected,
+          else: {:ok, %{status: 200, body: review_pending_fixture(path, sha, valid_pr)}}
+      end)
+
+    refute unknown["success"]
+  end
+
+  test "managed pull request lifecycle logs stable issue and PR context" do
+    sha = String.duplicate("a", 40)
+
+    valid_pr = %{
+      "number" => 7,
+      "state" => "open",
+      "merged" => false,
+      "labels" => [%{"name" => "symphony"}],
+      "head" => %{
+        "ref" => "topic",
+        "sha" => sha,
+        "repo" => %{"full_name" => "octo/repo", "fork" => false}
+      },
+      "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+    }
+
+    handoff_log =
+      capture_log(fn ->
+        response =
+          execute_review_pending(fn method, path, _params, _body, _opts ->
+            {:ok,
+             %{
+               status: if(method == "POST", do: 201, else: 200),
+               body: review_pending_fixture(path, sha, valid_pr)
+             }}
+          end)
+
+        assert response["success"]
+      end)
+
+    assert handoff_log =~ "Managed PR review handoff outcome=completed"
+    assert handoff_log =~ "issue_id=42"
+    assert handoff_log =~ "issue_identifier=GH-42"
+    assert handoff_log =~ "pr_number=7"
+
+    marker =
+      WorkflowControl.render_comment(%{
+        "state" => "review_pending",
+        "phase" => "review",
+        "summary" => "Review PR #7.",
+        "pr_number" => 7,
+        "branch" => "topic",
+        "head_sha" => sha
+      })
+
+    dispatch_log =
+      capture_log(fn ->
+        issue = GitHubClient.normalize_issue_for_test(raw_issue(42), "octo/repo")
+
+        assert {:ok, _enriched} =
+                 GitHubClient.enrich_issue_for_test(
+                   issue,
+                   workflow_tracker_settings(),
+                   review_context_request(marker, valid_pr, sha)
+                 )
+      end)
+
+    assert dispatch_log =~ "Managed PR automatic review outcome=dispatch"
+    assert dispatch_log =~ "issue_id=42"
+    assert dispatch_log =~ "pr_number=7"
+
+    failure_log =
+      capture_log(fn ->
+        issue = GitHubClient.normalize_issue_for_test(raw_issue(42), "octo/repo")
+
+        assert {:error, :network} =
+                 GitHubClient.enrich_issue_for_test(
+                   issue,
+                   workflow_tracker_settings(),
+                   fn "GET", path, _params, nil, _settings ->
+                     if String.ends_with?(path, "/issues/42/comments"),
+                       do: {:ok, %{status: 200, body: [raw_comment(10, "OWNER", marker)]}},
+                       else: {:error, :network}
+                   end
+                 )
+      end)
+
+    assert failure_log =~ "Managed PR review enrichment outcome=failed"
+    assert failure_log =~ "issue_identifier=GH-42"
+    assert failure_log =~ "reason=:network"
   end
 
   test "github_workflow_checkpoint rejects disabled control invalid context and stale branch heads" do
@@ -812,6 +1091,54 @@ defmodule SymphonyElixir.GitHub.AdapterTest do
         "authorized_associations" => ["OWNER", "MEMBER", "COLLABORATOR"]
       }
     })
+  end
+
+  defp execute_review_pending(client, required_labels \\ ["symphony"]) do
+    GitHubAgentTool.execute(
+      "github_workflow_checkpoint",
+      %{
+        "state" => "review_pending",
+        "phase" => "review",
+        "summary" => "Review PR #7.",
+        "pr_number" => 7,
+        "branch" => "topic",
+        "head_sha" => String.duplicate("a", 40)
+      },
+      issue: %Issue{
+        id: "42",
+        identifier: "GH-42",
+        native_ref: %{"number" => 42, "repo" => "octo/repo"}
+      },
+      tracker_settings: Map.put(workflow_tracker_settings(), :required_labels, required_labels),
+      github_client: client
+    )
+  end
+
+  defp review_pending_fixture(path, sha, pull_request) do
+    cond do
+      String.contains?(path, "/commits/") -> %{"sha" => sha}
+      String.contains?(path, "/branches/") -> %{"commit" => %{"sha" => sha}}
+      String.ends_with?(path, "/pulls/7") -> pull_request
+      String.ends_with?(path, "/issues/7/labels") -> [%{"name" => "symphony"}]
+      String.ends_with?(path, "/issues/42/comments") -> %{"id" => 500}
+    end
+  end
+
+  defp review_context_request(marker, pull_request, sha) do
+    fn "GET", path, _params, nil, _settings ->
+      body =
+        cond do
+          String.ends_with?(path, "/issues/42/comments") -> [raw_comment(10, "OWNER", marker)]
+          String.ends_with?(path, "/pulls/7") -> pull_request
+          String.ends_with?(path, "/issues/7/comments") -> []
+          String.ends_with?(path, "/pulls/7/comments") -> []
+          String.ends_with?(path, "/pulls/7/reviews") -> []
+          String.ends_with?(path, "/check-runs") -> %{"check_runs" => []}
+          String.ends_with?(path, "/status") -> %{"sha" => sha, "statuses" => []}
+        end
+
+      {:ok, %{status: 200, body: body}}
+    end
   end
 
   defp raw_issue(number) do
