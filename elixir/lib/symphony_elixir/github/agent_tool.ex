@@ -5,6 +5,7 @@ defmodule SymphonyElixir.GitHub.AgentTool do
 
   alias SymphonyElixir.GitHub.{Client, GitPush, WorkflowControl}
   alias SymphonyElixir.Tracker.Issue
+  require Logger
 
   @github_api_tool "github_api"
   @workflow_checkpoint_tool "github_workflow_checkpoint"
@@ -44,7 +45,7 @@ defmodule SymphonyElixir.GitHub.AgentTool do
     "properties" => %{
       "state" => %{
         "type" => "string",
-        "enum" => ["awaiting_input", "awaiting_approval", "awaiting_review", "blocked"]
+        "enum" => ["awaiting_input", "awaiting_approval", "review_pending", "awaiting_review", "blocked"]
       },
       "phase" => %{"type" => "string"},
       "summary" => %{"type" => "string"},
@@ -117,27 +118,45 @@ defmodule SymphonyElixir.GitHub.AgentTool do
     github_client = Keyword.get(opts, :github_client, &Client.request/5)
     client_opts = Keyword.take(opts, [:tracker_settings])
 
-    with true <- WorkflowControl.enabled?(provider) or {:error, :github_workflow_control_disabled},
-         {:ok, issue_number, repo} <- checkpoint_issue_context(Keyword.get(opts, :issue)),
-         {:ok, checkpoint} <- normalize_checkpoint(arguments),
-         :ok <- verify_checkpoint_head(checkpoint, repo, github_client, client_opts),
-         {:ok, checkpoint} <- add_review_cursor(checkpoint, repo, github_client, client_opts),
-         body <- WorkflowControl.render_comment(checkpoint),
-         {:ok, %{status: status, body: response_body}} <-
-           github_client.(
-             "POST",
-             "/repos/#{encoded_repo(repo)}/issues/#{issue_number}/comments",
-             %{},
-             %{"body" => body},
-             client_opts
-           ),
-         true <- status in 200..299 do
-      rest_response(status, response_body)
-    else
-      {:error, reason} -> failure_response(tool_error_payload(reason))
-      _ -> failure_response(tool_error_payload(:github_unknown_payload))
-    end
+    issue = Keyword.get(opts, :issue)
+
+    result =
+      with true <- WorkflowControl.enabled?(provider) or {:error, :github_workflow_control_disabled},
+           {:ok, issue_number, repo} <- checkpoint_issue_context(issue),
+           {:ok, checkpoint} <- normalize_checkpoint(arguments),
+           :ok <- verify_checkpoint_head(checkpoint, repo, github_client, client_opts),
+           :ok <- prepare_managed_pull_request(checkpoint, repo, tracker_settings, github_client, client_opts),
+           {:ok, checkpoint} <- add_review_cursor(checkpoint, repo, github_client, client_opts),
+           body <- WorkflowControl.render_comment(checkpoint),
+           {:ok, %{status: status, body: response_body}} <-
+             github_client.(
+               "POST",
+               "/repos/#{encoded_repo(repo)}/issues/#{issue_number}/comments",
+               %{},
+               %{"body" => body},
+               client_opts
+             ),
+           true <- status in 200..299 do
+        rest_response(status, response_body)
+      else
+        {:error, reason} -> failure_response(tool_error_payload(reason))
+        _ -> failure_response(tool_error_payload(:github_unknown_payload))
+      end
+
+    log_review_handoff(issue, arguments, result)
+    result
   end
+
+  defp log_review_handoff(%Issue{} = issue, %{"state" => "review_pending"} = checkpoint, result) do
+    outcome = if result["success"], do: "completed", else: "failed"
+
+    Logger.info(
+      "Managed PR review handoff outcome=#{outcome} issue_id=#{issue.id} " <>
+        "issue_identifier=#{issue.identifier} pr_number=#{checkpoint["pr_number"]}"
+    )
+  end
+
+  defp log_review_handoff(_issue, _checkpoint, _result), do: :ok
 
   defp checkpoint_issue_context(%Issue{native_ref: %{"number" => number, "repo" => repo}})
        when is_integer(number) and number > 0 and is_binary(repo) do
@@ -167,7 +186,8 @@ defmodule SymphonyElixir.GitHub.AgentTool do
 
   defp validate_approval_ref(_checkpoint), do: :ok
 
-  defp verify_checkpoint_head(%{"state" => "awaiting_approval"} = checkpoint, repo, client, opts) do
+  defp verify_checkpoint_head(%{"state" => state} = checkpoint, repo, client, opts)
+       when state in ["awaiting_approval", "review_pending"] do
     sha = checkpoint["head_sha"]
     branch = checkpoint["branch"]
 
@@ -192,6 +212,75 @@ defmodule SymphonyElixir.GitHub.AgentTool do
   end
 
   defp verify_checkpoint_head(_checkpoint, _repo, _client, _opts), do: :ok
+
+  defp prepare_managed_pull_request(
+         %{"state" => "review_pending", "pr_number" => pr_number} = checkpoint,
+         repo,
+         tracker_settings,
+         client,
+         opts
+       ) do
+    path = "/repos/#{encoded_repo(repo)}/pulls/#{pr_number}"
+
+    with {:ok, %{status: status, body: pull_request}} <- client.("GET", path, %{}, nil, opts),
+         true <- status in 200..299 or {:error, :github_pull_request_not_found},
+         :ok <- validate_managed_pull_request(pull_request, checkpoint, repo),
+         labels <- managed_pull_request_labels(tracker_settings),
+         {:ok, %{status: label_status}} <-
+           client.(
+             "POST",
+             "/repos/#{encoded_repo(repo)}/issues/#{pr_number}/labels",
+             %{},
+             %{"labels" => labels},
+             opts
+           ),
+         true <- label_status in 200..299 or {:error, :github_pull_request_label_failed} do
+      :ok
+    else
+      {:error, _reason} = error -> error
+      _ -> {:error, :github_unknown_payload}
+    end
+  end
+
+  defp prepare_managed_pull_request(_checkpoint, _repo, _settings, _client, _opts), do: :ok
+
+  defp validate_managed_pull_request(pull_request, checkpoint, repo) when is_map(pull_request) do
+    validators = [
+      {pull_request["number"] == checkpoint["pr_number"], :workflow_pull_request_mismatch},
+      {open_pull_request?(pull_request), :workflow_pull_request_terminal},
+      {get_in(pull_request, ["head", "ref"]) == checkpoint["branch"], :workflow_pull_request_branch_mismatch},
+      {get_in(pull_request, ["head", "sha"]) == checkpoint["head_sha"], :workflow_pull_request_head_mismatch},
+      {same_repository_pull_request?(pull_request, repo), :workflow_pull_request_repository_mismatch},
+      {get_in(pull_request, ["head", "repo", "fork"]) != true, :workflow_pull_request_fork}
+    ]
+
+    case Enum.find(validators, fn {valid?, _reason} -> not valid? end) do
+      nil -> :ok
+      {_valid?, reason} -> {:error, reason}
+    end
+  end
+
+  defp validate_managed_pull_request(_pull_request, _checkpoint, _repo),
+    do: {:error, :github_unknown_payload}
+
+  defp open_pull_request?(pull_request),
+    do: pull_request["state"] == "open" and pull_request["merged"] != true
+
+  defp same_repository_pull_request?(pull_request, repo) do
+    get_in(pull_request, ["head", "repo", "full_name"]) == repo and
+      get_in(pull_request, ["base", "repo", "full_name"]) == repo
+  end
+
+  defp managed_pull_request_labels(tracker_settings) do
+    tracker_settings
+    |> Map.get(:required_labels, ["symphony"])
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> case do
+      [] -> ["symphony"]
+      labels -> labels
+    end
+  end
 
   defp add_review_cursor(%{"state" => "awaiting_review", "pr_number" => pr_number} = checkpoint, repo, client, opts) do
     paths = [

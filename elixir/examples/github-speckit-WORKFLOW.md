@@ -98,10 +98,20 @@ Advance exactly one state machine:
    follows `.github/pull_request_template.md`, passes `cd elixir && mix pr_body.check --file <path>`,
    and contains exactly one `Tracks #{{ issue.id }}` line. The body must not use auto-closing
    keywords for the source issue. Preserve this single reference across create, update, retry, and
-   revision. Post an `awaiting_review` checkpoint containing the pull request number.
-8. Apply implementation-only review feedback directly. Requirements or design feedback re-enters
+   revision. For a newly created managed pull request, post a `review_pending` checkpoint with
+   `phase=review`, the pull request number, issue branch, and exact pushed head. The host applies
+   the `symphony` label before recording the checkpoint, and the next poll starts the automatic
+   review without another command.
+8. On an `automatic_review` trigger, review the complete diff and supplied PR conversation,
+   reviews, inline comments, merge state, and current-head checks. Diagnose whether failures are
+   PR-caused, repair only in-scope defects on the same branch, run targeted tests and
+   `make -C elixir all`, push through `github_git_push`, and record findings, corrections, check
+   status, validation, and omissions. If required evidence is incomplete or an external blocker
+   remains, checkpoint `blocked` with the exact recovery action. Otherwise post a fresh
+   `awaiting_review` checkpoint; never merge solely on the automated review.
+9. Apply implementation-only review feedback directly. Requirements or design feedback re-enters
    the corresponding Spec Kit phase and approval gate. Update the same branch and PR.
-9. After merge, comment with final validation and close the parent issue explicitly. The tracking
+10. After merge, comment with final validation and close the parent issue explicitly. The tracking
    reference never owns issue closure. If the PR is closed without merge, keep the issue open and
    ask for revise, replacement, or cancellation instead.
 
