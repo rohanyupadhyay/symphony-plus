@@ -1,3 +1,12 @@
+<!--
+Sync Impact Report
+- Version change: 1.0.0 -> 1.1.0
+- Modified principles/sections: Development Workflow and Quality Gates (agent merge authority)
+- Added sections: None
+- Removed sections: None
+- Follow-up TODOs: None
+-->
+
 # Symphony Plus Constitution
 
 ## Core Principles
@@ -79,9 +88,11 @@ analysis findings MUST be remediated in the owning artifact before implementatio
 
 Implementation MUST remain narrowly scoped, preserve the pull request template exactly, and record
 targeted plus full-gate validation. Non-trivial changes MUST receive an adversarial review that
-challenges complexity and adjacent lifecycle paths. Human review and merge are mandatory; agents
-MUST NOT auto-merge. Exceptions to a principle require an explicit complexity entry in the plan,
-the rejected simpler alternative, and reviewer approval.
+challenges complexity and adjacent lifecycle paths. Human review and approval are mandatory.
+Symphony Plus MAY merge a pull request only after required reviews and status checks pass, no
+blocking review feedback remains, and the pull request satisfies the repository's merge policy.
+Exceptions to a principle require an explicit complexity entry in the plan, the rejected simpler
+alternative, and reviewer approval.
 
 ## Governance
 
@@ -96,4 +107,4 @@ redefines governance, MINOR adds a principle or materially expands obligations, 
 wording without changing obligations. The amendment MUST update the version and ISO date; the
 ratification date remains the date of initial adoption.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-28 | **Last Amended**: 2026-09-28
+**Version**: 1.1.0 | **Ratified**: 2026-09-28 | **Last Amended**: 2026-10-03
