@@ -165,6 +165,26 @@ defmodule SymphonyElixir.GitHubLauncherTest do
     assert normalized =~ "final merged-PR comments"
   end
 
+  test "GitHub Spec Kit template tracks source issues without auto-closing them" do
+    template =
+      "../../examples/github-speckit-WORKFLOW.md"
+      |> Path.expand(__DIR__)
+      |> File.read!()
+
+    normalized = String.replace(template, ~r/\s+/, " ")
+
+    assert template =~ ~S(Tracks #{{ issue.id }})
+    assert length(Regex.scan(~r/Tracks #\{\{ issue\.id \}\}/, template)) == 1
+    assert normalized =~ ~S(exactly one `Tracks #{{ issue.id }}`)
+    assert normalized =~ "created or updated"
+    assert normalized =~ "create, update, retry, and revision"
+    assert normalized =~ "closed without merge"
+    assert normalized =~ ".github/pull_request_template.md"
+    assert normalized =~ "mix pr_body.check --file"
+    assert normalized =~ "must not use auto-closing keywords"
+    assert normalized =~ "After merge, comment with final validation and close the parent issue"
+  end
+
   test "AI-agent runbook installs repository files under .symphony" do
     runbook =
       "../../docs/agent-installation.md"

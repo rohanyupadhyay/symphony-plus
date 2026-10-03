@@ -42,6 +42,10 @@ Important boundary:
   process does not need a duplicate tracker login or direct access to raw tracker credentials.
 - A successful run can end at a workflow-defined handoff state (for example `Human Review`), not
   necessarily `Done`.
+- A workflow-created pull request SHOULD identify its originating same-repository issue with a
+  non-closing tracking reference. The workflow MUST preserve one reference across pull request
+  updates and MUST NOT use an auto-closing keyword when issue closure is owned by a separate
+  merged-pull-request transition.
 
 ## 2. Goals and Non-Goals
 
