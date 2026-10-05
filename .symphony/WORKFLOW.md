@@ -211,7 +211,18 @@ Commit the converged implementation and call `github_git_push`. Open or update o
 against `main` using the repository template and `Tracks #{{ issue.id }}` rather than an
 auto-closing keyword. Add validation results, dependency advisory output, and omissions to the PR
 body. Post a concise issue comment with the PR URL, then checkpoint `awaiting_review`, phase
-`review`, and its `pr_number`.
+`review`, and its `pr_number`. When the pull request is first created, instead checkpoint
+`review_pending`, phase `review`, with its `pr_number`, the issue branch, and the exact pushed
+`head_sha`; the host applies the `symphony` label before recording the checkpoint.
+
+An `automatic_review` trigger starts one review-and-repair cycle in this same issue workspace.
+Inspect the complete diff, conversation, formal reviews, inline comments, merge state, and
+current-head checks. Reproduce and fix in-scope findings, distinguish PR-caused failures from
+external blockers, run targeted tests and `make -C elixir all`, push through `github_git_push`, and
+update the same PR. Record findings, corrections, check status, validation, and omissions. End a
+successful automatic cycle with a fresh `awaiting_review` checkpoint; use `blocked` with an exact
+recovery action when required evidence or an external dependency prevents completion. Never merge
+solely on the automated review.
 
 Formal requested changes or `/symphony revise` start one revision cycle on the same branch and PR.
 Use Spec Kit again only when requirements or architecture changed. After updates, rerun targeted

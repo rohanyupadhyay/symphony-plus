@@ -8,7 +8,7 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
   """
 
   @marker_regex ~r/<!-- symphony-control:v1:([^\s]+) -->/
-  @states ~w(awaiting_input awaiting_approval awaiting_review blocked)
+  @states ~w(awaiting_input awaiting_approval review_pending awaiting_review blocked)
   @gates ~w(spec plan implementation)
   @commands ~w(retry status cancel)
   @default_associations ~w(OWNER MEMBER COLLABORATOR)
@@ -124,6 +124,21 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
     if positive_integer?(pr_number), do: :ok, else: {:error, :invalid_workflow_pr_number}
   end
 
+  defp validate_checkpoint_state(%{
+         "state" => "review_pending",
+         "phase" => "review",
+         "pr_number" => pr_number,
+         "branch" => branch,
+         "head_sha" => head_sha
+       }) do
+    cond do
+      not positive_integer?(pr_number) -> {:error, :invalid_workflow_pr_number}
+      not present?(branch) -> {:error, :invalid_workflow_branch}
+      not (is_binary(head_sha) and byte_size(head_sha) == 40) -> {:error, :invalid_workflow_head_sha}
+      true -> :ok
+    end
+  end
+
   defp validate_checkpoint_state(%{"state" => "awaiting_input"}),
     do: {:error, :missing_workflow_prompt}
 
@@ -132,6 +147,9 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
 
   defp validate_checkpoint_state(%{"state" => "awaiting_review"}),
     do: {:error, :invalid_workflow_pr_number}
+
+  defp validate_checkpoint_state(%{"state" => "review_pending"}),
+    do: {:error, :invalid_workflow_review_pending}
 
   defp validate_checkpoint_state(_checkpoint), do: :ok
 
@@ -178,6 +196,10 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
     "Symphony is waiting for pull-request review or merge. Use `/symphony revise <instructions>` to request another pass."
   end
 
+  defp checkpoint_guidance(%{"state" => "review_pending"}) do
+    "Symphony will automatically review and validate this pull request on the next scheduling opportunity."
+  end
+
   defp checkpoint_guidance(%{"state" => "blocked", "prompt" => prompt}) when is_binary(prompt) do
     prompt <> "\n\nUse `/symphony retry`, `/symphony status`, or `/symphony cancel`."
   end
@@ -211,9 +233,55 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
       "awaiting_input" -> latest_input_trigger(later_comments, checkpoint)
       "awaiting_approval" -> latest_valid_command(later_comments, checkpoint)
       "blocked" -> latest_valid_command(later_comments, checkpoint)
+      "review_pending" -> automatic_review_trigger(checkpoint, review_context)
       "awaiting_review" -> review_trigger(checkpoint, later_comments, review_context, authorized)
     end
   end
+
+  defp automatic_review_trigger(checkpoint, context) do
+    pull_request = Map.get(context, "pull_request", %{})
+
+    if valid_automatic_review?(checkpoint, pull_request, context) do
+      Map.take(checkpoint, ~w(pr_number branch head_sha))
+      |> Map.put("kind", "automatic_review")
+    end
+  end
+
+  defp valid_automatic_review?(checkpoint, pull_request, context) do
+    open_pull_request?(pull_request) and pull_request["number"] == checkpoint["pr_number"] and
+      matching_review_head?(checkpoint, pull_request, context) and
+      safe_same_repository_head?(pull_request) and symphony_labeled?(pull_request)
+  end
+
+  defp open_pull_request?(pull_request),
+    do: pull_request["state"] == "open" and pull_request["merged"] != true
+
+  defp matching_review_head?(checkpoint, pull_request, context) do
+    get_in(pull_request, ["head", "ref"]) == checkpoint["branch"] and
+      get_in(pull_request, ["head", "sha"]) == checkpoint["head_sha"] and
+      get_in(context, ["checks", "head_sha"]) == checkpoint["head_sha"]
+  end
+
+  defp safe_same_repository_head?(pull_request) do
+    head_repo = get_in(pull_request, ["head", "repo"])
+    base_repo = get_in(pull_request, ["base", "repo"])
+
+    is_map(head_repo) and is_map(base_repo) and head_repo["fork"] != true and
+      head_repo["full_name"] == base_repo["full_name"]
+  end
+
+  defp symphony_labeled?(pull_request) do
+    pull_request
+    |> Map.get("labels", [])
+    |> Enum.map(&label_name/1)
+    |> Enum.member?("symphony")
+  end
+
+  defp label_name(%{"name" => name}) when is_binary(name),
+    do: name |> String.trim() |> String.downcase()
+
+  defp label_name(name) when is_binary(name), do: name |> String.trim() |> String.downcase()
+  defp label_name(_label), do: ""
 
   defp latest_input_trigger(comments, checkpoint) do
     comments

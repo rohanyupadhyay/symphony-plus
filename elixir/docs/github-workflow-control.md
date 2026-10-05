@@ -103,6 +103,14 @@ fields are `prompt`, `gate`, `branch`, `head_sha`, and `pr_number`. Approval che
 checkpoints record the current PR conversation, inline-comment, and formal-review IDs so old events
 are not handled twice.
 
+`review_pending` is the automatic managed-PR handoff. It requires `phase=review`, the PR number,
+the exact same-repository branch, and its 40-character pushed head. Before posting the checkpoint,
+the host validates that PR identity and head, adds the configured required label idempotently, and
+only then records the checkpoint. The next successful poll enriches the issue with the PR,
+conversation, inline comments, formal reviews, and all current-head check runs/statuses, then
+dispatches the originating issue workspace without another human command. Forks, cross-repository
+heads, removed labels, stale heads, closed/merged PRs, and incomplete review context do not dispatch.
+
 For Spec Kit workflows, each readable checkpoint summary is also the operator's audit trail. It
 must name every phase actually invoked, the current checkpoint and next phase, question counts and
 zero-question reasons, material assumptions, analyze and convergence cycle counts, validation, and
@@ -151,7 +159,9 @@ The latest authorized hidden marker is reconstructed from GitHub comments on eve
 so restarts need no Symphony database. One issue keeps its existing workspace across phases.
 
 Only issues carrying all configured required labels are enriched. A waiting issue requires its
-issue-comment pages to be read each poll. PR endpoints are queried only for `awaiting_review`.
+issue-comment pages to be read each poll. PR endpoints are queried for `review_pending` and
+`awaiting_review`; required-context retrieval failure fails the atomic issue fetch rather than
+dispatching with partial evidence.
 Repositories with many simultaneously labeled issues should increase `polling.interval_ms` and
 monitor GitHub rate-limit headers. This implementation uses polling, not webhooks.
 

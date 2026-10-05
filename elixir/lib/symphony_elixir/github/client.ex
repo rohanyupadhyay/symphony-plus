@@ -552,37 +552,64 @@ defmodule SymphonyElixir.GitHub.Client do
 
   defp enrich_issue(%Issue{} = issue, settings, request_fun, identity_fun) do
     if WorkflowControl.enabled?(settings.provider) and workflow_candidate?(issue, settings.required_labels) do
-      with {:ok, trusted_bot_login} <- trusted_bot_login(settings.auth, identity_fun),
-           {:ok, comments} <- fetch_collection(issue_comments_path(settings, issue.id), settings, request_fun),
-           initial <-
-             WorkflowControl.derive(
-               comments,
-               %{},
-               WorkflowControl.authorized_associations(settings.provider),
-               trusted_bot_login
-             ),
-           {:ok, review_context} <- maybe_fetch_review_context(initial.checkpoint, settings, request_fun) do
-        derived =
-          WorkflowControl.derive(
-            comments,
-            review_context,
-            WorkflowControl.authorized_associations(settings.provider),
-            trusted_bot_login
-          )
-
-        control = %{
-          "state" => derived.checkpoint && derived.checkpoint["state"],
-          "phase" => derived.checkpoint && derived.checkpoint["phase"],
-          "checkpoint" => derived.checkpoint,
-          "trigger" => derived.trigger
-        }
-
-        native_ref = Map.put(issue.native_ref || %{}, "workflow_control", control)
-        {:ok, %{issue | native_ref: native_ref, dispatchable: derived.dispatchable}}
-      end
+      result = enrich_workflow_issue(issue, settings, request_fun, identity_fun)
+      log_review_enrichment(issue, result)
+      result
     else
       {:ok, issue}
     end
+  end
+
+  defp enrich_workflow_issue(issue, settings, request_fun, identity_fun) do
+    with {:ok, trusted_bot_login} <- trusted_bot_login(settings.auth, identity_fun),
+         {:ok, comments} <- fetch_collection(issue_comments_path(settings, issue.id), settings, request_fun),
+         initial <-
+           WorkflowControl.derive(
+             comments,
+             %{},
+             WorkflowControl.authorized_associations(settings.provider),
+             trusted_bot_login
+           ),
+         {:ok, review_context} <- maybe_fetch_review_context(initial.checkpoint, settings, request_fun) do
+      derived =
+        WorkflowControl.derive(
+          comments,
+          review_context,
+          WorkflowControl.authorized_associations(settings.provider),
+          trusted_bot_login
+        )
+
+      control = %{
+        "state" => derived.checkpoint && derived.checkpoint["state"],
+        "phase" => derived.checkpoint && derived.checkpoint["phase"],
+        "checkpoint" => derived.checkpoint,
+        "trigger" => derived.trigger
+      }
+
+      native_ref = Map.put(issue.native_ref || %{}, "workflow_control", control)
+      {:ok, %{issue | native_ref: native_ref, dispatchable: derived.dispatchable}}
+    end
+  end
+
+  defp log_review_enrichment(issue, {:ok, enriched}) do
+    checkpoint = get_in(enriched.native_ref, ["workflow_control", "checkpoint"])
+    trigger = get_in(enriched.native_ref, ["workflow_control", "trigger"])
+
+    if checkpoint && checkpoint["state"] == "review_pending" do
+      outcome = if trigger && trigger["kind"] == "automatic_review", do: "dispatch", else: "suppressed"
+
+      Logger.info(
+        "Managed PR automatic review outcome=#{outcome} issue_id=#{issue.id} " <>
+          "issue_identifier=#{issue.identifier} pr_number=#{checkpoint["pr_number"]}"
+      )
+    end
+  end
+
+  defp log_review_enrichment(issue, {:error, reason}) do
+    Logger.error(
+      "Managed PR review enrichment outcome=failed issue_id=#{issue.id} " <>
+        "issue_identifier=#{issue.identifier} reason=#{inspect(reason)}"
+    )
   end
 
   defp trusted_bot_login(%{kind: :token}, _identity_fun), do: {:ok, nil}
@@ -602,7 +629,8 @@ defmodule SymphonyElixir.GitHub.Client do
     Enum.all?(required_labels, &MapSet.member?(normalized, normalize_label(&1)))
   end
 
-  defp maybe_fetch_review_context(%{"state" => "awaiting_review", "pr_number" => pr_number}, settings, request_fun) do
+  defp maybe_fetch_review_context(%{"state" => state, "pr_number" => pr_number}, settings, request_fun)
+       when state in ["review_pending", "awaiting_review"] do
     fetch_review_context(pr_number, settings, request_fun)
   end
 
@@ -625,14 +653,69 @@ defmodule SymphonyElixir.GitHub.Client do
          {:ok, review_comments} <-
            fetch_collection(pull_request_path(settings, pr_number) <> "/comments", settings, request_fun),
          {:ok, reviews} <-
-           fetch_collection(pull_request_path(settings, pr_number) <> "/reviews", settings, request_fun) do
+           fetch_collection(pull_request_path(settings, pr_number) <> "/reviews", settings, request_fun),
+         {:ok, checks} <- fetch_current_head_checks(pull_request, settings, request_fun) do
       {:ok,
        %{
          "pull_request" => pull_request,
          "conversation_comments" => conversation_comments,
          "review_comments" => review_comments,
-         "reviews" => reviews
+         "reviews" => reviews,
+         "checks" => checks
        }}
+    end
+  end
+
+  defp fetch_current_head_checks(%{"head" => %{"sha" => sha}}, settings, request_fun)
+       when is_binary(sha) do
+    base = "/repos/#{encoded_repo(settings.repo)}/commits/#{sha}"
+
+    with {:ok, check_runs} <- fetch_check_runs(base <> "/check-runs", settings, request_fun),
+         {:ok, statuses} <- fetch_commit_statuses(base <> "/status", sha, settings, request_fun) do
+      {:ok, %{"head_sha" => sha, "check_runs" => check_runs, "statuses" => statuses}}
+    end
+  end
+
+  defp fetch_current_head_checks(_pull_request, _settings, _request_fun),
+    do: {:error, :github_unknown_payload}
+
+  defp fetch_check_runs(path, settings, request_fun, page \\ 1, acc \\ []) do
+    with {:ok, %{"check_runs" => check_runs}} <-
+           request_with_settings(
+             "GET",
+             path,
+             %{"per_page" => @page_size, "page" => page},
+             nil,
+             settings,
+             request_fun,
+             false
+           ),
+         true <- is_list(check_runs) or {:error, :github_unknown_payload} do
+      updated = [check_runs | acc]
+
+      if length(check_runs) < @page_size,
+        do: {:ok, updated |> Enum.reverse() |> List.flatten()},
+        else: fetch_check_runs(path, settings, request_fun, page + 1, updated)
+    end
+  end
+
+  defp fetch_commit_statuses(path, sha, settings, request_fun, page \\ 1, acc \\ []) do
+    with {:ok, %{"sha" => ^sha, "statuses" => statuses}} <-
+           request_with_settings(
+             "GET",
+             path,
+             %{"per_page" => @page_size, "page" => page},
+             nil,
+             settings,
+             request_fun,
+             false
+           ),
+         true <- is_list(statuses) or {:error, :github_unknown_payload} do
+      updated = [statuses | acc]
+
+      if length(statuses) < @page_size,
+        do: {:ok, updated |> Enum.reverse() |> List.flatten()},
+        else: fetch_commit_statuses(path, sha, settings, request_fun, page + 1, updated)
     end
   end
 

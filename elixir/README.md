@@ -279,7 +279,10 @@ codex:
 - Optional workflow control: `tracker.provider.workflow_control.enabled: true` makes versioned
   issue comments a restart-safe pause/resume mechanism. The `github_workflow_checkpoint` tool
   posts checkpoints for the current issue, and only configured GitHub author associations can
-  supply answers or commands. See [the workflow-control guide](docs/github-workflow-control.md)
+  supply answers or commands. A managed PR can use `review_pending` to validate its same-repository
+  branch/head, inherit the required label, and automatically resume the originating issue workspace
+  with complete current-head review/check context before the normal human `awaiting_review` handoff.
+  See [the workflow-control guide](docs/github-workflow-control.md)
   and the [reusable Spec Kit template](examples/github-speckit-WORKFLOW.md).
 
 For repository-local GitHub/Spec Kit automation, keep the executable workflow and operator guide
