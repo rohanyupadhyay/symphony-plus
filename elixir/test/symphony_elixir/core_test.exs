@@ -1,6 +1,14 @@
 defmodule SymphonyElixir.CoreTest do
   use SymphonyElixir.TestSupport
 
+  alias SymphonyElixir.GitHub.MergeQueue
+
+  test "merge queue is supervised once and responds synchronously" do
+    pid = Process.whereis(MergeQueue)
+    assert is_pid(pid)
+    assert %{enabled: false} = MergeQueue.status(pid)
+  end
+
   test "config defaults and validation checks" do
     write_workflow_file!(Workflow.workflow_file_path(),
       tracker_kind: "memory",

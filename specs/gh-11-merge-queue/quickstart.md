@@ -72,3 +72,13 @@ Expected: the active candidate cannot merge, the durable outcome explains the tr
 Return rate limiting, timeout, unknown mergeability, or check-infrastructure failure while candidate validation is active.
 
 Expected: the entry is retried with bounded backoff or explicitly operator-blocked; it is not labeled incompatible and its author is not asked to rewrite the branch.
+
+## Validation Record
+
+Validated on 2026-10-05 with deterministic ExUnit fixtures:
+
+- Scenarios 1–8: covered by `github_merge_queue_test.exs`, `github_merge_queue_state_test.exs`, `github_client_test.exs`, and `github_workflow_control_test.exs`.
+- Focused command: `mix test test/symphony_elixir/github_merge_queue_state_test.exs test/symphony_elixir/github_client_test.exs test/symphony_elixir/github_workflow_control_test.exs test/symphony_elixir/github_merge_queue_config_test.exs test/symphony_elixir/github_merge_queue_test.exs test/symphony_elixir/core_test.exs` — 83 tests, 0 failures before convergence remediation; subsequent focused recovery suite — 32 tests, 0 failures.
+- Public-spec command: `mix specs.check` — passed.
+- Intentional omissions: no live GitHub repository mutation was performed; conditional update, checkpoint comment, status/review reads, and merge requests use deterministic client/backend fixtures so validation cannot merge a real pull request.
+- Full gate: recorded by task T038 after the final `make -C elixir all` run.

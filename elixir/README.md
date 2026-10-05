@@ -285,6 +285,22 @@ codex:
   See [the workflow-control guide](docs/github-workflow-control.md)
   and the [reusable Spec Kit template](examples/github-speckit-WORKFLOW.md).
 
+#### Serialized merge queue
+
+Set `merge_queue.enabled: true` to enable serialized final integration. Admissions are keyed by PR
+number and exact approved head SHA. Only the active head is updated against the latest target;
+checks and eligibility are re-read on the resulting SHA before a conditional merge. Non-head PRs
+are never updated by queue polling.
+
+```yaml
+merge_queue:
+  enabled: true
+  poll_interval_ms: 30000
+  max_retry_backoff_ms: 300000
+```
+
+See [the merge-queue guide](docs/github-merge-queue.md) for dependencies, outcomes, and recovery.
+
 For repository-local GitHub/Spec Kit automation, keep the executable workflow and operator guide
 under the tool-owned `.symphony/` directory:
 

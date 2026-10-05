@@ -45,8 +45,10 @@ For a complete agent-operated installation in a Spec Kit repository, use the
 [AI-agent installation runbook](elixir/docs/agent-installation.md). See
 [GitHub workflow control](elixir/docs/github-workflow-control.md) for the protocol and security
 model, including restart-safe automatic review of Symphony-created pull requests in the
-originating issue workspace before mandatory human review. Each operator creates and owns a private
-App; Symphony Plus never ships or hosts a shared
+originating issue workspace before mandatory human review. Approved pull requests can optionally enter a
+[serialized merge queue](elixir/docs/github-merge-queue.md), which revalidates each queue head
+against the target revision it will actually merge into while leaving non-head branches alone.
+Each operator creates and owns a private App; Symphony Plus never ships or hosts a shared
 private key. Target repositories should keep their workflow and operator guide together as
 `.symphony/WORKFLOW.md` and `.symphony/README.md`; this tool-owned directory is the documented
 Symphony Plus convention.

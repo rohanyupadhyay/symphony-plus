@@ -88,6 +88,9 @@ defmodule SymphonyElixir.Config do
     end
   end
 
+  @spec merge_queue_settings() :: Schema.MergeQueue.t()
+  def merge_queue_settings, do: settings!().merge_queue
+
   @doc false
   @spec local_workspace_root() :: Path.t()
   def local_workspace_root do

@@ -21,6 +21,7 @@ defmodule SymphonyElixir.MixProject do
           SymphonyElixir.GitHub.AuthCache,
           SymphonyElixir.GitHub.Client,
           SymphonyElixir.GitHub.GitPush,
+          SymphonyElixir.GitHub.MergeQueue.Backend,
           SymphonyElixir.GitLab.Client,
           SymphonyElixir.Jira.Client,
           SymphonyElixir.Linear.Client,
@@ -51,6 +52,7 @@ defmodule SymphonyElixir.MixProject do
         ]
       ],
       test_ignore_filters: [
+        "test/support/github_fixtures.ex",
         "test/support/snapshot_support.exs",
         "test/support/test_support.exs"
       ],

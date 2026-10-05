@@ -51,6 +51,15 @@ Important boundary:
   identity, apply required eligibility labels before the handoff, bind the handoff to the exact
   branch and pushed head, reject fork/cross-repository or terminal pull requests, and preserve a
   mandatory human-review/merge boundary.
+- An implementation MAY admit approved pull requests to a durable merge queue. When enabled, it
+  MUST serialize final integration per repository and target branch, validate only the active
+  queue head against the latest target revision, and merge only the exact validated head while
+  repository policy remains satisfied. Target movement invalidates prior evidence. Deterministic
+  conflicts or check failures MUST return that generation for update without blocking independent
+  successors; transient provider failures MUST NOT be reported as code incompatibility.
+- Queued pull requests that are not the active head MUST NOT be rewritten merely because their
+  target advances. Same-repository dependencies MUST be explicit and durable; missing,
+  closed-unmerged, cross-repository, self, or cyclic dependencies MUST produce an actionable hold.
 
 ## 2. Goals and Non-Goals
 
