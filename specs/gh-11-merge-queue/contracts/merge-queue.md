@@ -28,13 +28,13 @@ If the source cannot apply to the target or required candidate checks fail deter
 
 Immediately before merge the coordinator MUST confirm:
 
-- current PR head equals the candidate head;
+- current PR head equals the post-update `candidate_sha` (the guarded update must have started from the admitted source head);
 - current target SHA equals the candidate target;
 - the candidate checks are passing for the candidate SHA;
 - approvals, labels, dependencies, and repository merge policy remain satisfied;
 - the PR remains open and is still the active queue head.
 
-Any mismatch makes validation stale and prevents merge. Target movement creates a new candidate against the new target. The merge mutation supplies the expected PR head SHA. After success or an ambiguous response, the coordinator re-reads PR and target state before advancing or retrying.
+Any mismatch makes validation stale and prevents merge. Target movement creates a new candidate against the new target. The merge mutation supplies `candidate_sha` as the expected PR head SHA. After success or an ambiguous response, the coordinator re-reads PR and target state before advancing or retrying.
 
 ## Recovery and reconciliation
 

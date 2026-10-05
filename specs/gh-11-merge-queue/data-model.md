@@ -42,16 +42,16 @@ An updated head is a new generation. It does not inherit candidate validation or
 ## Integration Candidate
 
 - `pull_request_number`
-- `head_sha`: exact reviewed source revision
+- `source_head_sha`: exact reviewed source revision admitted before final integration
 - `target_sha`: exact target revision used to build the candidate
 - `candidate_sha`: resulting queue-head revision after guarded final-integration update
 - `created_at`
 - `validation_state`: `pending`, `passing`, `deterministic_failure`, `transient_failure`, `stale`, or `cancelled`
 - `required_check_evidence`: check names, conclusions, and candidate SHA
 
-**Identity**: `(repository, target_branch, pull_request_number, head_sha, target_sha)`.
+**Identity**: `(repository, target_branch, pull_request_number, source_head_sha, target_sha)`.
 
-**Freshness invariant**: A candidate is mergeable only while the current PR head equals `head_sha`, the current target equals `target_sha`, dependency state remains satisfied, and repository eligibility remains current.
+**Freshness invariant**: Candidate construction is valid only when the guarded update starts from `source_head_sha`. After the update, a candidate is mergeable only while the current PR head equals `candidate_sha`, the current target equals `target_sha`, dependency state remains satisfied, and repository eligibility remains current. The conditional merge supplies `candidate_sha` as its expected PR head.
 
 ## Queue Outcome
 
