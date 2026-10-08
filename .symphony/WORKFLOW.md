@@ -131,7 +131,7 @@ exact structure and fill every field; use `none` or `not run` instead of omittin
 Never collapse phases into broad labels. Mark each phase `completed`, `not run`, or
 `skipped: <reason>`, including its cumulative run count and outcome. Explain every zero-question
 phase. Include the same report in `awaiting_input`, `blocked`, `awaiting_approval`,
-`awaiting_review`, `/symphony status`, and final merged-PR comments.
+`review_pending`, `merge_queued`, `/symphony status`, and final merged-PR comments.
 
 ## Resume commands
 
@@ -216,31 +216,36 @@ violations, and required documentation updates.
 Commit the converged implementation and call `github_git_push`. Open or update one pull request
 against `main` using the repository template and `Tracks #{{ issue.id }}` rather than an
 auto-closing keyword. Add validation results, dependency advisory output, and omissions to the PR
-body. Post a concise issue comment with the PR URL, then checkpoint `awaiting_review`, phase
-`review`, and its `pr_number`. When the pull request is first created, instead checkpoint
-`review_pending`, phase `review`, with its `pr_number`, the issue branch, and the exact pushed
-`head_sha`; the host applies the `symphony` label before recording the checkpoint.
+body. Post a concise issue comment with the PR URL, then checkpoint `review_pending`, phase
+`review`, with its `pr_number`, the issue branch, and the exact pushed `head_sha`; the host validates
+managed same-repository provenance and applies the `symphony` label before recording the checkpoint.
 
 An `automatic_review` trigger starts one review-and-repair cycle in this same issue workspace.
 Inspect the complete diff, conversation, formal reviews, inline comments, merge state, and
-current-head checks. Reproduce and fix in-scope findings, distinguish PR-caused failures from
-external blockers, run targeted tests and `make -C elixir all`, push through `github_git_push`, and
-update the same PR. Record findings, corrections, check status, validation, and omissions. End a
-successful automatic cycle with a fresh `awaiting_review` checkpoint; use `blocked` with an exact
-recovery action when required evidence or an external dependency prevents completion. Automated
-review alone never admits or merges the pull request.
+current-head checks. If any human review remains `CHANGES_REQUESTED`, make no mutation,
+post no checkpoint, and end the turn; the host suppresses further automatic review, branch updates,
+and merge work until that review is dismissed, then resumes automatically. Otherwise reproduce and
+fix in-scope automatic-review findings, distinguish PR-caused failures from external blockers, run
+targeted tests and `make -C elixir all`, push through `github_git_push`, and update the same PR.
+Record findings, corrections, check status, validation, and omissions.
 
-Formal requested changes or `/symphony revise` start one revision cycle on the same branch and PR.
-Use Spec Kit again only when requirements or architecture changed. After updates, rerun targeted
-tests and `make -C elixir all`, call `github_git_push`, and create a fresh awaiting-review
-checkpoint. A formal approval with no unresolved change request authorizes queue admission, not a
-direct agent merge. Re-read the pull request to obtain its exact current head, head branch, base
-branch, repository, and any explicitly declared same-repository prerequisite PR numbers. Call
-`github_workflow_checkpoint` with `state: merge_queued`, `phase: merge_queue`, the PR number,
-branch, exact head SHA, repository, target branch, the approval trigger's numeric `id` as
-`admission_sequence`, and normalized `dependencies` (or `[]`). End the turn after the durable
+If the automatic review changes and pushes the branch, post a fresh `review_pending` checkpoint for
+the new exact head and end the turn so that revision receives its own complete automatic review.
+After a successful no-mutation automatic review with no findings remaining, re-read the pull request
+to obtain its exact current head, head branch, base branch, repository, and any explicitly declared
+same-repository prerequisite PR numbers. The current head MUST equal the `automatic_review`
+trigger's `head_sha`. Call `github_workflow_checkpoint` with
+`state: merge_queued`, `phase: merge_queue`, the PR number, branch, exact head SHA, repository,
+target branch, the `automatic_review` trigger's `admission_sequence`, and normalized `dependencies`
+(or `[]`). Human approval is neither requested nor required. End the turn after the durable
 checkpoint is recorded; the host-owned queue will revalidate repository policy and the exact
-candidate before merging.
+candidate before merging. Use `blocked` with an exact recovery action only when required non-review
+evidence or an external dependency prevents completion.
+
+`/symphony revise` starts one revision cycle on the same branch and PR when no active human change
+request exists. Use Spec Kit again only when requirements or architecture changed. After updates,
+rerun targeted tests and `make -C elixir all`, call `github_git_push`, and return the exact current
+head to automatic review through a fresh `review_pending` checkpoint.
 
 ## Failure handling
 

@@ -96,12 +96,13 @@ defmodule SymphonyElixir.GitHubLauncherTest do
     assert resumed =~ "status"
 
     normalized_prompt = String.replace(workflow.prompt_template, ~r/\s+/, " ")
-    assert normalized_prompt =~ "fresh `awaiting_review` checkpoint"
     assert normalized_prompt =~ "`state: merge_queued`"
     assert normalized_prompt =~ "host-owned queue will revalidate"
     assert normalized_prompt =~ "An `automatic_review` trigger starts one review-and-repair cycle"
     assert normalized_prompt =~ "this same issue workspace"
-    assert normalized_prompt =~ "Automated review alone never admits or merges"
+    assert normalized_prompt =~ "Human approval is neither requested nor required"
+    assert normalized_prompt =~ "make no mutation"
+    assert normalized_prompt =~ "resumes automatically"
   end
 
   test "repository self-hosting guide uses the dedicated GitHub App profile" do
@@ -161,12 +162,14 @@ defmodule SymphonyElixir.GitHubLauncherTest do
     assert normalized =~ "Never omit a phase from the ledger"
     assert normalized =~ "including its cumulative run count and outcome"
 
-    for context <- ~w(awaiting_input blocked awaiting_approval review_pending awaiting_review) do
+    for context <- ~w(awaiting_input blocked awaiting_approval review_pending merge_queued) do
       assert normalized =~ context
     end
 
     assert normalized =~ "automatic_review"
     assert normalized =~ "current-head checks"
+    assert normalized =~ "Human approval is not required"
+    assert normalized =~ "resumes automatically"
 
     assert normalized =~ "/symphony status"
     assert normalized =~ "final merged-PR comments"

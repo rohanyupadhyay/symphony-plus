@@ -19,7 +19,7 @@
 - `admission_sequence`: stable provider event/comment identifier; PR number breaks ties
 - `state`: `queued`, `held_dependency`, `validating`, `merge_ready`, `update_required`, `transient_blocked`, `cancelled`, or `merged`
 - `prerequisites`: normalized unique PR-number list
-- `eligibility_evidence`: current approval, required-check, label, open-state, and repository-policy evidence
+- `eligibility_evidence`: trusted automatic-review, human change-request, required-check, label, open-state, and repository-policy evidence
 - `latest_outcome`: validation/merge outcome, reason, and recovery action
 
 **Identity**: `(repository, pull_request_number, head_sha, admission_sequence)`.
@@ -67,7 +67,7 @@ Outcome writes are idempotent for the candidate identity. An ambiguous merge res
 ## State Transitions
 
 ```text
-approved/current head
+auto-reviewed/current head
   -> queued
   -> held_dependency -> queued
   -> validating
@@ -78,10 +78,11 @@ approved/current head
 validating
   -> update_required (conflict or deterministic check failure)
   -> transient_blocked -> validating (retry/recovery)
-  -> cancelled (closed, approval dismissed, label removed, or explicit cancellation)
+  -> held (human changes requested; resumes when dismissed)
+  -> cancelled (closed, label removed, or explicit cancellation)
 
 update_required
-  -> queued only after a new head has current checks and approval eligibility
+  -> queued only after a new head has current checks and trusted automatic review
 ```
 
 ## Reconstruction and Cleanup

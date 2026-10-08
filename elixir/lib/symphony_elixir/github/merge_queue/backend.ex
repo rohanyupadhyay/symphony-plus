@@ -11,8 +11,10 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
   @spec load() :: {:ok, [State.Entry.t()]} | {:error, term()}
   def load do
     with {:ok, repo} <- configured_repo(),
+         {:ok, app_id} <- configured_app_id(),
          {:ok, issues} <- api("GET", "/repos/#{repo}/issues", %{"state" => "all", "labels" => "symphony"}, nil) do
-      with {:ok, entries} <- load_issue_admissions(repo, Enum.reject(issues, &Map.has_key?(&1, "pull_request"))) do
+      with {:ok, entries} <-
+             load_issue_admissions(repo, Enum.reject(issues, &Map.has_key?(&1, "pull_request")), app_id) do
         resolve_dependencies(repo, entries)
       end
     end
@@ -23,11 +25,11 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
   def execute({:advance, entry}) do
     result =
       with {:ok, fresh} <- refresh(entry.repository, entry),
-           true <-
-             (fresh.eligible and fresh.head_sha in [entry.source_head_sha, entry.candidate_sha]) or
-               {:error, :eligibility_lost} do
+           :ok <- admission_preflight(fresh, entry) do
         MergeQueue.advance(entry, adapter(entry.repository))
       else
+        {:retry, reason} -> {:retry, reason}
+        {:blocked, reason} -> {:blocked, reason}
         {:error, reason} -> {:blocked, reason}
       end
 
@@ -48,11 +50,23 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
 
   def execute(_action), do: {:blocked, :invalid_action}
 
-  defp admissions(repo, issue) do
-    with {:ok, comments} <- api("GET", "/repos/#{repo}/issues/#{issue["number"]}/comments", %{}, nil) do
+  @doc false
+  @spec admission_preflight(map(), State.Entry.t()) :: :ok | {:retry, term()} | {:blocked, term()}
+  def admission_preflight(%{hold_reason: :human_changes_requested}, _entry),
+    do: {:retry, :human_changes_requested}
+
+  def admission_preflight(%{eligible: true, head_sha: head}, entry)
+      when head in [entry.source_head_sha, entry.candidate_sha],
+      do: :ok
+
+  def admission_preflight(_fresh, _entry), do: {:blocked, :eligibility_lost}
+
+  defp admissions(repo, issue, app_id) do
+    with {:ok, comments} <-
+           api("GET", "/repos/#{repo}/issues/#{issue["number"]}/comments", %{"per_page" => 100}, nil) do
       latest =
         comments
-        |> Enum.filter(&trusted_checkpoint?/1)
+        |> Enum.filter(&checkpoint_trusted_for_app?(&1, app_id))
         |> Enum.sort_by(&(&1["id"] || 0), :desc)
         |> Enum.find(fn comment -> match?({:ok, _checkpoint}, WorkflowControl.decode_checkpoint(comment["body"] || "")) end)
 
@@ -62,9 +76,9 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
     end
   end
 
-  defp load_issue_admissions(repo, issues) do
+  defp load_issue_admissions(repo, issues, app_id) do
     Enum.reduce_while(issues, {:ok, []}, fn issue, {:ok, acc} ->
-      case admissions(repo, issue) do
+      case admissions(repo, issue, app_id) do
         {:ok, entries} -> {:cont, {:ok, entries ++ acc}}
         error -> {:halt, error}
       end
@@ -235,18 +249,29 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
     with {:ok, pull_request} <- Client.pull_request(repo, entry.pr_number),
          {:ok, target_sha} <- target_sha(repo, entry.target_branch),
          {:ok, reviews} <- Client.reviews(repo, entry.pr_number) do
-      labels = pull_request |> Map.get("labels", []) |> Enum.map(&(&1["name"] || &1))
+      eligible = eligible_for_autonomous_merge?(pull_request, reviews, entry)
+      hold_reason = if WorkflowControl.autonomous_merge_allowed?(reviews), do: nil, else: :human_changes_requested
 
-      latest_reviews = latest_reviews_by_author(reviews)
-
-      eligible =
-        pull_request["state"] == "open" and pull_request["merged"] != true and
-          pull_request["mergeable"] != false and "symphony" in labels and
-          Enum.any?(latest_reviews, &(&1["state"] == "APPROVED")) and
-          not Enum.any?(latest_reviews, &(&1["state"] in ["CHANGES_REQUESTED", "DISMISSED"]))
-
-      {:ok, %{head_sha: get_in(pull_request, ["head", "sha"]), target_sha: target_sha, eligible: eligible}}
+      {:ok,
+       %{
+         head_sha: get_in(pull_request, ["head", "sha"]),
+         target_sha: target_sha,
+         eligible: eligible,
+         hold_reason: hold_reason
+       }}
     end
+  end
+
+  @doc false
+  @spec eligible_for_autonomous_merge?(map(), [map()], State.Entry.t()) :: boolean()
+  def eligible_for_autonomous_merge?(pull_request, reviews, entry) do
+    labels = pull_request |> Map.get("labels", []) |> Enum.map(&(&1["name"] || &1))
+
+    pull_request["state"] == "open" and pull_request["merged"] != true and
+      pull_request["mergeable"] != false and "symphony" in labels and
+      get_in(pull_request, ["base", "ref"]) == entry.target_branch and
+      same_repository_pull_request?(pull_request, entry.repository) and
+      WorkflowControl.autonomous_merge_allowed?(reviews)
   end
 
   defp merge(repo, number, sha) do
@@ -272,10 +297,43 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
     end
   end
 
-  defp trusted_checkpoint?(comment) do
-    get_in(comment, ["user", "type"]) == "Bot" and
-      (is_map(comment["performed_via_github_app"]) or String.ends_with?(get_in(comment, ["user", "login"]) || "", "[bot]"))
+  defp configured_app_id do
+    case get_in(Config.settings!().tracker.provider, ["auth", "app_id"]) do
+      app_id when is_integer(app_id) and app_id > 0 ->
+        {:ok, app_id}
+
+      app_id when is_binary(app_id) ->
+        case Integer.parse(app_id) do
+          {parsed, ""} when parsed > 0 -> {:ok, parsed}
+          _ -> {:error, :missing_github_app_id}
+        end
+
+      _ ->
+        {:error, :missing_github_app_id}
+    end
   end
+
+  @doc false
+  @spec checkpoint_trusted_for_app?(map(), pos_integer()) :: boolean()
+  def checkpoint_trusted_for_app?(comment, app_id) do
+    get_in(comment, ["user", "type"]) == "Bot" and
+      get_in(comment, ["performed_via_github_app", "id"]) == app_id
+  end
+
+  defp same_repository_pull_request?(pull_request, repo) do
+    head_repo = get_in(pull_request, ["head", "repo"])
+    base_repo = get_in(pull_request, ["base", "repo"])
+
+    is_map(head_repo) and is_map(base_repo) and head_repo["full_name"] == repo and
+      base_repo["full_name"] == repo and same_repository_identity?(head_repo, base_repo)
+  end
+
+  defp same_repository_identity?(%{"id" => head_id}, %{"id" => base_id})
+       when is_integer(head_id) and is_integer(base_id),
+       do: head_id == base_id
+
+  defp same_repository_identity?(head_repo, base_repo),
+    do: head_repo["full_name"] == base_repo["full_name"]
 
   defp persist_outcome(_entry, {:retry, _reason} = result), do: result
 
@@ -316,13 +374,6 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
       {:ok, _pull_request} -> {:error, :ambiguous_merge}
       {:error, _reason} -> {:error, :ambiguous_merge}
     end
-  end
-
-  defp latest_reviews_by_author(reviews) do
-    reviews
-    |> Enum.sort_by(&(&1["id"] || 0))
-    |> Enum.reduce(%{}, fn review, acc -> Map.put(acc, get_in(review, ["user", "login"]), review) end)
-    |> Map.values()
   end
 
   defp outcome({kind, _detail}), do: kind

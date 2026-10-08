@@ -10,9 +10,9 @@
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - Safely merge approved pull requests in sequence (Priority: P1)
+### User Story 1 - Safely merge automatically reviewed pull requests in sequence (Priority: P1)
 
-As a maintainer, I want approved pull requests to enter a merge queue so multiple changes can be developed and reviewed in parallel without being merged against stale assumptions.
+As a maintainer, I want successfully auto-reviewed Symphony-managed pull requests to enter a merge queue without human approval so multiple changes can be developed and reviewed in parallel without being merged against stale assumptions.
 
 **Why this priority**: Sequential integration and validation against the actual merge target are the core safety guarantees of the feature.
 
@@ -20,7 +20,7 @@ As a maintainer, I want approved pull requests to enter a merge queue so multipl
 
 **Acceptance Scenarios**:
 
-1. **Given** multiple eligible pull requests are approved, **When** they enter the merge queue, **Then** the system processes one pull request at a time in deterministic queue order.
+1. **Given** multiple eligible managed pull requests pass trusted automatic review, **When** they enter the merge queue, **Then** the system processes one pull request at a time in deterministic queue order.
 2. **Given** a pull request reaches the queue head, **When** validation begins, **Then** it is evaluated against the latest `main`, including every pull request merged ahead of it.
 3. **Given** the queue-head pull request passes required validation against the latest `main`, **When** repository merge policy is satisfied, **Then** it is merged before the next queued pull request begins final validation.
 
@@ -32,13 +32,13 @@ As a pull request author, I want a change that conflicts with or fails against t
 
 **Why this priority**: Earlier merges can invalidate later work; handling that outcome safely prevents broken integration and queue deadlock.
 
-**Independent Test**: Place a pull request behind another change that makes it conflict or fail required checks, then observe that the incompatible pull request is removed from active integration, the queue advances, and the updated pull request can re-enter only after approval and checks are current again.
+**Independent Test**: Place a pull request behind another change that makes it conflict or fail required checks, then observe that the incompatible pull request is removed from active integration, the queue advances, and the updated pull request can re-enter only after automatic review and checks are current again.
 
 **Acceptance Scenarios**:
 
 1. **Given** a queued pull request no longer applies cleanly to the latest `main`, **When** it reaches final validation, **Then** it leaves the active merge path without being merged and receives a specific update-required outcome.
 2. **Given** a queued pull request applies cleanly but fails required validation against the latest `main`, **When** the failure is recorded, **Then** it leaves the active merge path and later eligible pull requests may continue.
-3. **Given** an author updates a removed pull request, **When** its required checks and approval eligibility are current again, **Then** it can re-enter the queue according to the normal ordering policy.
+3. **Given** an author updates a removed pull request, **When** its required checks and trusted automatic review are current again, **Then** it can re-enter the queue according to the normal ordering policy.
 
 ---
 
@@ -68,17 +68,17 @@ As a contributor with dependent changes, I want pull requests to declare their d
 
 **Acceptance Scenarios**:
 
-1. **Given** a pull request declares an unmerged prerequisite, **When** it is approved, **Then** it cannot become the active queue head ahead of that prerequisite.
+1. **Given** an auto-reviewed pull request declares an unmerged prerequisite, **When** it is admitted, **Then** it cannot become the active queue head ahead of that prerequisite.
 2. **Given** all declared prerequisites merge, **When** the dependent pull request becomes eligible, **Then** it is validated against the resulting latest `main` before merge.
 3. **Given** a dependency is missing, closed without merge, cyclic, or otherwise unsatisfied, **When** queue eligibility is evaluated, **Then** the dependent pull request is held with a specific dependency outcome rather than guessed into an order.
 
 ### Edge Cases
 
-- The queue head is closed, approval is dismissed, required labels are removed, or required checks become stale while final validation is running.
+- The queue head is closed, a human requests changes, required labels are removed, or required checks become stale while final validation is running.
 - `main` advances between the start of validation and the merge attempt.
 - A merge succeeds but recording or advancing queue state is interrupted, followed by retry or service restart.
 - A pull request is updated while queued or during final validation.
-- Two approved pull requests declare the same prerequisite, or dependencies form a longer stack.
+- Two auto-reviewed pull requests declare the same prerequisite, or dependencies form a longer stack.
 - Dependency declarations form a cycle, reference a pull request from another repository, or reference a pull request closed without merge.
 - A transient validation or provider failure is distinguishable from a deterministic conflict or test incompatibility.
 - Multiple workers or repeated polls attempt to advance the same queue head.
@@ -88,14 +88,14 @@ As a contributor with dependent changes, I want pull requests to declare their d
 ### Functional Requirements
 
 - **FR-001**: The system MUST allow multiple pull requests to remain open and undergo review concurrently.
-- **FR-002**: Approved and otherwise eligible pull requests MUST enter a durable merge queue instead of merging immediately.
+- **FR-002**: Successfully auto-reviewed and otherwise eligible Symphony-managed pull requests MUST enter a durable merge queue without human approval instead of merging immediately.
 - **FR-003**: The merge queue MUST expose a deterministic order and MUST integrate no more than one queue-head pull request at a time for a repository and target branch.
 - **FR-004**: Before a queued pull request is merged, the system MUST validate it against the latest target-branch state, including all pull requests merged ahead of it.
-- **FR-005**: A merge MUST occur only when the exact candidate validated against the current target-branch state still satisfies required approvals, status checks, and repository merge policy at merge time.
+- **FR-005**: A merge MUST occur only when the exact candidate validated against the current target-branch state still has no active human change request and satisfies status checks and repository merge policy at merge time.
 - **FR-006**: If the target branch advances after validation begins, the system MUST treat the validation result as stale and revalidate before merging.
 - **FR-007**: A deterministic conflict or validation failure caused by the latest target-branch state MUST remove the pull request from the active merge path, preserve it for author updates, and record the specific reason and recovery action.
 - **FR-008**: Removing an incompatible pull request from the active merge path MUST allow the next independently eligible pull request to advance rather than blocking the whole queue.
-- **FR-009**: An updated pull request MUST NOT re-enter the merge queue until its required checks and approval eligibility apply to the updated head revision.
+- **FR-009**: An updated pull request MUST NOT re-enter the merge queue until trusted automatic review and required checks apply to the updated head revision.
 - **FR-010**: The system MUST NOT continuously rewrite or rebase open pull request branches merely because the target branch changes.
 - **FR-011**: The system MUST update or require an update to a pull request only when final integration requires it or when a concrete conflict or incompatibility has been detected.
 - **FR-012**: Pull request dependencies MUST be explicitly declared using a durable, repository-visible relationship and MUST constrain queue eligibility so prerequisites merge first.
@@ -106,12 +106,12 @@ As a contributor with dependent changes, I want pull requests to declare their d
 - **FR-017**: Queue state and recovery MUST be reconstructable from durable provider-visible state without depending on an in-memory-only ordering record.
 - **FR-018**: The system MUST distinguish deterministic pull-request incompatibility from transient provider or validation failure; transient failures MUST be retried or blocked explicitly without falsely requiring an author update.
 - **FR-019**: Operators and pull request authors MUST be able to observe queue position or state, current blocker, latest validation outcome, and required recovery action without exposing credentials or unnecessary provider payloads.
-- **FR-020**: Cancellation, pull request closure, approval dismissal, eligibility-label removal, target-branch change, and merge completion MUST reconcile safely with queued or in-progress work.
+- **FR-020**: Cancellation, pull request closure, human change-request creation or dismissal, eligibility-label removal, target-branch change, and merge completion MUST reconcile safely with queued or in-progress work. An active human change request MUST suspend all Symphony mutations and dismissal MUST resume processing automatically.
 - **FR-021**: The normative product contract and applicable operator documentation MUST describe serialized integration, current-target revalidation, non-continuous branch updates, dependency ordering, recovery, and human/repository-policy boundaries.
 
 ### Key Entities
 
-- **Merge Queue**: The durable ordered set of approved pull requests eligible for serialized integration into one repository target branch.
+- **Merge Queue**: The durable ordered set of successfully auto-reviewed managed pull requests eligible for serialized integration into one repository target branch.
 - **Queue Entry**: A pull request revision and its queue state, admission evidence, dependency state, validation outcome, blocker, and recovery action.
 - **Integration Candidate**: The exact pull request head and target-branch revision selected for final validation and possible merge.
 - **Dependency Relationship**: A durable directed link from a dependent pull request to each prerequisite pull request.
@@ -133,8 +133,8 @@ As a contributor with dependent changes, I want pull requests to declare their d
 ## Assumptions
 
 - The initial scope manages pull requests within one repository and serializes independently for each target branch; cross-repository dependencies are invalid.
-- Existing repository rules remain authoritative for required approvals, checks, and merge eligibility; the queue adds sequencing and freshness guarantees rather than weakening those rules.
+- Existing repository checks and merge rules remain authoritative; Symphony does not require human approval, while an active human change request remains a hard suspension signal.
 - Queue ordering among otherwise independent entries is first eligible, first queued, with stable tie-breaking; declared dependencies override that order.
-- A pull request update creates a new head revision whose checks and approvals are evaluated according to the repository's existing rules.
+- A pull request update creates a new head revision whose checks and trusted automatic review must be evaluated again.
 - The provider offers durable pull request metadata, comments, labels, checks, and merge-state evidence sufficient to reconstruct queue eligibility; the internal representation is deferred to planning.
 - Transient provider or check-infrastructure failures do not imply code incompatibility and therefore do not automatically require branch updates.

@@ -281,14 +281,16 @@ codex:
   posts checkpoints for the current issue, and only configured GitHub author associations can
   supply answers or commands. A managed PR can use `review_pending` to validate its same-repository
   branch/head, inherit the required label, and automatically resume the originating issue workspace
-  with complete current-head review/check context before the normal human `awaiting_review` handoff.
+  with complete current-head review/check context. Successful automatic review admits the managed
+  PR to the merge queue without human approval; a human change request suspends all mutations until
+  dismissal, then processing resumes automatically.
   See [the workflow-control guide](docs/github-workflow-control.md)
   and the [reusable Spec Kit template](examples/github-speckit-WORKFLOW.md).
 
 #### Serialized merge queue
 
 Set `merge_queue.enabled: true` to enable serialized final integration. Admissions are keyed by PR
-number and exact approved head SHA. Only the active head is updated against the latest target;
+number and exact automatically reviewed head SHA. Only the active head is updated against the latest target;
 checks and eligibility are re-read on the resulting SHA before a conditional merge. Non-head PRs
 are never updated by queue polling.
 

@@ -158,6 +158,10 @@ description: "Implementation tasks for the GitHub-backed serialized merge queue"
 - [X] T051 [US4] Persist actionable dependency blockers for missing, cross-repository, closed-unmerged, self, and cyclic relationships without blocking independent entries in `elixir/lib/symphony_elixir/github/merge_queue.ex`, `elixir/lib/symphony_elixir/github/merge_queue/backend.ex`, and focused tests
 - [X] T052 [US4] Run the dependency stack end-to-end through loader resolution, coordinator selection, and durable outcome execution, then complete a fresh Spec Kit requirement audit and full validation
 
+## Phase 10: Autonomous Review Admission
+
+- [X] T053 remove the human approval gate for same-repository PRs created by Symphony from issues, admit successful trusted automatic reviews directly to the merge queue, suspend every Symphony mutation while a human change request is active, resume automatically after dismissal, and cover provenance and lifecycle behavior with red-green tests
+
 ---
 
 ## Dependencies & Execution Order

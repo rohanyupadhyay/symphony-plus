@@ -49,10 +49,13 @@ Important boundary:
 - An implementation MAY durably continue a workflow-created, same-repository pull request into an
   automatic review pass. It MUST retain the originating issue as the sole scheduling/workspace
   identity, apply required eligibility labels before the handoff, bind the handoff to the exact
-  branch and pushed head, reject cross-repository or terminal pull requests, and preserve a
-  mandatory human-review boundary. A host-owned merge queue MAY perform the final merge only after
-  formal approval and current-target revalidation; the coding agent MUST NOT merge directly.
-- An implementation MAY admit approved pull requests to a durable merge queue. When enabled, it
+  branch and pushed head, and reject cross-repository or terminal pull requests. A successful
+  trusted automatic review MAY admit that exact managed pull request directly to a host-owned merge
+  queue without human approval. An active human `CHANGES_REQUESTED` review MUST suspend all agent
+  review, branch mutation, queue admission, and merge activity for that pull request until the
+  review is dismissed, at which point automatic processing MAY resume. The coding agent MUST NOT
+  merge directly.
+- An implementation MAY admit automatically reviewed pull requests to a durable merge queue. When enabled, it
   MUST serialize final integration per repository and target branch, validate only the active
   queue head against the latest target revision, and merge only the exact validated head while
   repository policy remains satisfied. Target movement invalidates prior evidence. Deterministic

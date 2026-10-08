@@ -139,6 +139,7 @@ defmodule SymphonyElixir.GitHub.AgentTool do
            {:ok, issue_number, repo} <- checkpoint_issue_context(issue),
            {:ok, checkpoint} <- normalize_checkpoint(arguments),
            :ok <- verify_checkpoint_head(checkpoint, repo, github_client, client_opts),
+           :ok <- validate_queue_authority(checkpoint, issue, repo, github_client, client_opts),
            :ok <- prepare_managed_pull_request(checkpoint, repo, tracker_settings, github_client, client_opts),
            {:ok, checkpoint} <- add_review_cursor(checkpoint, repo, github_client, client_opts),
            body <- WorkflowControl.render_comment(checkpoint),
@@ -230,6 +231,43 @@ defmodule SymphonyElixir.GitHub.AgentTool do
   end
 
   defp verify_checkpoint_head(_checkpoint, _repo, _client, _opts), do: :ok
+
+  defp validate_queue_authority(
+         %{"state" => "merge_queued", "pr_number" => pr_number} = checkpoint,
+         issue,
+         repo,
+         client,
+         opts
+       ) do
+    with true <- automatic_review_authority?(issue, checkpoint) or {:error, :workflow_queue_unmanaged_pull_request},
+         {:ok, %{status: review_status, body: reviews}} <-
+           client.(
+             "GET",
+             "/repos/#{encoded_repo(repo)}/pulls/#{pr_number}/reviews",
+             %{"per_page" => 100},
+             nil,
+             opts
+           ),
+         true <- (review_status in 200..299 and is_list(reviews)) or {:error, :github_pull_request_reviews_unavailable},
+         true <- WorkflowControl.autonomous_merge_allowed?(reviews) or {:error, :human_changes_requested} do
+      :ok
+    else
+      {:error, reason} -> {:error, reason}
+      _ -> {:error, :github_unknown_payload}
+    end
+  end
+
+  defp validate_queue_authority(_checkpoint, _issue_number, _repo, _client, _opts), do: :ok
+
+  defp automatic_review_authority?(%Issue{} = issue, checkpoint) do
+    trigger = get_in(issue.native_ref || %{}, ["workflow_control", "trigger"]) || %{}
+
+    trigger["kind"] == "automatic_review" and
+      trigger["pr_number"] == checkpoint["pr_number"] and
+      trigger["branch"] == checkpoint["branch"] and
+      trigger["head_sha"] == checkpoint["head_sha"] and
+      trigger["admission_sequence"] == checkpoint["admission_sequence"]
+  end
 
   defp prepare_managed_pull_request(
          %{"state" => state, "pr_number" => pr_number} = checkpoint,

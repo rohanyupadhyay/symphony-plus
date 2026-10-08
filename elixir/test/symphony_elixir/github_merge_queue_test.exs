@@ -23,6 +23,63 @@ defmodule SymphonyElixir.GitHub.MergeQueueTest do
     assert [] = Backend.decode_admission(terminal, 11)
   end
 
+  test "autonomous merge eligibility needs no approval and holds active human change requests" do
+    queued = entry(2, @sha_b, 1)
+
+    pull_request = %{
+      "state" => "open",
+      "merged" => false,
+      "mergeable" => true,
+      "labels" => [%{"name" => "symphony"}],
+      "head" => %{"repo" => %{"id" => 123, "full_name" => "octo/repo"}},
+      "base" => %{"ref" => "main", "repo" => %{"id" => 123, "full_name" => "octo/repo"}}
+    }
+
+    assert Backend.eligible_for_autonomous_merge?(pull_request, [], queued)
+
+    assert Backend.eligible_for_autonomous_merge?(
+             pull_request,
+             [%{"id" => 1, "state" => "APPROVED", "user" => %{"login" => "alice"}}],
+             queued
+           )
+
+    refute Backend.eligible_for_autonomous_merge?(
+             pull_request,
+             [%{"id" => 1, "state" => "CHANGES_REQUESTED", "user" => %{"login" => "alice"}}],
+             queued
+           )
+
+    refute Backend.eligible_for_autonomous_merge?(put_in(pull_request, ["base", "ref"], "release"), [], queued)
+    refute Backend.eligible_for_autonomous_merge?(put_in(pull_request, ["head", "repo", "id"], 456), [], queued)
+  end
+
+  test "durable admissions trust only the configured GitHub App" do
+    trusted = %{
+      "user" => %{"type" => "Bot", "login" => "symphony-plus[bot]"},
+      "performed_via_github_app" => %{"id" => 42}
+    }
+
+    assert Backend.checkpoint_trusted_for_app?(trusted, 42)
+    refute Backend.checkpoint_trusted_for_app?(trusted, 99)
+
+    refute Backend.checkpoint_trusted_for_app?(
+             %{"user" => %{"type" => "Bot", "login" => "foreign[bot]"}},
+             42
+           )
+  end
+
+  test "human change request preflight retries without consuming the queue generation" do
+    queued = entry(2, @sha_b, 1)
+
+    assert {:retry, :human_changes_requested} =
+             Backend.admission_preflight(
+               %{eligible: false, hold_reason: :human_changes_requested, head_sha: @sha_b},
+               queued
+             )
+
+    assert :ok = Backend.admission_preflight(%{eligible: true, head_sha: @sha_b}, queued)
+  end
+
   test "orders admissions stably, deduplicates generations, and isolates queue keys" do
     assert [] = MergeQueue.actions([], %{})
 

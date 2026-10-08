@@ -738,6 +738,22 @@ defmodule SymphonyElixir.GitHub.AdapterTest do
   test "github_workflow_checkpoint records an approved same-repository queue admission" do
     sha = String.duplicate("a", 40)
 
+    provenance =
+      raw_comment(
+        900,
+        "NONE",
+        WorkflowControl.render_comment(%{
+          "state" => "review_pending",
+          "phase" => "review",
+          "summary" => "Review PR #7.",
+          "pr_number" => 7,
+          "branch" => "topic",
+          "head_sha" => sha
+        })
+      )
+      |> put_in(["user", "type"], "Bot")
+      |> put_in(["user", "login"], "symphony-plus[bot]")
+
     arguments = %{
       "state" => "merge_queued",
       "phase" => "merge_queue",
@@ -751,21 +767,37 @@ defmodule SymphonyElixir.GitHub.AdapterTest do
       "dependencies" => []
     }
 
-    issue = %Issue{id: "42", native_ref: %{"number" => 42, "repo" => "octo/repo"}}
+    issue = %Issue{
+      id: "42",
+      native_ref: %{
+        "number" => 42,
+        "repo" => "octo/repo",
+        "workflow_control" => %{
+          "trigger" => %{
+            "kind" => "automatic_review",
+            "pr_number" => 7,
+            "branch" => "topic",
+            "head_sha" => sha,
+            "admission_sequence" => 901
+          }
+        }
+      }
+    }
+
     settings = Map.put(workflow_tracker_settings(), :required_labels, ["symphony"])
 
     client = fn method, path, _params, body, _opts ->
       send(self(), {:queue_admission_request, method, path, body})
 
       response_body =
-        case path do
-          "/repos/octo/repo/commits/" <> ^sha ->
+        case {method, path} do
+          {"GET", "/repos/octo/repo/commits/" <> ^sha} ->
             %{"sha" => sha}
 
-          "/repos/octo/repo/branches/topic" ->
+          {"GET", "/repos/octo/repo/branches/topic"} ->
             %{"commit" => %{"sha" => sha}}
 
-          "/repos/octo/repo/pulls/7" ->
+          {"GET", "/repos/octo/repo/pulls/7"} ->
             %{
               "number" => 7,
               "state" => "open",
@@ -781,10 +813,16 @@ defmodule SymphonyElixir.GitHub.AdapterTest do
               }
             }
 
-          "/repos/octo/repo/issues/7/labels" ->
+          {"GET", "/repos/octo/repo/issues/42/comments"} ->
+            [provenance]
+
+          {"GET", "/repos/octo/repo/pulls/7/reviews"} ->
+            []
+
+          {"POST", "/repos/octo/repo/issues/7/labels"} ->
             [%{"name" => "symphony"}]
 
-          "/repos/octo/repo/issues/42/comments" ->
+          {"POST", "/repos/octo/repo/issues/42/comments"} ->
             %{"id" => 501}
         end
 
@@ -823,6 +861,58 @@ defmodule SymphonyElixir.GitHub.AdapterTest do
 
     assert Jason.decode!(repository_mismatch["output"])["error"]["reason"] =~
              "workflow_queue_repository_mismatch"
+  end
+
+  test "github_workflow_checkpoint rejects queue admission without an exact automatic review trigger" do
+    result = execute_queue_admission([], [], :missing_trigger)
+
+    refute result["success"]
+
+    assert Jason.decode!(result["output"])["error"]["reason"] =~
+             "workflow_queue_unmanaged_pull_request"
+  end
+
+  test "github_workflow_checkpoint rejects a queue head newer than its automatic review trigger" do
+    result = execute_queue_admission([], [], :stale_trigger)
+
+    refute result["success"]
+
+    assert Jason.decode!(result["output"])["error"]["reason"] =~
+             "workflow_queue_unmanaged_pull_request"
+  end
+
+  test "github_workflow_checkpoint rejects queue admission while a human requests changes" do
+    sha = String.duplicate("a", 40)
+
+    provenance = [
+      raw_comment(
+        900,
+        "NONE",
+        WorkflowControl.render_comment(%{
+          "state" => "review_pending",
+          "phase" => "review",
+          "summary" => "Review PR #7.",
+          "pr_number" => 7,
+          "branch" => "topic",
+          "head_sha" => sha
+        })
+      )
+      |> put_in(["user", "type"], "Bot")
+      |> put_in(["user", "login"], "symphony-plus[bot]")
+    ]
+
+    reviews = [raw_review(901, "reviewer", "MEMBER", "CHANGES_REQUESTED")]
+    result = execute_queue_admission(provenance, reviews)
+
+    refute result["success"]
+    assert Jason.decode!(result["output"])["error"]["reason"] =~ "human_changes_requested"
+  end
+
+  test "github_workflow_checkpoint rejects malformed queue authority responses" do
+    result = execute_queue_admission([], [], :unexpected_reviews_response)
+
+    refute result["success"]
+    assert Jason.decode!(result["output"])["error"]["reason"] =~ "github_unknown_payload"
   end
 
   test "github_workflow_checkpoint rejects invalid managed pull requests and label failures" do
@@ -1215,6 +1305,110 @@ defmodule SymphonyElixir.GitHub.AdapterTest do
       github_client: client
     )
   end
+
+  defp execute_queue_admission(issue_comments, reviews, mode \\ :normal) do
+    sha = String.duplicate("a", 40)
+
+    arguments = %{
+      "state" => "merge_queued",
+      "phase" => "merge_queue",
+      "summary" => "Automatic review passed; queue PR #7.",
+      "pr_number" => 7,
+      "branch" => "topic",
+      "head_sha" => sha,
+      "repository" => "octo/repo",
+      "target_branch" => "main",
+      "admission_sequence" => 900,
+      "dependencies" => []
+    }
+
+    trigger =
+      case mode do
+        :missing_trigger -> nil
+        :stale_trigger -> queue_admission_trigger(String.duplicate("b", 40))
+        _ -> queue_admission_trigger(sha)
+      end
+
+    client = fn method, path, _params, _body, _opts ->
+      response = queue_admission_response(mode, method, path, sha, issue_comments, reviews)
+
+      case response do
+        {:ok, body} -> {:ok, %{status: if(method == "POST", do: 201, else: 200), body: body}}
+        :unexpected -> :unexpected
+      end
+    end
+
+    GitHubAgentTool.execute(
+      "github_workflow_checkpoint",
+      arguments,
+      issue: %Issue{
+        id: "42",
+        native_ref: %{
+          "number" => 42,
+          "repo" => "octo/repo",
+          "workflow_control" => %{"trigger" => trigger}
+        }
+      },
+      tracker_settings: Map.put(workflow_tracker_settings(), :required_labels, ["symphony"]),
+      github_client: client
+    )
+  end
+
+  defp queue_admission_trigger(sha) do
+    %{
+      "kind" => "automatic_review",
+      "pr_number" => 7,
+      "branch" => "topic",
+      "head_sha" => sha,
+      "admission_sequence" => 900
+    }
+  end
+
+  defp queue_admission_response(
+         :unexpected_reviews_response,
+         "GET",
+         "/repos/octo/repo/pulls/7/reviews",
+         _sha,
+         _comments,
+         _reviews
+       ),
+       do: :unexpected
+
+  defp queue_admission_response(_mode, "GET", "/repos/octo/repo/commits/" <> sha, sha, _comments, _reviews),
+    do: {:ok, %{"sha" => sha}}
+
+  defp queue_admission_response(_mode, "GET", "/repos/octo/repo/branches/topic", sha, _comments, _reviews),
+    do: {:ok, %{"commit" => %{"sha" => sha}}}
+
+  defp queue_admission_response(_mode, "GET", "/repos/octo/repo/pulls/7", sha, _comments, _reviews) do
+    {:ok,
+     %{
+       "number" => 7,
+       "state" => "open",
+       "merged" => false,
+       "head" => %{"ref" => "topic", "sha" => sha, "repo" => %{"id" => 123, "full_name" => "octo/repo"}},
+       "base" => %{"ref" => "main", "repo" => %{"id" => 123, "full_name" => "octo/repo"}}
+     }}
+  end
+
+  defp queue_admission_response(_mode, "GET", "/repos/octo/repo/issues/42/comments", _sha, comments, _reviews),
+    do: {:ok, comments}
+
+  defp queue_admission_response(_mode, "GET", "/repos/octo/repo/pulls/7/reviews", _sha, _comments, reviews),
+    do: {:ok, reviews}
+
+  defp queue_admission_response(_mode, "POST", "/repos/octo/repo/issues/7/labels", _sha, _comments, _reviews),
+    do: {:ok, [%{"name" => "symphony"}]}
+
+  defp queue_admission_response(
+         _mode,
+         "POST",
+         "/repos/octo/repo/issues/42/comments",
+         _sha,
+         _comments,
+         _reviews
+       ),
+       do: {:ok, %{"id" => 501}}
 
   defp review_pending_fixture(path, sha, pull_request) do
     cond do
