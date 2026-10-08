@@ -25,7 +25,7 @@ defmodule SymphonyElixir.GitHub.MergeQueue.StateTest do
   test "rejects invalid identities and dependency declarations" do
     assert {:error, :invalid_repository} = State.new_entry(%{"repository" => "elsewhere"})
 
-    assert {:error, :self_dependency} =
+    assert {:ok, %{dependencies: [12]}} =
              State.new_entry(%{
                "repository" => "octo/repo",
                "target_branch" => "main",

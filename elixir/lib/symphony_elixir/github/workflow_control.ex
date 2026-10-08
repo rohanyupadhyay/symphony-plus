@@ -114,7 +114,7 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
       "head_sha" => admission.source_head_sha,
       "outcome" => Atom.to_string(kind),
       "reason" => inspect(detail),
-      "recovery" => queue_recovery(kind)
+      "recovery" => queue_recovery(kind, detail)
     }
   end
 
@@ -290,10 +290,11 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
 
   defp checkpoint_guidance(_checkpoint), do: nil
 
-  defp queue_recovery(:update_required), do: "Update the pull request and restore current approval and checks."
-  defp queue_recovery(:blocked), do: "Resolve the reported blocker or retry after the provider recovers."
-  defp queue_recovery(:merged), do: "No action required."
-  defp queue_recovery(_kind), do: "Retry after inspecting the reported reason."
+  defp queue_recovery(:blocked, {:dependency, _reason, recovery}) when is_binary(recovery), do: recovery
+  defp queue_recovery(:update_required, _detail), do: "Update the pull request and restore current approval and checks."
+  defp queue_recovery(:blocked, _detail), do: "Resolve the reported blocker or retry after the provider recovers."
+  defp queue_recovery(:merged, _detail), do: "No action required."
+  defp queue_recovery(_kind, _detail), do: "Retry after inspecting the reported reason."
 
   defp latest_checkpoint(comments, authorized, trusted_bot_login) do
     comments

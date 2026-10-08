@@ -38,6 +38,14 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
     persist_outcome(entry, result)
   end
 
+  def execute({:block_dependency, entry, reason}) do
+    Logger.warning(
+      "GitHub merge queue outcome=blocked repository=#{entry.repository} target=#{entry.target_branch} pr=#{entry.pr_number} source_head_sha=#{entry.source_head_sha} reason=#{reason} recovery=repair_dependency_declaration"
+    )
+
+    persist_outcome(entry, {:blocked, {:dependency, reason, "Repair the dependency declaration and re-enter the queue."}})
+  end
+
   def execute(_action), do: {:blocked, :invalid_action}
 
   defp admissions(repo, issue) do
@@ -66,42 +74,76 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
   defp resolve_dependencies(repo, entries) do
     queued = MapSet.new(entries, & &1.pr_number)
 
-    Enum.reduce_while(entries, {:ok, []}, fn entry, {:ok, acc} ->
-      case unresolved_dependencies(repo, entry.dependencies, queued) do
-        {:ok, dependencies} -> {:cont, {:ok, [%{entry | dependencies: dependencies} | acc]}}
+    resolve_dependencies_for_test(entries, fn entry, number ->
+      dependency_state(repo, entry, number, queued)
+    end)
+  end
+
+  @doc false
+  @spec resolve_dependencies_for_test([State.Entry.t()], function()) :: {:ok, [State.Entry.t()]} | {:error, term()}
+  def resolve_dependencies_for_test(entries, resolver) do
+    resolved = Enum.map(entries, &resolve_entry_dependencies(&1, resolver))
+
+    case Enum.find(resolved, &match?({:error, _}, &1)) do
+      nil -> {:ok, Enum.map(resolved, fn {:ok, entry} -> entry end)}
+      error -> error
+    end
+  end
+
+  defp resolve_entry_dependencies(entry, resolver) do
+    Enum.reduce_while(entry.dependencies, {:ok, [], nil}, fn number, {:ok, acc, nil} ->
+      case resolver.(entry, number) do
+        :satisfied -> {:cont, {:ok, acc, nil}}
+        :unresolved -> {:cont, {:ok, [number | acc], nil}}
+        {:blocked, reason} -> {:halt, {:ok, acc, reason}}
         {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
     |> then(fn
-      {:ok, resolved} -> {:ok, Enum.reverse(resolved)}
-      error -> error
+      {:ok, unresolved, blocker} ->
+        {:ok, %{entry | dependencies: Enum.reverse(unresolved), dependency_blocker: blocker}}
+
+      error ->
+        error
     end)
   end
 
-  defp unresolved_dependencies(repo, dependencies, queued) do
-    Enum.reduce_while(dependencies, {:ok, []}, fn number, {:ok, acc} ->
-      case dependency_state(repo, number, queued) do
-        :satisfied -> {:cont, {:ok, acc}}
-        :unresolved -> {:cont, {:ok, [number | acc]}}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
-    end)
-    |> then(fn
-      {:ok, unresolved} -> {:ok, Enum.reverse(unresolved)}
-      error -> error
-    end)
+  defp dependency_state(_repo, entry, number, _queued) when number == entry.pr_number,
+    do: {:blocked, :self_dependency}
+
+  defp dependency_state(repo, _entry, number, queued) do
+    if MapSet.member?(queued, number), do: :unresolved, else: provider_dependency_state(repo, number)
   end
 
-  defp dependency_state(repo, number, queued) do
-    if MapSet.member?(queued, number) do
-      :unresolved
-    else
-      case Client.pull_request(repo, number) do
-        {:ok, %{"merged" => true}} -> :satisfied
-        {:ok, _pull_request} -> :unresolved
-        {:error, {:github_api_status, 404, _}} -> :unresolved
-        {:error, reason} -> {:error, reason}
-      end
+  defp provider_dependency_state(repo, number) do
+    dependency_state_for_test(repo, number, &Client.pull_request/2)
+  end
+
+  @doc false
+  @spec dependency_state_for_test(String.t(), pos_integer(), function()) ::
+          :satisfied | :unresolved | {:blocked, atom()} | {:error, term()}
+  def dependency_state_for_test(repo, number, pull_request) do
+    case pull_request.(repo, number) do
+      {:ok, %{"base" => %{"repo" => %{"full_name" => dependency_repo}}}} when dependency_repo != repo ->
+        {:blocked, :cross_repository_dependency}
+
+      {:ok, %{"merged" => true}} ->
+        :satisfied
+
+      {:ok, %{"state" => "closed"}} ->
+        {:blocked, :closed_unmerged_dependency}
+
+      {:ok, _pull_request} ->
+        :unresolved
+
+      {:error, {:github_api_status, 404}} ->
+        {:blocked, :missing_dependency}
+
+      {:error, {:github_api_status, 404, _}} ->
+        {:blocked, :missing_dependency}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

@@ -79,6 +79,25 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
     assert retry_recovery =~ "Retry after inspecting"
   end
 
+  test "dependency outcomes preserve the specific blocker and recovery action" do
+    admission = %{
+      pr_number: 7,
+      repository: "octo/repo",
+      target_branch: "main",
+      source_head_sha: String.duplicate("a", 40)
+    }
+
+    checkpoint =
+      WorkflowControl.queue_outcome(
+        admission,
+        :blocked,
+        {:dependency, :missing_dependency, "Repair the dependency declaration and re-enter the queue."}
+      )
+
+    assert checkpoint["reason"] =~ "missing_dependency"
+    assert checkpoint["recovery"] == "Repair the dependency declaration and re-enter the queue."
+  end
+
   test "candidate checkpoints retain the exact source target and updated head" do
     admission = %{
       pr_number: 7,
