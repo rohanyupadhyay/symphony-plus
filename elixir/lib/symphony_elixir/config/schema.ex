@@ -307,6 +307,29 @@ defmodule SymphonyElixir.Config.Schema do
     end
   end
 
+  defmodule MergeQueue do
+    @moduledoc false
+    use Ecto.Schema
+    import Ecto.Changeset
+
+    @primary_key false
+    @type t :: %__MODULE__{}
+
+    embedded_schema do
+      field(:enabled, :boolean, default: false)
+      field(:poll_interval_ms, :integer, default: 30_000)
+      field(:max_retry_backoff_ms, :integer, default: 300_000)
+    end
+
+    @spec changeset(%__MODULE__{}, map()) :: Ecto.Changeset.t()
+    def changeset(schema, attrs) do
+      schema
+      |> cast(attrs, [:enabled, :poll_interval_ms, :max_retry_backoff_ms], empty_values: [])
+      |> validate_number(:poll_interval_ms, greater_than: 0)
+      |> validate_number(:max_retry_backoff_ms, greater_than: 0)
+    end
+  end
+
   embedded_schema do
     embeds_one(:tracker, Tracker, on_replace: :update, defaults_to_struct: true)
     embeds_one(:polling, Polling, on_replace: :update, defaults_to_struct: true)
@@ -318,6 +341,7 @@ defmodule SymphonyElixir.Config.Schema do
     embeds_one(:hooks, Hooks, on_replace: :update, defaults_to_struct: true)
     embeds_one(:observability, Observability, on_replace: :update, defaults_to_struct: true)
     embeds_one(:server, Server, on_replace: :update, defaults_to_struct: true)
+    embeds_one(:merge_queue, MergeQueue, on_replace: :update, defaults_to_struct: true)
   end
 
   @spec parse(map()) :: {:ok, %__MODULE__{}} | {:error, {:invalid_workflow_config, String.t()}}
@@ -413,6 +437,7 @@ defmodule SymphonyElixir.Config.Schema do
     |> cast_embed(:hooks, with: &Hooks.changeset/2)
     |> cast_embed(:observability, with: &Observability.changeset/2)
     |> cast_embed(:server, with: &Server.changeset/2)
+    |> cast_embed(:merge_queue, with: &MergeQueue.changeset/2)
   end
 
   defp finalize_settings(settings) do

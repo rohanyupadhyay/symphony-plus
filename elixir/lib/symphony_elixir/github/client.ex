@@ -61,6 +61,49 @@ defmodule SymphonyElixir.GitHub.Client do
     end
   end
 
+  @spec pull_request(String.t(), pos_integer(), keyword()) :: {:ok, map()} | {:error, term()}
+  def pull_request(repo, number, opts \\ []),
+    do: api_body("GET", "/repos/#{repo}/pulls/#{number}", %{}, nil, opts)
+
+  @spec reviews(String.t(), pos_integer(), keyword()) :: {:ok, [map()]} | {:error, term()}
+  def reviews(repo, number, opts \\ []),
+    do: api_body("GET", "/repos/#{repo}/pulls/#{number}/reviews", %{}, nil, opts)
+
+  @spec checks(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def checks(repo, sha, opts \\ []),
+    do: api_body("GET", "/repos/#{repo}/commits/#{sha}/check-runs", %{}, nil, opts)
+
+  @spec statuses(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def statuses(repo, sha, opts \\ []),
+    do: api_body("GET", "/repos/#{repo}/commits/#{sha}/status", %{}, nil, opts)
+
+  @spec ref(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def ref(repo, branch, opts \\ []),
+    do: api_body("GET", "/repos/#{repo}/git/ref/heads/#{URI.encode(branch)}", %{}, nil, opts)
+
+  @spec update_branch(String.t(), pos_integer(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def update_branch(repo, number, expected_head_sha, opts \\ []) do
+    api_body(
+      "PUT",
+      "/repos/#{repo}/pulls/#{number}/update-branch",
+      %{},
+      %{"expected_head_sha" => expected_head_sha},
+      opts
+    )
+  end
+
+  @spec merge_pull_request(String.t(), pos_integer(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def merge_pull_request(repo, number, expected_head_sha, opts \\ []) do
+    api_body(
+      "PUT",
+      "/repos/#{repo}/pulls/#{number}/merge",
+      %{},
+      %{"sha" => expected_head_sha},
+      opts
+    )
+  end
+
   @doc false
   @spec perform_request_for_test(
           String.t(),
@@ -151,6 +194,14 @@ defmodule SymphonyElixir.GitHub.Client do
         with {:ok, github_settings} <- settings(tracker_settings) do
           do_fetch_pages(github_settings, state_query, normalized_states, 1, request_fun, [])
         end
+    end
+  end
+
+  defp api_body(method, path, params, body, opts) do
+    case request(method, path, params, body, opts) do
+      {:ok, %{status: status, body: response}} when status in 200..299 -> {:ok, response}
+      {:ok, %{status: status, body: response}} -> {:error, {:github_api_status, status, response}}
+      error -> error
     end
   end
 

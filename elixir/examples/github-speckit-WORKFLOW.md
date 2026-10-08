@@ -16,6 +16,10 @@ tracker:
   terminal_states: [closed]
 polling:
   interval_ms: 30000
+merge_queue:
+  enabled: true
+  poll_interval_ms: 30000
+  max_retry_backoff_ms: 300000
 workspace:
   root: /absolute/path/to/symphony-workspaces/PROJECT
 hooks:

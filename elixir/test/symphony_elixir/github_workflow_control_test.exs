@@ -3,6 +3,103 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
 
   alias SymphonyElixir.GitHub.WorkflowControl
 
+  test "approved review evidence becomes a durable queue admission" do
+    sha = String.duplicate("a", 40)
+
+    checkpoint =
+      WorkflowControl.queue_admission(
+        %{"pr_number" => 7, "branch" => "topic", "head_sha" => sha},
+        %{
+          "repository" => "octo/repo",
+          "target_branch" => "main",
+          "admission_sequence" => 12,
+          "dependencies" => [3]
+        }
+      )
+
+    assert :ok = WorkflowControl.valid_checkpoint(checkpoint)
+    assert {:ok, decoded} = checkpoint |> WorkflowControl.render_comment() |> WorkflowControl.decode_checkpoint()
+    assert decoded["state"] == "merge_queued"
+    assert decoded["dependencies"] == [3]
+
+    assert {:error, :invalid_merge_queue_admission} =
+             checkpoint |> Map.delete("branch") |> WorkflowControl.valid_checkpoint()
+  end
+
+  test "terminal queue outcomes remain durable and do not dispatch issue work" do
+    for state <- ["merge_update_required", "merge_blocked", "merge_merged"] do
+      checkpoint = %{
+        "state" => state,
+        "phase" => "merge_queue",
+        "summary" => "Queue outcome recorded."
+      }
+
+      body = WorkflowControl.render_comment(checkpoint)
+      assert {:ok, decoded} = WorkflowControl.decode_checkpoint(body)
+
+      comment = %{
+        "id" => 10,
+        "body" => body,
+        "author_association" => "OWNER",
+        "user" => %{"login" => "owner", "type" => "User"}
+      }
+
+      assert %{checkpoint: ^decoded, trigger: nil, dispatchable: false} =
+               WorkflowControl.derive([comment], %{}, ["OWNER"])
+    end
+  end
+
+  test "queue outcomes retain exact generation and recovery evidence" do
+    admission = %{
+      pr_number: 7,
+      repository: "octo/repo",
+      target_branch: "main",
+      source_head_sha: String.duplicate("a", 40)
+    }
+
+    checkpoint = WorkflowControl.queue_outcome(admission, :update_required, :merge_conflict)
+
+    assert checkpoint["state"] == "merge_update_required"
+    assert checkpoint["head_sha"] == admission.source_head_sha
+    assert checkpoint["reason"] =~ "merge_conflict"
+    assert checkpoint["recovery"] =~ "Update the pull request"
+    assert :ok = WorkflowControl.valid_checkpoint(checkpoint)
+
+    assert %{"state" => "merge_merged", "recovery" => "No action required."} =
+             WorkflowControl.queue_outcome(admission, :merged, %{candidate_sha: admission.source_head_sha})
+
+    assert %{"state" => "merge_blocked", "recovery" => blocked_recovery} =
+             WorkflowControl.queue_outcome(admission, :blocked, :unknown_mergeability)
+
+    assert blocked_recovery =~ "Resolve the reported blocker"
+
+    assert %{"state" => "merge_blocked", "recovery" => retry_recovery} =
+             WorkflowControl.queue_outcome(admission, :cancelled, :closed)
+
+    assert retry_recovery =~ "Retry after inspecting"
+  end
+
+  test "candidate checkpoints retain the exact source target and updated head" do
+    admission = %{
+      pr_number: 7,
+      repository: "octo/repo",
+      target_branch: "main",
+      source_head_sha: String.duplicate("a", 40),
+      admission_sequence: 12,
+      dependencies: [3]
+    }
+
+    target = String.duplicate("b", 40)
+    candidate = String.duplicate("c", 40)
+    checkpoint = WorkflowControl.queue_candidate(admission, target, candidate)
+
+    assert checkpoint["state"] == "merge_validating"
+    assert checkpoint["source_head_sha"] == admission.source_head_sha
+    assert checkpoint["target_sha"] == target
+    assert checkpoint["candidate_sha"] == candidate
+    assert :ok = WorkflowControl.valid_checkpoint(checkpoint)
+  end
+
   @authorized ["OWNER", "MEMBER", "COLLABORATOR"]
 
   test "validates optional workflow-control provider settings" do
@@ -180,9 +277,9 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
         "head" => %{
           "ref" => "topic",
           "sha" => sha,
-          "repo" => %{"full_name" => "octo/repo", "fork" => false}
+          "repo" => %{"id" => 123, "full_name" => "octo/repo", "fork" => false}
         },
-        "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+        "base" => %{"repo" => %{"id" => 123, "full_name" => "octo/repo", "fork" => true}}
       },
       "checks" => %{"head_sha" => sha}
     }
@@ -191,8 +288,8 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
       fn context -> put_in(context, ["pull_request", "state"], "closed") end,
       fn context -> put_in(context, ["pull_request", "merged"], true) end,
       fn context -> put_in(context, ["pull_request", "labels"], []) end,
-      fn context -> put_in(context, ["pull_request", "head", "repo", "fork"], true) end,
-      fn context -> put_in(context, ["pull_request", "head", "repo", "full_name"], "fork/repo") end,
+      fn context -> put_in(context, ["pull_request", "head", "repo", "id"], 456) end,
+      fn context -> put_in(context, ["pull_request", "head", "repo"], nil) end,
       fn context -> put_in(context, ["pull_request", "head", "ref"], "other") end,
       fn context -> put_in(context, ["pull_request", "head", "sha"], String.duplicate("b", 40)) end,
       fn context -> put_in(context, ["checks", "head_sha"], String.duplicate("b", 40)) end
@@ -206,6 +303,13 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
              WorkflowControl.derive(
                [checkpoint],
                put_in(valid, ["pull_request", "labels"], ["symphony", 7]),
+               @authorized
+             )
+
+    assert %{dispatchable: true} =
+             WorkflowControl.derive(
+               [checkpoint],
+               put_in(valid, ["pull_request", "head", "repo", "fork"], true),
                @authorized
              )
   end

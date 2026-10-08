@@ -8,7 +8,7 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
   """
 
   @marker_regex ~r/<!-- symphony-control:v1:([^\s]+) -->/
-  @states ~w(awaiting_input awaiting_approval review_pending awaiting_review blocked)
+  @states ~w(awaiting_input awaiting_approval review_pending awaiting_review merge_queued merge_validating merge_update_required merge_blocked merge_merged blocked)
   @gates ~w(spec plan implementation)
   @commands ~w(retry status cancel)
   @default_associations ~w(OWNER MEMBER COLLABORATOR)
@@ -77,6 +77,64 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
     ]
     |> Enum.reject(&(&1 in [nil, ""]))
     |> Enum.join("\n\n")
+  end
+
+  @spec queue_admission(map(), map()) :: map()
+  def queue_admission(review_checkpoint, attrs) when is_map(review_checkpoint) and is_map(attrs) do
+    %{
+      "state" => "merge_queued",
+      "phase" => "merge_queue",
+      "summary" => Map.get(attrs, "summary", "Pull request admitted to the serialized merge queue."),
+      "pr_number" => review_checkpoint["pr_number"],
+      "branch" => review_checkpoint["branch"],
+      "head_sha" => review_checkpoint["head_sha"],
+      "repository" => attrs["repository"],
+      "target_branch" => attrs["target_branch"],
+      "admission_sequence" => attrs["admission_sequence"],
+      "dependencies" => Map.get(attrs, "dependencies", [])
+    }
+  end
+
+  @spec queue_outcome(map(), atom(), term()) :: map()
+  def queue_outcome(admission, kind, detail) when is_map(admission) and is_atom(kind) do
+    state =
+      case kind do
+        :merged -> "merge_merged"
+        :update_required -> "merge_update_required"
+        _ -> "merge_blocked"
+      end
+
+    %{
+      "state" => state,
+      "phase" => "merge_queue",
+      "summary" => "Merge queue outcome: #{kind} (#{inspect(detail)}).",
+      "pr_number" => admission.pr_number,
+      "repository" => admission.repository,
+      "target_branch" => admission.target_branch,
+      "head_sha" => admission.source_head_sha,
+      "outcome" => Atom.to_string(kind),
+      "reason" => inspect(detail),
+      "recovery" => queue_recovery(kind)
+    }
+  end
+
+  @spec queue_candidate(map(), String.t(), String.t()) :: map()
+  def queue_candidate(admission, target_sha, candidate_sha)
+      when is_map(admission) and is_binary(target_sha) and is_binary(candidate_sha) do
+    %{
+      "state" => "merge_validating",
+      "phase" => "merge_queue",
+      "summary" => "Validating pull request #{admission.pr_number} against #{admission.target_branch}.",
+      "pr_number" => admission.pr_number,
+      "repository" => admission.repository,
+      "target_branch" => admission.target_branch,
+      "head_sha" => admission.source_head_sha,
+      "source_head_sha" => admission.source_head_sha,
+      "target_sha" => target_sha,
+      "candidate_sha" => candidate_sha,
+      "admission_sequence" => admission.admission_sequence,
+      "dependencies" => admission.dependencies
+    }
   end
 
   @spec decode_checkpoint(String.t()) :: {:ok, map()} | :error
@@ -151,6 +209,20 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
   defp validate_checkpoint_state(%{"state" => "review_pending"}),
     do: {:error, :invalid_workflow_review_pending}
 
+  defp validate_checkpoint_state(%{"state" => state} = checkpoint)
+       when state in ["merge_queued", "merge_validating"] do
+    with true <- positive_integer?(checkpoint["pr_number"]),
+         true <- present?(checkpoint["repository"]),
+         true <- present?(checkpoint["target_branch"]),
+         true <- state != "merge_queued" or present?(checkpoint["branch"]),
+         true <- is_binary(checkpoint["head_sha"]) and byte_size(checkpoint["head_sha"]) == 40,
+         true <- is_integer(checkpoint["admission_sequence"]) and checkpoint["admission_sequence"] >= 0 do
+      :ok
+    else
+      _ -> {:error, :invalid_merge_queue_admission}
+    end
+  end
+
   defp validate_checkpoint_state(_checkpoint), do: :ok
 
   @spec derive([map()], map(), [String.t()]) :: derived_state()
@@ -208,7 +280,20 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
     "Use `/symphony retry`, `/symphony status`, or `/symphony cancel`."
   end
 
+  defp checkpoint_guidance(%{"state" => "merge_queued"}) do
+    "This pull request will be revalidated against the latest target branch when it reaches the queue head."
+  end
+
+  defp checkpoint_guidance(%{"state" => "merge_update_required"}) do
+    "Update the pull request, restore current approval and checks, then request queue admission again."
+  end
+
   defp checkpoint_guidance(_checkpoint), do: nil
+
+  defp queue_recovery(:update_required), do: "Update the pull request and restore current approval and checks."
+  defp queue_recovery(:blocked), do: "Resolve the reported blocker or retry after the provider recovers."
+  defp queue_recovery(:merged), do: "No action required."
+  defp queue_recovery(_kind), do: "Retry after inspecting the reported reason."
 
   defp latest_checkpoint(comments, authorized, trusted_bot_login) do
     comments
@@ -230,11 +315,23 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
       |> Enum.sort_by(&event_id/1)
 
     case checkpoint["state"] do
-      "awaiting_input" -> latest_input_trigger(later_comments, checkpoint)
-      "awaiting_approval" -> latest_valid_command(later_comments, checkpoint)
-      "blocked" -> latest_valid_command(later_comments, checkpoint)
-      "review_pending" -> automatic_review_trigger(checkpoint, review_context)
-      "awaiting_review" -> review_trigger(checkpoint, later_comments, review_context, authorized)
+      "awaiting_input" ->
+        latest_input_trigger(later_comments, checkpoint)
+
+      "awaiting_approval" ->
+        latest_valid_command(later_comments, checkpoint)
+
+      "blocked" ->
+        latest_valid_command(later_comments, checkpoint)
+
+      "review_pending" ->
+        automatic_review_trigger(checkpoint, review_context)
+
+      "awaiting_review" ->
+        review_trigger(checkpoint, later_comments, review_context, authorized)
+
+      state when state in ["merge_queued", "merge_validating", "merge_update_required", "merge_blocked", "merge_merged"] ->
+        nil
     end
   end
 
@@ -266,8 +363,18 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
     head_repo = get_in(pull_request, ["head", "repo"])
     base_repo = get_in(pull_request, ["base", "repo"])
 
-    is_map(head_repo) and is_map(base_repo) and head_repo["fork"] != true and
-      head_repo["full_name"] == base_repo["full_name"]
+    same_repository_identity?(head_repo, base_repo)
+  end
+
+  defp same_repository_identity?(%{"id" => head_id}, %{"id" => base_id})
+       when is_integer(head_id) and is_integer(base_id),
+       do: head_id == base_id
+
+  defp same_repository_identity?(head_repo, base_repo) when is_map(head_repo) and is_map(base_repo),
+    do: head_repo["full_name"] == base_repo["full_name"]
+
+  defp same_repository_identity?(_head_repo, _base_repo) do
+    false
   end
 
   defp symphony_labeled?(pull_request) do

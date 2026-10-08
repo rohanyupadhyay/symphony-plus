@@ -735,6 +735,96 @@ defmodule SymphonyElixir.GitHub.AdapterTest do
              WorkflowControl.decode_checkpoint(checkpoint_body)
   end
 
+  test "github_workflow_checkpoint records an approved same-repository queue admission" do
+    sha = String.duplicate("a", 40)
+
+    arguments = %{
+      "state" => "merge_queued",
+      "phase" => "merge_queue",
+      "summary" => "PR #7 is approved and queued for serialized integration.",
+      "pr_number" => 7,
+      "branch" => "topic",
+      "head_sha" => sha,
+      "repository" => "octo/repo",
+      "target_branch" => "main",
+      "admission_sequence" => 901,
+      "dependencies" => []
+    }
+
+    issue = %Issue{id: "42", native_ref: %{"number" => 42, "repo" => "octo/repo"}}
+    settings = Map.put(workflow_tracker_settings(), :required_labels, ["symphony"])
+
+    client = fn method, path, _params, body, _opts ->
+      send(self(), {:queue_admission_request, method, path, body})
+
+      response_body =
+        case path do
+          "/repos/octo/repo/commits/" <> ^sha ->
+            %{"sha" => sha}
+
+          "/repos/octo/repo/branches/topic" ->
+            %{"commit" => %{"sha" => sha}}
+
+          "/repos/octo/repo/pulls/7" ->
+            %{
+              "number" => 7,
+              "state" => "open",
+              "merged" => false,
+              "head" => %{
+                "ref" => "topic",
+                "sha" => sha,
+                "repo" => %{"id" => 123, "full_name" => "octo/repo", "fork" => true}
+              },
+              "base" => %{
+                "ref" => "main",
+                "repo" => %{"id" => 123, "full_name" => "octo/repo", "fork" => true}
+              }
+            }
+
+          "/repos/octo/repo/issues/7/labels" ->
+            [%{"name" => "symphony"}]
+
+          "/repos/octo/repo/issues/42/comments" ->
+            %{"id" => 501}
+        end
+
+      {:ok, %{status: if(method == "POST", do: 201, else: 200), body: response_body}}
+    end
+
+    response =
+      GitHubAgentTool.execute(
+        "github_workflow_checkpoint",
+        arguments,
+        issue: issue,
+        tracker_settings: settings,
+        github_client: client
+      )
+
+    assert response["success"]
+
+    assert_receive {:queue_admission_request, "POST", "/repos/octo/repo/issues/42/comments", checkpoint_request}
+
+    assert {:ok, checkpoint} = WorkflowControl.decode_checkpoint(checkpoint_request["body"])
+    assert checkpoint["state"] == "merge_queued"
+    assert checkpoint["repository"] == "octo/repo"
+    assert checkpoint["target_branch"] == "main"
+    assert checkpoint["admission_sequence"] == 901
+
+    repository_mismatch =
+      GitHubAgentTool.execute(
+        "github_workflow_checkpoint",
+        Map.put(arguments, "repository", "other/repo"),
+        issue: issue,
+        tracker_settings: settings,
+        github_client: client
+      )
+
+    refute repository_mismatch["success"]
+
+    assert Jason.decode!(repository_mismatch["output"])["error"]["reason"] =~
+             "workflow_queue_repository_mismatch"
+  end
+
   test "github_workflow_checkpoint rejects invalid managed pull requests and label failures" do
     sha = String.duplicate("a", 40)
 
@@ -745,9 +835,9 @@ defmodule SymphonyElixir.GitHub.AdapterTest do
       "head" => %{
         "ref" => "topic",
         "sha" => sha,
-        "repo" => %{"full_name" => "octo/repo", "fork" => false}
+        "repo" => %{"id" => 123, "full_name" => "octo/repo", "fork" => false}
       },
-      "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+      "base" => %{"repo" => %{"id" => 123, "full_name" => "octo/repo", "fork" => true}}
     }
 
     invalid_prs = [
@@ -756,7 +846,7 @@ defmodule SymphonyElixir.GitHub.AdapterTest do
       put_in(valid_pr, ["head", "ref"], "other"),
       put_in(valid_pr, ["head", "sha"], String.duplicate("b", 40)),
       put_in(valid_pr, ["base", "repo", "full_name"], "other/repo"),
-      put_in(valid_pr, ["head", "repo", "fork"], true),
+      put_in(valid_pr, ["head", "repo", "id"], 456),
       []
     ]
 
@@ -769,6 +859,18 @@ defmodule SymphonyElixir.GitHub.AdapterTest do
 
       refute result["success"]
     end
+
+    forked_repository_result =
+      valid_pr
+      |> put_in(["head", "repo", "fork"], true)
+      |> then(fn forked_repository_pr ->
+        execute_review_pending(fn method, path, _params, _body, _opts ->
+          response = review_pending_fixture(path, sha, forked_repository_pr)
+          {:ok, %{status: if(method == "POST", do: 201, else: 200), body: response}}
+        end)
+      end)
+
+    assert forked_repository_result["success"]
 
     label_failure =
       execute_review_pending(

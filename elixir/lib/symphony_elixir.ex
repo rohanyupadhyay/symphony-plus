@@ -39,6 +39,7 @@ defmodule SymphonyElixir.Application do
       {Phoenix.PubSub, name: SymphonyElixir.PubSub},
       SymphonyElixir.GitHub.AuthCache,
       SymphonyElixir.WorkflowStore,
+      SymphonyElixir.GitHub.MergeQueue,
       SymphonyElixir.AgentRuntimeSupervisor,
       SymphonyElixir.HttpServer,
       SymphonyElixir.StatusDashboard

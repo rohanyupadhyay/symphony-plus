@@ -17,6 +17,10 @@ tracker:
     - Done
 polling:
   interval_ms: 5000
+merge_queue:
+  enabled: false
+  poll_interval_ms: 30000
+  max_retry_backoff_ms: 300000
 workspace:
   root: ~/code/symphony-workspaces
 hooks:
