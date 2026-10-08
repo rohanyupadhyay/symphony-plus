@@ -214,6 +214,7 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
     with true <- positive_integer?(checkpoint["pr_number"]),
          true <- present?(checkpoint["repository"]),
          true <- present?(checkpoint["target_branch"]),
+         true <- state != "merge_queued" or present?(checkpoint["branch"]),
          true <- is_binary(checkpoint["head_sha"]) and byte_size(checkpoint["head_sha"]) == 40,
          true <- is_integer(checkpoint["admission_sequence"]) and checkpoint["admission_sequence"] >= 0 do
       :ok
@@ -362,8 +363,18 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
     head_repo = get_in(pull_request, ["head", "repo"])
     base_repo = get_in(pull_request, ["base", "repo"])
 
-    is_map(head_repo) and is_map(base_repo) and head_repo["fork"] != true and
-      head_repo["full_name"] == base_repo["full_name"]
+    same_repository_identity?(head_repo, base_repo)
+  end
+
+  defp same_repository_identity?(%{"id" => head_id}, %{"id" => base_id})
+       when is_integer(head_id) and is_integer(base_id),
+       do: head_id == base_id
+
+  defp same_repository_identity?(head_repo, base_repo) when is_map(head_repo) and is_map(base_repo),
+    do: head_repo["full_name"] == base_repo["full_name"]
+
+  defp same_repository_identity?(_head_repo, _base_repo) do
+    false
   end
 
   defp symphony_labeled?(pull_request) do

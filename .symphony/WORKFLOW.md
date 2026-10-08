@@ -22,6 +22,10 @@ tracker:
     - closed
 polling:
   interval_ms: 30000
+merge_queue:
+  enabled: true
+  poll_interval_ms: 30000
+  max_retry_backoff_ms: 300000
 workspace:
   root: /home/rohan/code/symphony-workspaces/symphony-plus
 hooks:
@@ -94,7 +98,9 @@ Workflow-control state:
    and a concise summary, then end the turn.
 1. Follow `.github/pull_request_template.md` exactly. Validate the proposed body with
    `cd elixir && mix pr_body.check --file <path>` before opening or updating a pull request.
-1. Never merge a pull request, expose credentials, or use auto-closing issue keywords.
+1. Never call GitHub's merge endpoint directly, expose credentials, or use auto-closing issue
+   keywords. A formally approved pull request may be admitted to the host-owned serialized merge
+   queue, which alone performs the guarded final merge.
 
 ## Required checkpoint phase report
 
@@ -221,16 +227,20 @@ current-head checks. Reproduce and fix in-scope findings, distinguish PR-caused 
 external blockers, run targeted tests and `make -C elixir all`, push through `github_git_push`, and
 update the same PR. Record findings, corrections, check status, validation, and omissions. End a
 successful automatic cycle with a fresh `awaiting_review` checkpoint; use `blocked` with an exact
-recovery action when required evidence or an external dependency prevents completion. Never merge
-solely on the automated review.
+recovery action when required evidence or an external dependency prevents completion. Automated
+review alone never admits or merges the pull request.
 
 Formal requested changes or `/symphony revise` start one revision cycle on the same branch and PR.
 Use Spec Kit again only when requirements or architecture changed. After updates, rerun targeted
 tests and `make -C elixir all`, call `github_git_push`, and create a fresh awaiting-review
-checkpoint. A formal approval with no unresolved change request marks the PR ready for human merge
-but never merges it. After acknowledging that approval, create a fresh `awaiting_review`
-checkpoint for the same PR and end the turn; its automatically captured cursor includes the
-handled approval so it cannot dispatch again while the PR waits for human merge.
+checkpoint. A formal approval with no unresolved change request authorizes queue admission, not a
+direct agent merge. Re-read the pull request to obtain its exact current head, head branch, base
+branch, repository, and any explicitly declared same-repository prerequisite PR numbers. Call
+`github_workflow_checkpoint` with `state: merge_queued`, `phase: merge_queue`, the PR number,
+branch, exact head SHA, repository, target branch, the approval trigger's numeric `id` as
+`admission_sequence`, and normalized `dependencies` (or `[]`). End the turn after the durable
+checkpoint is recorded; the host-owned queue will revalidate repository policy and the exact
+candidate before merging.
 
 ## Failure handling
 

@@ -149,6 +149,7 @@ description: "Implementation tasks for the GitHub-backed serialized merge queue"
 - [X] T045 wire configured bounded retry backoff, operator-block outcomes, and dynamic enabled/interval reload into `elixir/lib/symphony_elixir/github/merge_queue.ex`, with timeout, rate-limit, infrastructure-failure, reload, and restart tests in `elixir/test/symphony_elixir/github_merge_queue_test.exs` per FR-015, FR-018, and Constitution III (partial)
 - [X] T046 add observable lifecycle and recovery coverage for startup reconstruction, coordinator restart, repeated polls, cancellation, PR closure, approval dismissal, label removal, source/target movement, partial checkpoint writes, and lost merge responses in `elixir/test/symphony_elixir/github_merge_queue_test.exs` per SC-008 and Constitution III/V (missing)
 - [X] T047 expose durable queue position, blocker, validation outcome, and recovery action through GitHub-visible checkpoint comments and stable non-secret logs containing repository, target, PR, originating issue, revisions, outcome, reason, and recovery in `elixir/lib/symphony_elixir/github/merge_queue/backend.ex` and focused tests per FR-019 and Constitution VI (partial)
+- [X] T048 allow same-repository managed PRs when their containing repository is itself a fork, expose guarded `merge_queued` admissions through the host checkpoint tool, and enable approval-driven queueing in `.symphony/WORKFLOW.md`, with focused workflow-control and adapter regressions
 
 ---
 

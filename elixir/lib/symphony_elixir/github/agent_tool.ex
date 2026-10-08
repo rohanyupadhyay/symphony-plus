@@ -45,7 +45,14 @@ defmodule SymphonyElixir.GitHub.AgentTool do
     "properties" => %{
       "state" => %{
         "type" => "string",
-        "enum" => ["awaiting_input", "awaiting_approval", "review_pending", "awaiting_review", "blocked"]
+        "enum" => [
+          "awaiting_input",
+          "awaiting_approval",
+          "review_pending",
+          "awaiting_review",
+          "merge_queued",
+          "blocked"
+        ]
       },
       "phase" => %{"type" => "string"},
       "summary" => %{"type" => "string"},
@@ -53,7 +60,14 @@ defmodule SymphonyElixir.GitHub.AgentTool do
       "gate" => %{"type" => ["string", "null"], "enum" => ["spec", "plan", "implementation", nil]},
       "branch" => %{"type" => ["string", "null"]},
       "head_sha" => %{"type" => ["string", "null"]},
-      "pr_number" => %{"type" => ["integer", "null"]}
+      "pr_number" => %{"type" => ["integer", "null"]},
+      "repository" => %{"type" => ["string", "null"]},
+      "target_branch" => %{"type" => ["string", "null"]},
+      "admission_sequence" => %{"type" => ["integer", "null"], "minimum" => 0},
+      "dependencies" => %{
+        "type" => ["array", "null"],
+        "items" => %{"type" => "integer", "minimum" => 1}
+      }
     }
   }
   @git_push_schema %{
@@ -166,7 +180,11 @@ defmodule SymphonyElixir.GitHub.AgentTool do
   defp checkpoint_issue_context(_issue), do: {:error, :missing_github_issue_context}
 
   defp normalize_checkpoint(arguments) when is_map(arguments) do
-    checkpoint = Map.take(arguments, ~w(state phase summary prompt gate branch head_sha pr_number))
+    checkpoint =
+      Map.take(
+        arguments,
+        ~w(state phase summary prompt gate branch head_sha pr_number repository target_branch admission_sequence dependencies)
+      )
 
     with :ok <- WorkflowControl.valid_checkpoint(checkpoint),
          :ok <- validate_approval_ref(checkpoint) do
@@ -187,7 +205,7 @@ defmodule SymphonyElixir.GitHub.AgentTool do
   defp validate_approval_ref(_checkpoint), do: :ok
 
   defp verify_checkpoint_head(%{"state" => state} = checkpoint, repo, client, opts)
-       when state in ["awaiting_approval", "review_pending"] do
+       when state in ["awaiting_approval", "review_pending", "merge_queued"] do
     sha = checkpoint["head_sha"]
     branch = checkpoint["branch"]
 
@@ -214,17 +232,19 @@ defmodule SymphonyElixir.GitHub.AgentTool do
   defp verify_checkpoint_head(_checkpoint, _repo, _client, _opts), do: :ok
 
   defp prepare_managed_pull_request(
-         %{"state" => "review_pending", "pr_number" => pr_number} = checkpoint,
+         %{"state" => state, "pr_number" => pr_number} = checkpoint,
          repo,
          tracker_settings,
          client,
          opts
-       ) do
+       )
+       when state in ["review_pending", "merge_queued"] do
     path = "/repos/#{encoded_repo(repo)}/pulls/#{pr_number}"
 
     with {:ok, %{status: status, body: pull_request}} <- client.("GET", path, %{}, nil, opts),
          true <- status in 200..299 or {:error, :github_pull_request_not_found},
          :ok <- validate_managed_pull_request(pull_request, checkpoint, repo),
+         :ok <- validate_queue_admission(pull_request, checkpoint, repo),
          labels <- managed_pull_request_labels(tracker_settings),
          {:ok, %{status: label_status}} <-
            client.(
@@ -250,8 +270,7 @@ defmodule SymphonyElixir.GitHub.AgentTool do
       {open_pull_request?(pull_request), :workflow_pull_request_terminal},
       {get_in(pull_request, ["head", "ref"]) == checkpoint["branch"], :workflow_pull_request_branch_mismatch},
       {get_in(pull_request, ["head", "sha"]) == checkpoint["head_sha"], :workflow_pull_request_head_mismatch},
-      {same_repository_pull_request?(pull_request, repo), :workflow_pull_request_repository_mismatch},
-      {get_in(pull_request, ["head", "repo", "fork"]) != true, :workflow_pull_request_fork}
+      {same_repository_pull_request?(pull_request, repo), :workflow_pull_request_repository_mismatch}
     ]
 
     case Enum.find(validators, fn {valid?, _reason} -> not valid? end) do
@@ -263,13 +282,42 @@ defmodule SymphonyElixir.GitHub.AgentTool do
   defp validate_managed_pull_request(_pull_request, _checkpoint, _repo),
     do: {:error, :github_unknown_payload}
 
+  defp validate_queue_admission(
+         pull_request,
+         %{"state" => "merge_queued"} = checkpoint,
+         repo
+       ) do
+    cond do
+      checkpoint["repository"] != repo ->
+        {:error, :workflow_queue_repository_mismatch}
+
+      get_in(pull_request, ["base", "ref"]) != checkpoint["target_branch"] ->
+        {:error, :workflow_queue_target_mismatch}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp validate_queue_admission(_pull_request, _checkpoint, _repo), do: :ok
+
   defp open_pull_request?(pull_request),
     do: pull_request["state"] == "open" and pull_request["merged"] != true
 
   defp same_repository_pull_request?(pull_request, repo) do
-    get_in(pull_request, ["head", "repo", "full_name"]) == repo and
-      get_in(pull_request, ["base", "repo", "full_name"]) == repo
+    head_repo = get_in(pull_request, ["head", "repo"])
+    base_repo = get_in(pull_request, ["base", "repo"])
+
+    is_map(head_repo) and is_map(base_repo) and head_repo["full_name"] == repo and
+      base_repo["full_name"] == repo and same_repository_identity?(head_repo, base_repo)
   end
+
+  defp same_repository_identity?(%{"id" => head_id}, %{"id" => base_id})
+       when is_integer(head_id) and is_integer(base_id),
+       do: head_id == base_id
+
+  defp same_repository_identity?(head_repo, base_repo),
+    do: head_repo["full_name"] == base_repo["full_name"]
 
   defp managed_pull_request_labels(tracker_settings) do
     tracker_settings
