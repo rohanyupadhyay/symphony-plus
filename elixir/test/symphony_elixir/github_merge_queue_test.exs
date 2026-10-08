@@ -2,10 +2,26 @@ defmodule SymphonyElixir.GitHub.MergeQueueTest do
   use ExUnit.Case, async: false
 
   alias SymphonyElixir.GitHub.MergeQueue
+  alias SymphonyElixir.GitHub.MergeQueue.Backend
   alias SymphonyElixir.GitHub.MergeQueue.State
+  alias SymphonyElixir.GitHub.WorkflowControl
 
   @sha_a String.duplicate("a", 40)
   @sha_b String.duplicate("b", 40)
+
+  test "loader ignores issues whose latest trusted checkpoint is not queued" do
+    terminal = %{
+      "id" => 99,
+      "body" =>
+        WorkflowControl.render_comment(%{
+          "state" => "blocked",
+          "phase" => "review",
+          "summary" => "Waiting for operator recovery."
+        })
+    }
+
+    assert [] = Backend.decode_admission(terminal, 11)
+  end
 
   test "orders admissions stably, deduplicates generations, and isolates queue keys" do
     entries = [entry(3, @sha_a, 2), entry(2, @sha_b, 1), entry(2, @sha_b, 1), entry(1, @sha_a, 1, "release")]

@@ -105,16 +105,18 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
     end
   end
 
-  defp decode_admission(comment, issue_number) do
+  @doc false
+  @spec decode_admission(map(), pos_integer()) :: [State.Entry.t()]
+  def decode_admission(comment, issue_number) do
     case WorkflowControl.decode_checkpoint(comment["body"] || "") do
       {:ok, %{"state" => state} = checkpoint} when state in ["merge_queued", "merge_validating"] ->
         build_admission(checkpoint, issue_number)
 
       {:ok, _terminal_checkpoint} ->
-        false
+        []
 
       _ ->
-        nil
+        []
     end
   end
 
