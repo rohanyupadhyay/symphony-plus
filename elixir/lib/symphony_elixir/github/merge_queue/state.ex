@@ -14,7 +14,14 @@ defmodule SymphonyElixir.GitHub.MergeQueue.State do
     @moduledoc "A durable queue admission."
     @enforce_keys [:repository, :target_branch, :pr_number, :source_head_sha, :admission_sequence, :generation]
     defstruct @enforce_keys ++
-                [originating_issue: nil, dependencies: [], admitted_at: nil, target_sha: nil, candidate_sha: nil]
+                [
+                  originating_issue: nil,
+                  dependencies: [],
+                  dependency_blocker: nil,
+                  admitted_at: nil,
+                  target_sha: nil,
+                  candidate_sha: nil
+                ]
 
     @type t :: %__MODULE__{
             repository: String.t(),
@@ -25,6 +32,7 @@ defmodule SymphonyElixir.GitHub.MergeQueue.State do
             generation: {pos_integer(), String.t()},
             originating_issue: pos_integer() | nil,
             dependencies: [pos_integer()],
+            dependency_blocker: atom() | nil,
             admitted_at: String.t() | nil,
             target_sha: String.t() | nil,
             candidate_sha: String.t() | nil
@@ -112,7 +120,7 @@ defmodule SymphonyElixir.GitHub.MergeQueue.State do
   def to_checkpoint(%Entry{} = entry) do
     entry
     |> Map.from_struct()
-    |> Map.drop([:generation])
+    |> Map.drop([:generation, :dependency_blocker])
     |> Map.new(fn {key, value} -> {Atom.to_string(key), value} end)
     |> Map.put("version", 1)
     |> Map.put("kind", "merge_queue_admission")
@@ -130,11 +138,10 @@ defmodule SymphonyElixir.GitHub.MergeQueue.State do
   end
 
   @spec normalize_dependencies(list(), pos_integer()) :: {:ok, [pos_integer()]} | {:error, atom()}
-  def normalize_dependencies(values, own_number) when is_list(values) do
+  def normalize_dependencies(values, _own_number) when is_list(values) do
     values
     |> Enum.reduce_while({:ok, []}, fn value, {:ok, acc} ->
       case dependency_number(value) do
-        {:ok, ^own_number} -> {:halt, {:error, :self_dependency}}
         {:ok, number} -> {:cont, {:ok, [number | acc]}}
         :error -> {:halt, {:error, :invalid_dependency}}
       end

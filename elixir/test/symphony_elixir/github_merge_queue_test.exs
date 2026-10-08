@@ -23,7 +23,66 @@ defmodule SymphonyElixir.GitHub.MergeQueueTest do
     assert [] = Backend.decode_admission(terminal, 11)
   end
 
+  test "autonomous merge eligibility needs no approval and holds active human change requests" do
+    queued = entry(2, @sha_b, 1)
+
+    pull_request = %{
+      "state" => "open",
+      "merged" => false,
+      "mergeable" => true,
+      "labels" => [%{"name" => "symphony"}],
+      "head" => %{"repo" => %{"id" => 123, "full_name" => "octo/repo"}},
+      "base" => %{"ref" => "main", "repo" => %{"id" => 123, "full_name" => "octo/repo"}}
+    }
+
+    assert Backend.eligible_for_autonomous_merge?(pull_request, [], queued)
+
+    assert Backend.eligible_for_autonomous_merge?(
+             pull_request,
+             [%{"id" => 1, "state" => "APPROVED", "user" => %{"login" => "alice"}}],
+             queued
+           )
+
+    refute Backend.eligible_for_autonomous_merge?(
+             pull_request,
+             [%{"id" => 1, "state" => "CHANGES_REQUESTED", "user" => %{"login" => "alice"}}],
+             queued
+           )
+
+    refute Backend.eligible_for_autonomous_merge?(put_in(pull_request, ["base", "ref"], "release"), [], queued)
+    refute Backend.eligible_for_autonomous_merge?(put_in(pull_request, ["head", "repo", "id"], 456), [], queued)
+  end
+
+  test "durable admissions trust only the configured GitHub App" do
+    trusted = %{
+      "user" => %{"type" => "Bot", "login" => "symphony-plus[bot]"},
+      "performed_via_github_app" => %{"id" => 42}
+    }
+
+    assert Backend.checkpoint_trusted_for_app?(trusted, 42)
+    refute Backend.checkpoint_trusted_for_app?(trusted, 99)
+
+    refute Backend.checkpoint_trusted_for_app?(
+             %{"user" => %{"type" => "Bot", "login" => "foreign[bot]"}},
+             42
+           )
+  end
+
+  test "human change request preflight retries without consuming the queue generation" do
+    queued = entry(2, @sha_b, 1)
+
+    assert {:retry, :human_changes_requested} =
+             Backend.admission_preflight(
+               %{eligible: false, hold_reason: :human_changes_requested, head_sha: @sha_b},
+               queued
+             )
+
+    assert :ok = Backend.admission_preflight(%{eligible: true, head_sha: @sha_b}, queued)
+  end
+
   test "orders admissions stably, deduplicates generations, and isolates queue keys" do
+    assert [] = MergeQueue.actions([], %{})
+
     entries = [entry(3, @sha_a, 2), entry(2, @sha_b, 1), entry(2, @sha_b, 1), entry(1, @sha_a, 1, "release")]
     queues = MergeQueue.build_queues(entries)
 
@@ -40,7 +99,126 @@ defmodule SymphonyElixir.GitHub.MergeQueueTest do
     assert {:blocked, %{4 => :dependency_cycle, 5 => :dependency_cycle}} =
              MergeQueue.integration_order([dependent, entry(6, @sha_a, 2, "main", [5]) |> Map.put(:pr_number, 4)], MapSet.new())
 
-    assert [] = MergeQueue.actions([entry(7, @sha_a, 1, "main", [99])], %{})
+    assert [{:block_dependency, %{pr_number: 7}, :missing_dependency}] =
+             MergeQueue.actions([entry(7, @sha_a, 1, "main", [99])], %{})
+  end
+
+  test "coordinator advances and tracks the selected prerequisite generation" do
+    owner = self()
+    prerequisite = entry(4, @sha_a, 2)
+    dependent = entry(5, @sha_b, 1, "main", [4])
+    {:ok, loads} = Agent.start_link(fn -> 0 end)
+
+    loader = fn ->
+      call = Agent.get_and_update(loads, &{&1, &1 + 1})
+      if call == 0, do: {:ok, [dependent, prerequisite]}, else: {:ok, [prerequisite]}
+    end
+
+    {:ok, queue} =
+      MergeQueue.start_link(
+        name: nil,
+        enabled: true,
+        loader: loader,
+        executor: fn action ->
+          send(owner, {:action, action})
+          {:merged, %{}}
+        end,
+        initial_delay: 60_000
+      )
+
+    MergeQueue.poll(queue)
+    assert_receive {:action, {:advance, %{pr_number: 4}}}
+    refute_receive {:action, {:advance, %{pr_number: 5}}}
+
+    MergeQueue.poll(queue)
+    refute_receive {:action, _}
+  end
+
+  test "dependency blockers are actionable while independent work advances" do
+    independent = entry(2, @sha_a, 3)
+    missing = %{entry(7, @sha_b, 1, "main", [99]) | dependency_blocker: :missing_dependency}
+    closed = %{entry(8, @sha_a, 2, "main", [98]) | dependency_blocker: :closed_unmerged_dependency}
+
+    assert [
+             {:block_dependency, %{pr_number: 7}, :missing_dependency},
+             {:block_dependency, %{pr_number: 8}, :closed_unmerged_dependency},
+             {:advance, %{pr_number: 2}}
+           ] = MergeQueue.actions([missing, closed, independent], %{})
+  end
+
+  test "cyclic dependencies are blocked without holding independent work" do
+    first = entry(4, @sha_a, 1, "main", [5])
+    second = entry(5, @sha_b, 2, "main", [4])
+    independent = entry(6, @sha_a, 3)
+
+    assert [
+             {:block_dependency, %{pr_number: 4}, :dependency_cycle},
+             {:block_dependency, %{pr_number: 5}, :dependency_cycle},
+             {:advance, %{pr_number: 6}}
+           ] = MergeQueue.actions([first, second, independent], %{})
+  end
+
+  test "coordinator persists dependency blockers and advances independent work in one poll" do
+    owner = self()
+    blocked = entry(7, @sha_b, 1, "main", [99])
+    independent = entry(2, @sha_a, 2)
+
+    loader = fn ->
+      Backend.resolve_dependencies_for_test([blocked, independent], fn
+        _entry, 99 -> {:blocked, :missing_dependency}
+      end)
+    end
+
+    {:ok, queue} =
+      MergeQueue.start_link(
+        name: nil,
+        enabled: true,
+        loader: loader,
+        executor: fn action ->
+          send(owner, {:action, action})
+
+          case action do
+            {:block_dependency, _, reason} -> {:blocked, reason}
+            {:advance, _} -> {:merged, %{}}
+          end
+        end,
+        initial_delay: 60_000
+      )
+
+    MergeQueue.poll(queue)
+    assert_receive {:action, {:block_dependency, %{pr_number: 7}, :missing_dependency}}
+    assert_receive {:action, {:advance, %{pr_number: 2}}}
+  end
+
+  test "dependency resolution classifies provider-visible invalid relationships" do
+    cases = [
+      {7, :self_dependency},
+      {8, :missing_dependency},
+      {9, :cross_repository_dependency},
+      {10, :closed_unmerged_dependency}
+    ]
+
+    Enum.each(cases, fn {dependency, reason} ->
+      entries = [entry(7, @sha_a, 1, "main", [dependency])]
+      resolver = fn _entry, ^dependency -> {:blocked, reason} end
+
+      assert {:ok, [%{dependency_blocker: ^reason}]} =
+               Backend.resolve_dependencies_for_test(entries, resolver)
+    end)
+  end
+
+  test "provider dependency classification distinguishes actionable states" do
+    pull = fn
+      _repo, 8 -> {:error, {:github_api_status, 404}}
+      _repo, 9 -> {:ok, %{"base" => %{"repo" => %{"full_name" => "other/repo"}}, "state" => "open"}}
+      _repo, 10 -> {:ok, %{"base" => %{"repo" => %{"full_name" => "octo/repo"}}, "state" => "closed"}}
+      _repo, 11 -> {:ok, %{"base" => %{"repo" => %{"full_name" => "octo/repo"}}, "merged" => true}}
+    end
+
+    assert {:blocked, :missing_dependency} = Backend.dependency_state_for_test("octo/repo", 8, pull)
+    assert {:blocked, :cross_repository_dependency} = Backend.dependency_state_for_test("octo/repo", 9, pull)
+    assert {:blocked, :closed_unmerged_dependency} = Backend.dependency_state_for_test("octo/repo", 10, pull)
+    assert :satisfied = Backend.dependency_state_for_test("octo/repo", 11, pull)
   end
 
   test "non-head target movement never produces branch updates" do

@@ -108,7 +108,10 @@ the exact same-repository branch, and its 40-character pushed head. Before posti
 the host validates that PR identity and head, adds the configured required label idempotently, and
 only then records the checkpoint. The next successful poll enriches the issue with the PR,
 conversation, inline comments, formal reviews, and all current-head check runs/statuses, then
-dispatches the originating issue workspace without another human command. Forks, cross-repository
+dispatches the originating issue workspace without another human command. A latest human
+`CHANGES_REQUESTED` review suppresses dispatch and every Symphony mutation until that review is
+dismissed, after which processing resumes automatically. A successful trusted automatic review
+admits the exact managed head to the merge queue without human approval. Forks, cross-repository
 heads, removed labels, stale heads, closed/merged PRs, and incomplete review context do not dispatch.
 
 For Spec Kit workflows, each readable checkpoint summary is also the operator's audit trail. It
@@ -130,11 +133,12 @@ Supported commands are:
 /symphony cancel
 ```
 
-A direct authorized comment resumes only an `awaiting_input` checkpoint. Approval commands must
-match the current gate. General issue and PR comments are context, not triggers. Formal requested
-changes, formal approval, PR merge/closure, and explicit PR commands can resume an
-`awaiting_review` checkpoint. An unresolved change request from any current reviewer takes
-precedence over approvals from other reviewers.
+A direct authorized comment resumes only an `awaiting_input` checkpoint. Spec Kit approval commands
+must match the current gate. General issue and PR comments are context, not triggers. Managed PRs do
+not require a human approval review. A human change request is a hard suspension signal, not a
+revision command; dismissal resumes the automatic review/queue lifecycle. PR merge/closure remains
+an explicit lifecycle trigger. `awaiting_review` remains readable for older checkpoints but is not
+emitted by the autonomous managed-PR workflow.
 
 Removing the required label makes the issue ineligible immediately. Closing the issue makes it
 terminal. The workflow prompt remains responsible for applying `/symphony cancel` by removing the

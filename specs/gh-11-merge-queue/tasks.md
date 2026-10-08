@@ -152,6 +152,16 @@ description: "Implementation tasks for the GitHub-backed serialized merge queue"
 - [X] T048 allow same-repository managed PRs when their containing repository is itself a fork, expose guarded `merge_queued` admissions through the host checkpoint tool, and enable approval-driven queueing in `.symphony/WORKFLOW.md`, with focused workflow-control and adapter regressions
 - [X] T049 normalize non-queue and malformed latest checkpoints to empty admission lists in `elixir/lib/symphony_elixir/github/merge_queue/backend.ex`, with a production-shape loader regression and live enabled-queue restart verification
 
+## Phase 9: Dependency Advancement Revision
+
+- [X] T050 [US4] Add coordinator regressions proving the selected prerequisite generation—not the dependent queue prefix—is advanced and tracked in `elixir/test/symphony_elixir/github_merge_queue_test.exs`
+- [X] T051 [US4] Persist actionable dependency blockers for missing, cross-repository, closed-unmerged, self, and cyclic relationships without blocking independent entries in `elixir/lib/symphony_elixir/github/merge_queue.ex`, `elixir/lib/symphony_elixir/github/merge_queue/backend.ex`, and focused tests
+- [X] T052 [US4] Run the dependency stack end-to-end through loader resolution, coordinator selection, and durable outcome execution, then complete a fresh Spec Kit requirement audit and full validation
+
+## Phase 10: Autonomous Review Admission
+
+- [X] T053 remove the human approval gate for same-repository PRs created by Symphony from issues, admit successful trusted automatic reviews directly to the merge queue, suspend every Symphony mutation while a human change request is active, resume automatically after dismissal, and cover provenance and lifecycle behavior with red-green tests
+
 ---
 
 ## Dependencies & Execution Order

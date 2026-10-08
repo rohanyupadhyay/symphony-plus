@@ -6,9 +6,9 @@ The queue is enabled only for configured GitHub repositories. Exactly one superv
 
 ## Admission
 
-An open same-repository pull request is admitted only when required human approval exists, no unresolved change request exists, the current head's required checks and labels satisfy repository workflow eligibility, and its workflow records a versioned queue checkpoint. The checkpoint contains PR number, head SHA, target branch, stable admission evidence, and normalized prerequisite PR numbers.
+An open same-repository pull request created by Symphony from an issue is admitted when trusted automatic review succeeds, no active human change request exists, the current head's required checks and labels satisfy repository workflow eligibility, and its workflow records a versioned queue checkpoint. Human approval is not required. The checkpoint contains PR number, head SHA, target branch, stable automatic-review admission evidence, and normalized prerequisite PR numbers.
 
-Admission is idempotent. Repeated polls of the same generation create one entry. A changed head invalidates prior validation and requires checks/approval eligibility for the new generation before readmission.
+Admission is idempotent. Repeated polls of the same generation create one entry. A changed head invalidates prior validation and requires checks and trusted automatic review for the new generation before readmission.
 
 ## Ordering and dependencies
 
@@ -18,7 +18,7 @@ Holding or removing one dependent entry does not prevent another independently e
 
 ## Candidate validation
 
-The coordinator selects no more than one active head per queue key. Before candidate creation it re-reads the PR head, target SHA, approvals, checks, labels, dependency state, and mergeability.
+The coordinator selects no more than one active head per queue key. Before candidate creation it re-reads the PR head, target SHA, human change-request state, checks, labels, dependency state, and mergeability.
 
 The validation candidate represents exactly the admitted change applied to the current `target_sha` and is identified by a provider-visible `candidate_sha`. Only the active queue head may receive a guarded final-integration branch update, using the expected admitted head SHA; non-head branches are never rewritten merely because the target moved. Candidate checks must be attributable to the resulting candidate SHA.
 
@@ -31,16 +31,16 @@ Immediately before merge the coordinator MUST confirm:
 - current PR head equals the post-update `candidate_sha` (the guarded update must have started from the admitted source head);
 - current target SHA equals the candidate target;
 - the candidate checks are passing for the candidate SHA;
-- approvals, labels, dependencies, and repository merge policy remain satisfied;
+- no active human change request exists and labels, dependencies, and repository merge policy remain satisfied;
 - the PR remains open and is still the active queue head.
 
 Any mismatch makes validation stale and prevents merge. Target movement creates a new candidate against the new target. The merge mutation supplies `candidate_sha` as the expected PR head SHA. After success or an ambiguous response, the coordinator re-reads PR and target state before advancing or retrying.
 
 ## Recovery and reconciliation
 
-Startup, repeated polls, reload, restart, cancellation, PR closure, approval dismissal, label removal, head update, target movement, merge completion, and partial provider failure all reconcile from GitHub-visible state. Terminal outcomes are idempotent. A successful merge cannot be duplicated by retry, and a stale candidate cannot authorize a later merge.
+Startup, repeated polls, reload, restart, cancellation, PR closure, human change-request creation or dismissal, label removal, head update, target movement, merge completion, and partial provider failure all reconcile from GitHub-visible state. A human change request holds the generation without mutation; dismissal resumes it automatically. Terminal outcomes are idempotent. A successful merge cannot be duplicated by retry, and a stale candidate cannot authorize a later merge.
 
-When an incompatible entry leaves the path, the next independently eligible entry may advance. The removed entry can return only as a new/current generation whose checks and approval eligibility are valid.
+When an incompatible entry leaves the path, the next independently eligible entry may advance. The removed entry can return only as a new/current generation whose checks and trusted automatic review are valid.
 
 ## Observability
 
@@ -48,4 +48,4 @@ Operators and authors can inspect queue state/position, dependency hold, active 
 
 ## Configuration and safety
 
-Configuration is loaded through `SymphonyElixir.Config`, validates repository and polling/retry settings, and supports safe disable/reload. All GitHub calls use the existing host-side authenticated client. No queue action runs Codex outside an issue workspace, weakens branch protection, bypasses required review/check policy, or treats automated review as human approval.
+Configuration is loaded through `SymphonyElixir.Config`, validates repository and polling/retry settings, and supports safe disable/reload. All GitHub calls use the existing host-side authenticated client. No queue action runs Codex outside an issue workspace, weakens branch protection, or bypasses required check/merge policy. Trusted automatic review is the admission authority; human approval is not required.

@@ -16,10 +16,10 @@ make all
 
 ## Scenario 1: Sequential current-target integration
 
-1. Admit three approved pull requests for `main` while their reviews overlap.
+1. Admit three successfully auto-reviewed managed pull requests for `main` while development overlaps.
 2. Assert only the first stable queue entry receives an active candidate.
 3. Complete required checks and merge it.
-4. Assert the second candidate records the new `main` SHA, then repeat for the third.
+4. Assert the second candidate records the new `main` SHA, then repeat for the third without human approval.
 
 Expected: no candidate validation or merge overlaps for the queue key, and every successful merge records exact current head/target evidence.
 
@@ -42,7 +42,7 @@ Expected: the head receives an actionable `update_required` outcome, is removed 
 
 1. Push a new head to the removed pull request.
 2. Leave old checks or approvals attached only to the prior SHA.
-3. Supply current eligibility evidence for the new SHA.
+3. Supply current automatic-review and check evidence for the new SHA.
 
 Expected: no readmission occurs until evidence is current; afterward exactly one new queue generation is admitted.
 
@@ -63,9 +63,9 @@ Expected: provider-visible state reconstructs the same queue/candidate decision;
 
 ## Scenario 7: Cancellation and eligibility loss
 
-During validation, close the PR, dismiss approval, remove its eligibility label, change its head, or cancel it through workflow control.
+During validation, close the PR, submit or dismiss a human change request, remove its eligibility label, change its head, or cancel it through workflow control.
 
-Expected: the active candidate cannot merge, the durable outcome explains the transition, and another eligible entry can advance safely.
+Expected: an active human change request causes no Symphony mutation and dismissal resumes automatically; other eligibility loss prevents merge and lets another eligible entry advance safely.
 
 ## Scenario 8: Transient provider/check failure
 

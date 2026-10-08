@@ -80,7 +80,7 @@ Never omit a phase from the ledger or claim that a phase ran when it was skipped
 as `completed`, `not run`, or `skipped: <reason>`, including its cumulative run count and outcome,
 rather than collapsing phases into broad labels such as “planning” or “implementation.” If a phase
 asks zero questions, record `zero questions` and the concrete reason. Include the same report in `awaiting_input`, `blocked`,
-`awaiting_approval`, `awaiting_review`, `/symphony status`, and final merged-PR comments.
+`awaiting_approval`, `review_pending`, `merge_queued`, `/symphony status`, and final merged-PR comments.
 
 Advance exactly one state machine:
 
@@ -107,14 +107,21 @@ Advance exactly one state machine:
    the `symphony` label before recording the checkpoint, and the next poll starts the automatic
    review without another command.
 8. On an `automatic_review` trigger, review the complete diff and supplied PR conversation,
-   reviews, inline comments, merge state, and current-head checks. Diagnose whether failures are
+   reviews, inline comments, merge state, and current-head checks. If any human review remains
+   `CHANGES_REQUESTED`, make no mutation and end the turn; the host suppresses further
+   work until dismissal, then resumes automatically. Otherwise diagnose whether failures are
    PR-caused, repair only in-scope defects on the same branch, run targeted tests and
    `make -C elixir all`, push through `github_git_push`, and record findings, corrections, check
    status, validation, and omissions. If required evidence is incomplete or an external blocker
-   remains, checkpoint `blocked` with the exact recovery action. Otherwise post a fresh
-   `awaiting_review` checkpoint; never merge solely on the automated review.
-9. Apply implementation-only review feedback directly. Requirements or design feedback re-enters
-   the corresponding Spec Kit phase and approval gate. Update the same branch and PR.
+   remains, checkpoint `blocked` with the exact recovery action. If the review pushes corrections,
+   post a fresh `review_pending` checkpoint for the new head and end the turn. After a successful
+   no-mutation automatic review whose current head still equals the trigger head, post
+   `merge_queued` with the exact PR, branch, head, repository, target branch, the trigger's
+   `admission_sequence`, and normalized dependencies. Human approval is not required; only the host
+   queue performs the guarded merge.
+9. `/symphony revise` may request another cycle when no human change request is active. Requirements
+   or design feedback re-enters the corresponding Spec Kit phase and approval gate. Update the same
+   branch and PR, then post a fresh `review_pending` checkpoint for automatic review.
 10. After merge, comment with final validation and close the parent issue explicitly. The tracking
    reference never owns issue closure. If the PR is closed without merge, keep the issue open and
    ask for revise, replacement, or cancellation instead.

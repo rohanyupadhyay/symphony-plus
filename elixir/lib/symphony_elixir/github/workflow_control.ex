@@ -114,7 +114,7 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
       "head_sha" => admission.source_head_sha,
       "outcome" => Atom.to_string(kind),
       "reason" => inspect(detail),
-      "recovery" => queue_recovery(kind)
+      "recovery" => queue_recovery(kind, detail)
     }
   end
 
@@ -290,10 +290,11 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
 
   defp checkpoint_guidance(_checkpoint), do: nil
 
-  defp queue_recovery(:update_required), do: "Update the pull request and restore current approval and checks."
-  defp queue_recovery(:blocked), do: "Resolve the reported blocker or retry after the provider recovers."
-  defp queue_recovery(:merged), do: "No action required."
-  defp queue_recovery(_kind), do: "Retry after inspecting the reported reason."
+  defp queue_recovery(:blocked, {:dependency, _reason, recovery}) when is_binary(recovery), do: recovery
+  defp queue_recovery(:update_required, _detail), do: "Update the pull request and restore current approval and checks."
+  defp queue_recovery(:blocked, _detail), do: "Resolve the reported blocker or retry after the provider recovers."
+  defp queue_recovery(:merged, _detail), do: "No action required."
+  defp queue_recovery(_kind, _detail), do: "Retry after inspecting the reported reason."
 
   defp latest_checkpoint(comments, authorized, trusted_bot_login) do
     comments
@@ -325,7 +326,7 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
         latest_valid_command(later_comments, checkpoint)
 
       "review_pending" ->
-        automatic_review_trigger(checkpoint, review_context)
+        automatic_review_trigger(checkpoint, checkpoint_comment, review_context)
 
       "awaiting_review" ->
         review_trigger(checkpoint, later_comments, review_context, authorized)
@@ -335,20 +336,31 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
     end
   end
 
-  defp automatic_review_trigger(checkpoint, context) do
+  defp automatic_review_trigger(checkpoint, checkpoint_comment, context) do
     pull_request = Map.get(context, "pull_request", %{})
 
     if valid_automatic_review?(checkpoint, pull_request, context) do
       Map.take(checkpoint, ~w(pr_number branch head_sha))
       |> Map.put("kind", "automatic_review")
+      |> Map.put("admission_sequence", event_id(checkpoint_comment))
     end
   end
 
   defp valid_automatic_review?(checkpoint, pull_request, context) do
     open_pull_request?(pull_request) and pull_request["number"] == checkpoint["pr_number"] and
       matching_review_head?(checkpoint, pull_request, context) and
-      safe_same_repository_head?(pull_request) and symphony_labeled?(pull_request)
+      safe_same_repository_head?(pull_request) and symphony_labeled?(pull_request) and
+      autonomous_merge_allowed?(Map.get(context, "reviews", []))
   end
+
+  @spec autonomous_merge_allowed?([map()]) :: boolean()
+  def autonomous_merge_allowed?(reviews) when is_list(reviews) do
+    reviews
+    |> Enum.reject(&bot_review?/1)
+    |> Enum.all?(&(normalize_review_state(&1["state"]) != "changes_requested"))
+  end
+
+  defp bot_review?(review), do: get_in(review, ["user", "type"]) == "Bot"
 
   defp open_pull_request?(pull_request),
     do: pull_request["state"] == "open" and pull_request["merged"] != true
@@ -483,19 +495,13 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
 
     new_review? = Enum.any?(actionable_reviews, &(event_id(&1) > minimum_id))
 
-    latest_by_reviewer =
-      actionable_reviews
-      |> Enum.sort_by(&event_id/1)
-      |> Enum.reduce(%{}, fn review, acc -> Map.put(acc, get_in(review, ["user", "login"]), review) end)
-      |> Map.values()
-
     change_request =
-      latest_by_reviewer
+      actionable_reviews
       |> Enum.filter(&(normalize_review_state(&1["state"]) == "changes_requested"))
       |> Enum.max_by(&event_id/1, fn -> nil end)
 
     approval =
-      latest_by_reviewer
+      actionable_reviews
       |> Enum.filter(&(normalize_review_state(&1["state"]) == "approved"))
       |> Enum.max_by(&event_id/1, fn -> nil end)
 

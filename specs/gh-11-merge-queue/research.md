@@ -33,7 +33,7 @@
 
 ## Decision: Re-read both revisions and eligibility immediately before a conditional merge
 
-**Rationale**: Validation becomes stale when the target or pull-request head changes. The coordinator therefore compares the recorded head and target SHAs with current GitHub state, rechecks approval/check/policy evidence, and supplies the expected head SHA to the merge mutation. A target change forces a new candidate; an ambiguous merge response is reconciled from PR and target state before retry.
+**Rationale**: Validation becomes stale when the target or pull-request head changes. The coordinator therefore compares the recorded head and target SHAs with current GitHub state, rechecks human change-request, check, and policy evidence, and supplies the expected head SHA to the merge mutation. A target change forces a new candidate; an ambiguous merge response is reconciled from PR and target state before retry.
 
 **Alternatives considered**:
 

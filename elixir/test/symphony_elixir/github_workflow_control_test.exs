@@ -79,6 +79,25 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
     assert retry_recovery =~ "Retry after inspecting"
   end
 
+  test "dependency outcomes preserve the specific blocker and recovery action" do
+    admission = %{
+      pr_number: 7,
+      repository: "octo/repo",
+      target_branch: "main",
+      source_head_sha: String.duplicate("a", 40)
+    }
+
+    checkpoint =
+      WorkflowControl.queue_outcome(
+        admission,
+        :blocked,
+        {:dependency, :missing_dependency, "Repair the dependency declaration and re-enter the queue."}
+      )
+
+    assert checkpoint["reason"] =~ "missing_dependency"
+    assert checkpoint["recovery"] == "Repair the dependency declaration and re-enter the queue."
+  end
+
   test "candidate checkpoints retain the exact source target and updated head" do
     admission = %{
       pr_number: 7,
@@ -248,6 +267,7 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
 
     assert trigger == %{
              "kind" => "automatic_review",
+             "admission_sequence" => 80,
              "pr_number" => 7,
              "branch" => "symphony/gh-15-auto-review-pr",
              "head_sha" => String.duplicate("a", 40)
@@ -255,6 +275,57 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
 
     consumed = checkpoint_comment(81, "awaiting_review", %{"pr_number" => 7})
     refute WorkflowControl.derive([checkpoint, consumed], context, @authorized).dispatchable
+  end
+
+  test "human change requests suspend automatic review until dismissed" do
+    sha = String.duplicate("a", 40)
+
+    checkpoint =
+      checkpoint_comment(80, "review_pending", %{
+        "phase" => "review",
+        "pr_number" => 7,
+        "branch" => "topic",
+        "head_sha" => sha
+      })
+
+    context = %{
+      "pull_request" => %{
+        "number" => 7,
+        "state" => "open",
+        "merged" => false,
+        "labels" => [%{"name" => "symphony"}],
+        "head" => %{"ref" => "topic", "sha" => sha, "repo" => %{"id" => 123, "full_name" => "octo/repo"}},
+        "base" => %{"repo" => %{"id" => 123, "full_name" => "octo/repo"}}
+      },
+      "checks" => %{"head_sha" => sha},
+      "reviews" => [review(101, "alice", "MEMBER", "CHANGES_REQUESTED")]
+    }
+
+    refute WorkflowControl.derive([checkpoint], context, @authorized).dispatchable
+
+    dismissed = put_in(context, ["reviews"], [review(101, "alice", "MEMBER", "DISMISSED")])
+
+    assert %{dispatchable: true, trigger: %{"kind" => "automatic_review"}} =
+             WorkflowControl.derive([checkpoint], dismissed, @authorized)
+  end
+
+  test "autonomous merge needs no approval but rejects an active human change request" do
+    assert WorkflowControl.autonomous_merge_allowed?([])
+    assert WorkflowControl.autonomous_merge_allowed?([review(1, "alice", "MEMBER", "APPROVED")])
+
+    refute WorkflowControl.autonomous_merge_allowed?([
+             review(1, "alice", "MEMBER", "CHANGES_REQUESTED")
+           ])
+
+    refute WorkflowControl.autonomous_merge_allowed?([
+             review(1, "alice", "MEMBER", "CHANGES_REQUESTED"),
+             review(2, "alice", "MEMBER", "APPROVED")
+           ])
+
+    assert WorkflowControl.autonomous_merge_allowed?([
+             review(1, "alice", "MEMBER", "DISMISSED"),
+             review(2, "alice", "MEMBER", "APPROVED")
+           ])
   end
 
   test "review pending suppresses unsafe, terminal, unlabeled, or stale managed pull requests" do
@@ -516,7 +587,7 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
 
     assert %{
              dispatchable: true,
-             trigger: %{"kind" => "review", "state" => "approved", "id" => 103}
+             trigger: %{"kind" => "review", "state" => "changes_requested", "id" => 102}
            } = WorkflowControl.derive([checkpoint], superseded, @authorized)
   end
 

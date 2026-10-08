@@ -6,7 +6,7 @@
 
 ## Summary
 
-Add a GitHub-backed merge queue that admits approved Symphony-managed pull requests while allowing their issue workspaces and reviews to continue independently. One OTP coordinator owns queue advancement for each configured repository and target branch. Queue order, dependency declarations, candidate revisions, and outcomes remain reconstructable from GitHub-visible pull-request/checkpoint state. The coordinator processes only the head entry, validates an exact candidate against the current target SHA, rejects stale results if either SHA changes, and merges conditionally before considering the next entry. Deterministic conflicts or validation failures return the pull request for an author update; transient provider failures retain or explicitly block the entry without misclassifying its code.
+Add a GitHub-backed merge queue that admits successfully auto-reviewed Symphony-managed pull requests without human approval while allowing their issue workspaces and reviews to continue independently. One OTP coordinator owns queue advancement for each configured repository and target branch. Queue order, dependency declarations, candidate revisions, and outcomes remain reconstructable from GitHub-visible pull-request/checkpoint state. The coordinator processes only the head entry, validates an exact candidate against the current target SHA, rejects stale results if either SHA changes, and merges conditionally before considering the next entry. An active human change request suspends all Symphony mutations until dismissal. Deterministic conflicts or validation failures return the pull request for an author update; transient provider failures retain or explicitly block the entry without misclassifying its code.
 
 ## Technical Context
 
@@ -24,7 +24,7 @@ Add a GitHub-backed merge queue that admits approved Symphony-managed pull reque
 
 **Performance Goals**: Process one final integration at a time per repository/target branch; discover admission and state changes on the next configured poll; avoid rewriting non-head branches and avoid queue API calls where the feature is disabled
 
-**Constraints**: Polling rather than webhooks; one authoritative owner per repository/target branch; GitHub-visible restart recovery; exact head/base freshness; host-side credentials; repository approvals/checks/merge rules remain authoritative; no continuous rebases; no cross-repository dependencies
+**Constraints**: Polling rather than webhooks; one authoritative owner per repository/target branch; GitHub-visible restart recovery; exact head/base freshness; host-side credentials; required checks/merge rules remain authoritative; no human approval gate; active human change requests suspend automation; no continuous rebases; no cross-repository dependencies
 
 **Scale/Scope**: One configured GitHub repository with independent queues per target branch, tens of concurrently open/reviewed pull requests, and dependency chains within that repository
 
@@ -42,15 +42,15 @@ Add a GitHub-backed merge queue that admits approved Symphony-managed pull reque
 
 ## Architecture and Lifecycle
 
-1. GitHub workflow control turns a formal approval with no unresolved change request into a durable queue-admission checkpoint for the managed pull request rather than permitting an immediate agent merge.
+1. GitHub workflow control turns a successful trusted automatic review with no active human change request into a durable queue-admission checkpoint for the managed pull request rather than permitting an immediate agent merge.
 2. `GitHub.MergeQueue` is supervised once and derives queue keys from configured repository plus each admitted pull request's target branch. It reconstructs eligible entries from GitHub on startup and every poll; it keeps timers and an active-operation cache only as accelerators, never as durable truth.
-3. Admission records the pull-request number, exact head SHA, target branch, admission time/sequence, approval/check evidence, and declared dependencies in a GitHub-visible checkpoint. Stable ordering is admission sequence then pull-request number; satisfied dependency order takes precedence.
-4. For each queue key, the coordinator selects at most one eligible head. It re-reads PR, review, checks, mergeability, dependencies, and current target SHA before constructing an integration candidate `(source_head_sha, target_sha)`.
+3. Admission records the pull-request number, exact head SHA, target branch, admission time/sequence, automatic-review/check evidence, and declared dependencies in a GitHub-visible checkpoint. Stable ordering is admission sequence then pull-request number; satisfied dependency order takes precedence.
+4. For each queue key, the coordinator selects at most one eligible head. It re-reads PR, human change-request state, checks, mergeability, dependencies, and current target SHA before constructing an integration candidate `(source_head_sha, target_sha)`.
 5. At final integration only, the coordinator requests GitHub's guarded update-branch operation using the expected admitted head SHA. This creates a candidate head incorporating the current target without continuously rewriting non-head branches. Required checks run on that exact updated head, whose source head, target SHA, and resulting candidate SHA are recorded durably.
-6. Before merge, the coordinator re-reads the PR head, target SHA, approvals, required checks, and repository policy. The PR head must equal the post-update `candidate_sha`, while the target must still equal `target_sha`; any mismatch invalidates the candidate. A merge request includes `candidate_sha` as the expected PR head; success is reconciled from GitHub before queue advancement.
+6. Before merge, the coordinator re-reads the PR head, target SHA, human change-request state, required checks, and repository policy. The PR head must equal the post-update `candidate_sha`, while the target must still equal `target_sha`; any mismatch invalidates the candidate. A merge request includes `candidate_sha` as the expected PR head; success is reconciled from GitHub before queue advancement.
 7. A deterministic conflict or candidate check failure records an update-required outcome and removes the entry from the active path. A new head must regain current eligibility before readmission. Transient API/check infrastructure failures are retried with bounded backoff or surfaced as an operator blocker without demanding an author update.
 8. Dependencies are explicit PR-number links in a repository-visible declaration. Unsatisfied prerequisites hold an entry; merged prerequisites unlock it; missing, cross-repository, closed-unmerged, or cyclic relationships produce actionable blocked outcomes.
-9. Closure, approval dismissal, label removal, head changes, cancellation, target movement, partial merge responses, and restart are reconciled from GitHub before any mutation. Later independent entries advance after terminal or update-required outcomes.
+9. Closure, human change-request creation or dismissal, label removal, head changes, cancellation, target movement, partial merge responses, and restart are reconciled from GitHub before any mutation. Active change requests hold without consuming the generation; dismissal resumes automatically. Later independent entries advance after terminal or update-required outcomes.
 
 ## Project Structure
 

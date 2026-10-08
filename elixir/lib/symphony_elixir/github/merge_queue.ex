@@ -56,14 +56,41 @@ defmodule SymphonyElixir.GitHub.MergeQueue do
   @spec actions([Entry.t()], map()) :: [tuple()]
   def actions(entries, context) do
     merged = Map.get(context, :merged_prs, MapSet.new())
+    {blocked, candidates} = Enum.split_with(entries, & &1.dependency_blocker)
 
-    case integration_order(entries, merged) do
+    blocker_actions =
+      Enum.map(blocked, &{:block_dependency, &1, &1.dependency_blocker})
+
+    case integration_order(candidates, merged) do
       {:ok, [head | _]} ->
-        entry = Enum.find(entries, &(&1.pr_number == head))
-        [{:advance, entry}]
+        entry = Enum.find(candidates, &(&1.pr_number == head))
+        blocker_actions ++ [{:advance, entry}]
+
+      {:blocked, blockers} ->
+        dependency_blocks = dependency_block_actions(candidates, blockers)
+        blocker_actions ++ dependency_blocks ++ advance_unblocked(candidates, blockers, merged)
 
       _ ->
-        []
+        blocker_actions
+    end
+  end
+
+  defp dependency_block_actions(entries, blockers) do
+    Enum.flat_map(entries, fn entry ->
+      case Map.fetch(blockers, entry.pr_number) do
+        {:ok, reason} -> [{:block_dependency, entry, reason}]
+        :error -> []
+      end
+    end)
+  end
+
+  defp advance_unblocked(entries, blockers, merged) do
+    case Enum.find(entries, fn entry ->
+           not Map.has_key?(blockers, entry.pr_number) and
+             Enum.all?(entry.dependencies, &MapSet.member?(merged, &1))
+         end) do
+      nil -> []
+      entry -> [{:advance, entry}]
     end
   end
 
@@ -200,7 +227,7 @@ defmodule SymphonyElixir.GitHub.MergeQueue do
 
   defp advance_queue({repository, target}, queue, active, executor) do
     Enum.reduce(actions(queue, %{}), {active, false}, fn action, {inner_active, retry?} ->
-      entry = List.first(queue)
+      entry = elem(action, 1)
 
       if MapSet.member?(inner_active, entry.generation) do
         {inner_active, retry?}
