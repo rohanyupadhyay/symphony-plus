@@ -21,6 +21,9 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
     assert {:ok, decoded} = checkpoint |> WorkflowControl.render_comment() |> WorkflowControl.decode_checkpoint()
     assert decoded["state"] == "merge_queued"
     assert decoded["dependencies"] == [3]
+
+    assert {:error, :invalid_merge_queue_admission} =
+             checkpoint |> Map.delete("branch") |> WorkflowControl.valid_checkpoint()
   end
 
   test "terminal queue outcomes remain durable and do not dispatch issue work" do
@@ -274,9 +277,9 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
         "head" => %{
           "ref" => "topic",
           "sha" => sha,
-          "repo" => %{"full_name" => "octo/repo", "fork" => false}
+          "repo" => %{"id" => 123, "full_name" => "octo/repo", "fork" => false}
         },
-        "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+        "base" => %{"repo" => %{"id" => 123, "full_name" => "octo/repo", "fork" => true}}
       },
       "checks" => %{"head_sha" => sha}
     }
@@ -285,8 +288,8 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
       fn context -> put_in(context, ["pull_request", "state"], "closed") end,
       fn context -> put_in(context, ["pull_request", "merged"], true) end,
       fn context -> put_in(context, ["pull_request", "labels"], []) end,
-      fn context -> put_in(context, ["pull_request", "head", "repo", "fork"], true) end,
-      fn context -> put_in(context, ["pull_request", "head", "repo", "full_name"], "fork/repo") end,
+      fn context -> put_in(context, ["pull_request", "head", "repo", "id"], 456) end,
+      fn context -> put_in(context, ["pull_request", "head", "repo"], nil) end,
       fn context -> put_in(context, ["pull_request", "head", "ref"], "other") end,
       fn context -> put_in(context, ["pull_request", "head", "sha"], String.duplicate("b", 40)) end,
       fn context -> put_in(context, ["checks", "head_sha"], String.duplicate("b", 40)) end
@@ -300,6 +303,13 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
              WorkflowControl.derive(
                [checkpoint],
                put_in(valid, ["pull_request", "labels"], ["symphony", 7]),
+               @authorized
+             )
+
+    assert %{dispatchable: true} =
+             WorkflowControl.derive(
+               [checkpoint],
+               put_in(valid, ["pull_request", "head", "repo", "fork"], true),
                @authorized
              )
   end

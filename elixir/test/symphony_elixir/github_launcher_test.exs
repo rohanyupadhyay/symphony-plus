@@ -97,10 +97,11 @@ defmodule SymphonyElixir.GitHubLauncherTest do
 
     normalized_prompt = String.replace(workflow.prompt_template, ~r/\s+/, " ")
     assert normalized_prompt =~ "fresh `awaiting_review` checkpoint"
-    assert normalized_prompt =~ "cursor includes the handled approval"
+    assert normalized_prompt =~ "`state: merge_queued`"
+    assert normalized_prompt =~ "host-owned queue will revalidate"
     assert normalized_prompt =~ "An `automatic_review` trigger starts one review-and-repair cycle"
     assert normalized_prompt =~ "this same issue workspace"
-    assert normalized_prompt =~ "Never merge solely on the automated review"
+    assert normalized_prompt =~ "Automated review alone never admits or merges"
   end
 
   test "repository self-hosting guide uses the dedicated GitHub App profile" do
