@@ -43,7 +43,7 @@ Fields:
 - `classification`: exactly one of `running`, `retrying`, `quota_waiting`, or `blocked`.
 - issue identity and safe location context from the highest-precedence available record.
 - `tracker_state`: optional supplementary provider workflow state.
-- `reason`: optional concise, control-character-free, bounded text.
+- `reason`: control-character-free, whitespace-collapsed single-line text of at most 160 Unicode graphemes including any truncation marker; absent source text projects as `Operator action required` for blocked entries.
 - lifecycle detail: running metrics, retry timing, quota timing/context, or blocked context.
 - `quota_context`: present on quota-derived blocks so diagnosis retains harness, pool, continuation availability, outcome, and relevant time.
 
@@ -55,6 +55,7 @@ Invariants:
 4. Counts are derived from normalized entries, never raw collection lengths.
 5. Primary lists partition the same normalized entry set.
 6. Tracker workflow state never changes `classification`.
+7. A recoverable quota entry without renewal or recheck timing exposes `Renewal time unavailable` rather than inventing a timestamp.
 
 ## Status Snapshot
 

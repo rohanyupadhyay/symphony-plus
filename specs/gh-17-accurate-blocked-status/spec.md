@@ -71,8 +71,8 @@ As an operator, I continue to see accurate status while a session moves into, re
 
 - **FR-001**: Every issue in an operator status snapshot MUST have exactly one primary runtime lifecycle classification among running, retrying, quota-waiting, and blocked.
 - **FR-002**: The dashboard and JSON status surfaces MUST derive their summary counts and primary listings from the same classification rules.
-- **FR-003**: An ordinary operator-input or approval pause MUST be classified as blocked and MUST expose a concise, non-secret reason when one is available.
-- **FR-004**: A recoverable quota pause MUST be classified as quota-waiting and MUST expose its non-secret harness, pool, renewal or recheck timing, native-context availability, and stable outcome.
+- **FR-003**: An ordinary operator-input or approval pause MUST be classified as blocked and MUST expose a non-secret reason normalized to one line and at most 160 Unicode graphemes including any truncation marker; when no reason is available, it MUST expose the stable cue `Operator action required`.
+- **FR-004**: A recoverable quota pause MUST be classified as quota-waiting and MUST expose its non-secret harness, pool, renewal or recheck timing, native-context availability, and stable outcome; when neither renewal nor recheck timing is known, it MUST expose the stable cue `Renewal time unavailable`.
 - **FR-005**: A quota pause that cannot resume without operator action MUST be classified as blocked, MUST expose quota context needed for diagnosis, and MUST NOT also appear as a recoverable quota wait.
 - **FR-006**: Runtime lifecycle status MUST be visually and semantically distinct from the issue tracker's workflow state; tracker state MAY be supplementary context but MUST NOT label blocked work as running or healthy.
 - **FR-007**: Status badges, labels, explanatory copy, counts, and detail fields MUST use consistent terminology for the same lifecycle classification across the dashboard and JSON status surfaces.
