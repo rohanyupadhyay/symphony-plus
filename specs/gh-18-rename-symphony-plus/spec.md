@@ -48,7 +48,7 @@ A maintainer can search, test, package, and extend the repository without encoun
 
 **Why this priority**: Internal names, fixtures, configuration keys, and paths otherwise cause new work to reproduce the legacy vocabulary and may break renamed commands.
 
-**Independent Test**: Automated tests and a classified repository-wide legacy-name scan show that maintained internal identifiers, fixtures, defaults, and package outputs use the new machine-facing name, with every retained occurrence documented as an intentional compatibility or upstream reference.
+**Independent Test**: Automated tests and a classified repository-wide legacy-name scan show that maintained internal identifiers, fixtures, defaults, and package outputs use the new machine-facing name, with every retained occurrence documented as an upstream, historical, or immutable external reference.
 
 **Acceptance Scenarios**:
 
@@ -78,7 +78,7 @@ A maintainer can search, test, package, and extend the repository without encoun
 - **FR-008**: Repository-controlled internal identifiers, configuration defaults, filesystem names, log names, process/application metadata, test fixtures, and UI titles that encode the product identity MUST use a coherent Symphony Plus form appropriate to their interface.
 - **FR-009**: Normative and operator documentation, including `SPEC.md`, the root README, Elixir README, focused guides, workflow examples, and templates, MUST describe the renamed interfaces consistently.
 - **FR-010**: Tests MUST cover the renamed executable, workflow directory, label, workflow-control prefix, release naming, and representative user-visible product text.
-- **FR-011**: A repository-wide legacy-name audit MUST classify every remaining whole-word `Symphony` or `symphony` occurrence and permit only intentional upstream, historical, immutable external, or compatibility references with clear justification.
+- **FR-011**: A repository-wide legacy-name audit MUST classify every remaining whole-word `Symphony` or `symphony` occurrence and permit only intentional upstream, historical, or immutable external references with clear justification.
 - **FR-012**: Legacy repository-controlled names MUST NOT remain as supported aliases unless a later explicitly approved requirement introduces a compatibility policy.
 - **FR-013**: The rename MUST preserve all existing orchestration, workspace-safety, credential-safety, lifecycle, recovery, review, and merge-queue behavior apart from the requested naming changes.
 
@@ -88,7 +88,7 @@ A maintainer can search, test, package, and extend the repository without encoun
 
 - **SC-001**: 100% of documented build, startup, installation, GitHub-control, and release examples use Symphony Plus naming and can be followed without substituting a legacy product name.
 - **SC-002**: 100% of repository-controlled executable, workflow-directory, issue-label, command-prefix, branch-prefix, and release-artifact interfaces use the specified `symphony-plus` form.
-- **SC-003**: A repository-wide case-sensitive legacy-name scan has zero unexplained occurrences; every retained occurrence is documented as upstream, historical, immutable external, or intentionally compatible.
+- **SC-003**: A repository-wide case-sensitive legacy-name scan has zero unexplained occurrences; every retained occurrence is documented as upstream, historical, or immutable external.
 - **SC-004**: All targeted rename tests and the repository full quality gate pass with no regressions in existing behavior.
 - **SC-005**: An operator can complete the documented build-to-first-managed-issue path using only Symphony Plus naming at every repository-controlled step.
 
