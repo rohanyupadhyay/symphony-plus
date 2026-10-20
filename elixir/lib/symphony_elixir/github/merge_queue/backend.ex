@@ -28,16 +28,19 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
            :ok <- admission_preflight(fresh, entry) do
         MergeQueue.advance(entry, adapter(entry.repository))
       else
+        {:merged, detail} -> {:merged, detail}
         {:retry, reason} -> {:retry, reason}
         {:blocked, reason} -> {:blocked, reason}
         {:error, reason} -> {:blocked, reason}
       end
 
+    persisted = persist_outcome(entry, result)
+
     Logger.info(
-      "GitHub merge queue outcome=#{outcome(result)} repository=#{entry.repository} target=#{entry.target_branch} pr=#{entry.pr_number} source_head_sha=#{entry.source_head_sha} reason=#{inspect(result)}"
+      "GitHub merge queue outcome=#{outcome(persisted)} repository=#{entry.repository} target=#{entry.target_branch} pr=#{entry.pr_number} source_head_sha=#{entry.source_head_sha} reason=#{inspect(persisted)}"
     )
 
-    persist_outcome(entry, result)
+    persisted
   end
 
   def execute({:block_dependency, entry, reason}) do
@@ -51,7 +54,9 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
   def execute(_action), do: {:blocked, :invalid_action}
 
   @doc false
-  @spec admission_preflight(map(), State.Entry.t()) :: :ok | {:retry, term()} | {:blocked, term()}
+  @spec admission_preflight(map(), State.Entry.t()) :: :ok | {:merged, map()} | {:retry, term()} | {:blocked, term()}
+  def admission_preflight(%{merged: true}, _entry), do: {:merged, %{}}
+
   def admission_preflight(%{hold_reason: :human_changes_requested}, _entry),
     do: {:retry, :human_changes_requested}
 
@@ -256,6 +261,7 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
        %{
          head_sha: get_in(pull_request, ["head", "sha"]),
          target_sha: target_sha,
+         merged: pull_request["merged"] == true,
          eligible: eligible,
          hold_reason: hold_reason
        }}
@@ -345,6 +351,8 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
 
   defp persist_outcome(_entry, {:retry, _reason} = result), do: result
 
+  defp persist_outcome(entry, {:merged, detail}), do: complete_merged(entry, detail, &api/4)
+
   defp persist_outcome(entry, {kind, detail} = result) do
     checkpoint = WorkflowControl.queue_outcome(entry, kind, detail)
     body = %{"body" => WorkflowControl.render_comment(checkpoint)}
@@ -352,6 +360,26 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
     case api("POST", "/repos/#{entry.repository}/issues/#{entry.originating_issue}/comments", %{}, body) do
       {:ok, _comment} -> result
       {:error, reason} -> {:retry, {:outcome_checkpoint_failed, reason}}
+    end
+  end
+
+  @doc false
+  @spec complete_merged(State.Entry.t(), term(), function()) :: {:merged, term()} | {:retry, term()}
+  def complete_merged(entry, detail, request) do
+    issue_path = "/repos/#{entry.repository}/issues/#{entry.originating_issue}"
+
+    case request.("PATCH", issue_path, %{}, %{"state" => "closed"}) do
+      {:ok, _issue} ->
+        checkpoint = WorkflowControl.queue_outcome(entry, :merged, detail)
+        body = %{"body" => WorkflowControl.render_comment(checkpoint)}
+
+        case request.("POST", issue_path <> "/comments", %{}, body) do
+          {:ok, _comment} -> {:merged, detail}
+          {:error, reason} -> {:retry, {:outcome_checkpoint_failed, reason}}
+        end
+
+      {:error, reason} ->
+        {:retry, {:issue_close_failed, reason}}
     end
   end
 
