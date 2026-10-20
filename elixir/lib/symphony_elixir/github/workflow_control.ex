@@ -228,12 +228,19 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
   @spec derive([map()], map(), [String.t()]) :: derived_state()
   def derive(comments, review_context, authorized_associations)
       when is_list(comments) and is_map(review_context) and is_list(authorized_associations) do
-    derive(comments, review_context, authorized_associations, nil)
+    derive(comments, review_context, authorized_associations, nil, ["symphony"])
   end
 
   @spec derive([map()], map(), [String.t()], String.t() | nil) :: derived_state()
   def derive(comments, review_context, authorized_associations, trusted_bot_login)
       when is_list(comments) and is_map(review_context) and is_list(authorized_associations) do
+    derive(comments, review_context, authorized_associations, trusted_bot_login, ["symphony"])
+  end
+
+  @spec derive([map()], map(), [String.t()], String.t() | nil, [String.t()]) :: derived_state()
+  def derive(comments, review_context, authorized_associations, trusted_bot_login, required_labels)
+      when is_list(comments) and is_map(review_context) and is_list(authorized_associations) and
+             is_list(required_labels) do
     authorized = authorized_associations |> Enum.map(&normalize_association/1) |> MapSet.new()
 
     case latest_checkpoint(comments, authorized, trusted_bot_login) do
@@ -242,7 +249,7 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
 
       %{comment: checkpoint_comment, checkpoint: checkpoint} ->
         trigger =
-          derive_trigger(checkpoint, checkpoint_comment, comments, review_context, authorized)
+          derive_trigger(checkpoint, checkpoint_comment, comments, review_context, authorized, required_labels)
 
         %{checkpoint: checkpoint, trigger: trigger, dispatchable: not is_nil(trigger)}
     end
@@ -308,7 +315,7 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
     |> Enum.max_by(&event_id(&1.comment), fn -> nil end)
   end
 
-  defp derive_trigger(checkpoint, checkpoint_comment, comments, review_context, authorized) do
+  defp derive_trigger(checkpoint, checkpoint_comment, comments, review_context, authorized, required_labels) do
     later_comments =
       comments
       |> Enum.filter(&(event_id(&1) > event_id(checkpoint_comment) and authorized?(&1, authorized)))
@@ -323,10 +330,10 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
         latest_valid_command(later_comments, checkpoint)
 
       "blocked" ->
-        latest_valid_command(later_comments, checkpoint)
+        blocked_trigger(checkpoint, checkpoint_comment, later_comments, review_context, required_labels)
 
       "review_pending" ->
-        automatic_review_trigger(checkpoint, checkpoint_comment, review_context)
+        automatic_review_trigger(checkpoint, checkpoint_comment, review_context, required_labels)
 
       "awaiting_review" ->
         review_trigger(checkpoint, later_comments, review_context, authorized)
@@ -336,20 +343,31 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
     end
   end
 
-  defp automatic_review_trigger(checkpoint, checkpoint_comment, context) do
+  defp blocked_trigger(checkpoint, checkpoint_comment, later_comments, review_context, required_labels) do
+    command = latest_valid_command(later_comments, checkpoint)
+
+    if checkpoint["phase"] == "merge_queue" and command != nil and command["command"] == "retry" and
+         Map.has_key?(review_context, "pull_request") do
+      automatic_review_trigger(checkpoint, checkpoint_comment, review_context, required_labels)
+    else
+      command
+    end
+  end
+
+  defp automatic_review_trigger(checkpoint, checkpoint_comment, context, required_labels) do
     pull_request = Map.get(context, "pull_request", %{})
 
-    if valid_automatic_review?(checkpoint, pull_request, context) do
+    if valid_automatic_review?(checkpoint, pull_request, context, required_labels) do
       Map.take(checkpoint, ~w(pr_number branch head_sha))
       |> Map.put("kind", "automatic_review")
       |> Map.put("admission_sequence", event_id(checkpoint_comment))
     end
   end
 
-  defp valid_automatic_review?(checkpoint, pull_request, context) do
+  defp valid_automatic_review?(checkpoint, pull_request, context, required_labels) do
     open_pull_request?(pull_request) and pull_request["number"] == checkpoint["pr_number"] and
       matching_review_head?(checkpoint, pull_request, context) and
-      safe_same_repository_head?(pull_request) and symphony_labeled?(pull_request) and
+      safe_same_repository_head?(pull_request) and required_labels_present?(pull_request, required_labels) and
       autonomous_merge_allowed?(Map.get(context, "reviews", []))
   end
 
@@ -389,11 +407,9 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
     false
   end
 
-  defp symphony_labeled?(pull_request) do
-    pull_request
-    |> Map.get("labels", [])
-    |> Enum.map(&label_name/1)
-    |> Enum.member?("symphony")
+  defp required_labels_present?(pull_request, required_labels) do
+    labels = pull_request |> Map.get("labels", []) |> Enum.map(&label_name/1) |> MapSet.new()
+    Enum.all?(required_labels, &MapSet.member?(labels, label_name(&1)))
   end
 
   defp label_name(%{"name" => name}) when is_binary(name),

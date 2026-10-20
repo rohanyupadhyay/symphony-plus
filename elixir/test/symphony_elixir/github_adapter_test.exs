@@ -623,6 +623,68 @@ defmodule SymphonyElixir.GitHub.AdapterTest do
     assert get_in(enriched.native_ref, ["workflow_control", "checkpoint", "head_sha"]) == sha
   end
 
+  test "blocked queue retry enriches PR context and restarts automatic review" do
+    sha = String.duplicate("a", 40)
+
+    marker =
+      WorkflowControl.render_comment(%{
+        "state" => "blocked",
+        "phase" => "merge_queue",
+        "summary" => "Queue admission failed.",
+        "pr_number" => 7,
+        "branch" => "topic",
+        "head_sha" => sha
+      })
+
+    request_fun = fn "GET", path, _params, nil, _settings ->
+      body =
+        case path do
+          "/repos/octo/repo/issues/42/comments" ->
+            [raw_comment(10, "OWNER", marker), raw_comment(11, "OWNER", "/symphony retry")]
+
+          "/repos/octo/repo/pulls/7" ->
+            %{
+              "number" => 7,
+              "state" => "open",
+              "merged" => false,
+              "labels" => [%{"name" => "symphony-plus"}],
+              "head" => %{"ref" => "topic", "sha" => sha, "repo" => %{"full_name" => "octo/repo"}},
+              "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+            }
+
+          "/repos/octo/repo/issues/7/comments" ->
+            []
+
+          "/repos/octo/repo/pulls/7/comments" ->
+            []
+
+          "/repos/octo/repo/pulls/7/reviews" ->
+            []
+
+          "/repos/octo/repo/commits/" <> rest ->
+            if String.ends_with?(rest, "/check-runs"), do: %{"check_runs" => []}, else: %{"sha" => sha, "statuses" => []}
+        end
+
+      {:ok, %{status: 200, body: body}}
+    end
+
+    issue =
+      raw_issue(42)
+      |> Map.put("labels", [%{"name" => "symphony-plus"}])
+      |> GitHubClient.normalize_issue_for_test("octo/repo")
+
+    settings = Map.put(workflow_tracker_settings(), :required_labels, ["symphony-plus"])
+    assert {:ok, enriched} = GitHubClient.enrich_issue_for_test(issue, settings, request_fun)
+
+    assert enriched.native_ref["workflow_control"]["trigger"] == %{
+             "kind" => "automatic_review",
+             "admission_sequence" => 10,
+             "pr_number" => 7,
+             "branch" => "topic",
+             "head_sha" => sha
+           }
+  end
+
   test "github_workflow_checkpoint validates a pushed approval SHA and posts to the current issue" do
     settings = workflow_tracker_settings()
 
@@ -763,7 +825,6 @@ defmodule SymphonyElixir.GitHub.AdapterTest do
       "head_sha" => sha,
       "repository" => "octo/repo",
       "target_branch" => "main",
-      "admission_sequence" => 901,
       "dependencies" => []
     }
 
@@ -879,6 +940,13 @@ defmodule SymphonyElixir.GitHub.AdapterTest do
 
     assert Jason.decode!(result["output"])["error"]["reason"] =~
              "workflow_queue_unmanaged_pull_request"
+  end
+
+  test "github_workflow_checkpoint rejects a different pull request than the reviewed one" do
+    result = execute_queue_admission([], [], :wrong_pr_trigger)
+
+    refute result["success"]
+    assert Jason.decode!(result["output"])["error"]["reason"] =~ "workflow_queue_unmanaged_pull_request"
   end
 
   test "github_workflow_checkpoint rejects queue admission while a human requests changes" do
@@ -1326,6 +1394,7 @@ defmodule SymphonyElixir.GitHub.AdapterTest do
       case mode do
         :missing_trigger -> nil
         :stale_trigger -> queue_admission_trigger(String.duplicate("b", 40))
+        :wrong_pr_trigger -> Map.put(queue_admission_trigger(sha), "pr_number", 8)
         _ -> queue_admission_trigger(sha)
       end
 

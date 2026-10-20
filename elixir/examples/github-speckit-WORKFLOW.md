@@ -116,8 +116,8 @@ Advance exactly one state machine:
    remains, checkpoint `blocked` with the exact recovery action. If the review pushes corrections,
    post a fresh `review_pending` checkpoint for the new head and end the turn. After a successful
    no-mutation automatic review whose current head still equals the trigger head, post
-   `merge_queued` with the exact PR, branch, head, repository, target branch, the trigger's
-   `admission_sequence`, and normalized dependencies. Human approval is not required; only the host
+   `merge_queued` with the exact PR, branch, head, repository, target branch, and normalized
+   dependencies. The host supplies the queue order. Human approval is not required; only the host
    queue performs the guarded merge.
 9. `/symphony revise` may request another cycle when no human change request is active. Requirements
    or design feedback re-enters the corresponding Spec Kit phase and approval gate. Update the same
