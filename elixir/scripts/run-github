@@ -2,11 +2,11 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-symphony_executable="${SYMPHONY_EXECUTABLE:-${script_dir}/../bin/symphony}"
+symphony_executable="${SYMPHONY_PLUS_EXECUTABLE:-${script_dir}/../bin/symphony-plus}"
 
 if [[ ! -x "${symphony_executable}" ]]; then
-  echo "Symphony executable not found or not executable: ${symphony_executable}" >&2
-  echo "Build Symphony before using this launcher." >&2
+  echo "Symphony Plus executable not found or not executable: ${symphony_executable}" >&2
+  echo "Build Symphony Plus before using this launcher." >&2
   exit 1
 fi
 

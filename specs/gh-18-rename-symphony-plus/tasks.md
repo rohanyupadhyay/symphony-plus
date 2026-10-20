@@ -23,9 +23,9 @@ description: "Implementation tasks for the Symphony Plus repository-wide rename"
 
 **Purpose**: Establish a deterministic rename inventory and test-first guardrails before changing contracts.
 
-- [ ] T001 Create a classified whole-word legacy-name audit script covering maintained files and paths, excluding VCS/dependency/build output and accepting only `upstream`, `historical`, or `immutable_external` entries, in `elixir/scripts/audit_product_identity.exs` and `elixir/test/fixtures/product_identity_allowlist.txt`
-- [ ] T002 [P] Add failing naming-contract assertions for canonical display, slug, module, application, environment, command, path, branch, label, and release values in `elixir/test/symphony_elixir/product_identity_test.exs`
-- [ ] T003 [P] Add failing release-workflow assertions for `symphony-plus` artifacts, titles, executable output, and removed legacy aliases in `elixir/test/symphony_elixir/release_contract_test.exs`
+- [X] T001 Create a classified whole-word legacy-name audit script covering maintained files and paths, excluding VCS/dependency/build output and accepting only `upstream`, `historical`, or `immutable_external` entries, in `elixir/scripts/audit_product_identity.exs` and `elixir/test/fixtures/product_identity_allowlist.txt`
+- [X] T002 [P] Add failing naming-contract assertions for canonical display, slug, module, application, environment, command, path, branch, label, and release values in `elixir/test/symphony_elixir/product_identity_test.exs`
+- [X] T003 [P] Add failing release-workflow assertions for `symphony-plus` artifacts, titles, executable output, and removed legacy aliases in `elixir/test/symphony_elixir/release_contract_test.exs`
 
 ---
 
@@ -35,10 +35,10 @@ description: "Implementation tasks for the Symphony Plus repository-wide rename"
 
 **⚠️ CRITICAL**: Complete this phase before operator, documentation, or maintained-code story work.
 
-- [ ] T004 Rename the Mix application, release, escript identity, package metadata, aliases, and environment prefixes to `:symphony_plus`, `SymphonyPlus`, and `SYMPHONY_PLUS_*` in `elixir/mix.exs`, `elixir/config/config.exs`, `elixir/config/runtime.exs`, and `elixir/Makefile`
-- [ ] T005 Rename module roots and source directories from `SymphonyElixir`/`SymphonyElixirWeb` to `SymphonyPlus`/`SymphonyPlusWeb` in `elixir/lib/symphony_elixir.ex`, `elixir/lib/symphony_elixir/`, and `elixir/lib/symphony_elixir_web/`, updating all compile-time references atomically
-- [ ] T006 Rename test namespaces, support modules, fixture paths, and application references to the canonical identities in `elixir/test/symphony_elixir/`, `elixir/test/support/`, and `elixir/test/test_helper.exs`
-- [ ] T007 Run the focused identity and compilation checks from T002-T006 and correct only migration-caused failures in `elixir/test/symphony_plus/product_identity_test.exs`, `elixir/test/symphony_plus/release_contract_test.exs`, `elixir/lib/symphony_plus/`, and `elixir/lib/symphony_plus_web/`
+- [X] T004 Rename the Mix application, release, escript identity, package metadata, aliases, and environment prefixes to `:symphony_plus`, `SymphonyPlus`, and `SYMPHONY_PLUS_*` in `elixir/mix.exs`, `elixir/config/config.exs`, `elixir/config/runtime.exs`, and `elixir/Makefile`
+- [X] T005 Rename module roots and source directories from `SymphonyElixir`/`SymphonyElixirWeb` to `SymphonyPlus`/`SymphonyPlusWeb` in `elixir/lib/symphony_elixir.ex`, `elixir/lib/symphony_elixir/`, and `elixir/lib/symphony_elixir_web/`, updating all compile-time references atomically
+- [X] T006 Rename test namespaces, support modules, fixture paths, and application references to the canonical identities in `elixir/test/symphony_elixir/`, `elixir/test/support/`, and `elixir/test/test_helper.exs`
+- [X] T007 Run the focused identity and compilation checks from T002-T006 and correct only migration-caused failures in `elixir/test/symphony_plus/product_identity_test.exs`, `elixir/test/symphony_plus/release_contract_test.exs`, `elixir/lib/symphony_plus/`, and `elixir/lib/symphony_plus_web/`
 
 **Checkpoint**: The application compiles and has one canonical internal product identity with no forwarding modules or aliases.
 
@@ -52,17 +52,17 @@ description: "Implementation tasks for the Symphony Plus repository-wide rename"
 
 ### Tests for User Story 1
 
-- [ ] T008 [P] [US1] Add failing CLI and launcher tests for `bin/symphony-plus`, help/banner text, GitHub App subcommands, and absence of `bin/symphony` in `elixir/test/symphony_plus/cli_test.exs` and `elixir/test/symphony_plus/scripts/run_github_test.exs`
-- [ ] T009 [P] [US1] Add failing GitHub workflow tests for the `symphony-plus` eligibility label, `/symphony-plus` grammar, rendered guidance, cancellation, and `symphony-plus/` branches in `elixir/test/symphony_plus/github/issues_test.exs`, `elixir/test/symphony_plus/github/workflow_control_test.exs`, and `elixir/test/symphony_plus/github/branch_test.exs`
-- [ ] T010 [P] [US1] Add failing persisted-path and lifecycle tests for renamed quota waits, profiles, logs, default workspace roots, startup/restart/reconciliation/cancellation/cleanup, automatic review, and merge-queue handoff in `elixir/test/symphony_plus/` and `elixir/test/support/`
+- [X] T008 [P] [US1] Add failing CLI and launcher tests for `bin/symphony-plus`, help/banner text, GitHub App subcommands, and absence of `bin/symphony` in `elixir/test/symphony_plus/cli_test.exs` and `elixir/test/symphony_plus/scripts/run_github_test.exs`
+- [X] T009 [P] [US1] Add failing GitHub workflow tests for the `symphony-plus` eligibility label, `/symphony-plus` grammar, rendered guidance, cancellation, and `symphony-plus/` branches in `elixir/test/symphony_plus/github/issues_test.exs`, `elixir/test/symphony_plus/github/workflow_control_test.exs`, and `elixir/test/symphony_plus/github/branch_test.exs`
+- [X] T010 [P] [US1] Add failing persisted-path and lifecycle tests for renamed quota waits, profiles, logs, default workspace roots, startup/restart/reconciliation/cancellation/cleanup, automatic review, and merge-queue handoff in `elixir/test/symphony_plus/` and `elixir/test/support/`
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Rename executable creation, startup dispatch, GitHub App setup/verify commands, launcher variables, and stable user messages without aliases in `elixir/lib/symphony_plus/cli.ex`, `elixir/scripts/run-github`, and `elixir/bin/`
-- [ ] T012 [US1] Rename workflow eligibility, control-command parsing and guidance, managed branch defaults, PR label metadata, and fixtures while preserving checkpoint and authorization semantics in `elixir/lib/symphony_plus/github/`, `elixir/test/fixtures/`, and `.github/pull_request_template.md`
-- [ ] T013 [US1] Rename the repository workflow directory from `.symphony/` to `.symphony-plus/` and update its workflow, operator guide, startup paths, command vocabulary, branch contract, and issue label in `.symphony-plus/WORKFLOW.md` and `.symphony-plus/README.md`
-- [ ] T014 [US1] Rename repository-controlled profile, quota-wait, log, workspace-default, and other persisted path slugs without legacy migration or fallback, preserving boundary validation and atomic writes in `elixir/lib/symphony_plus/`, `elixir/config/`, and `elixir/test/support/`
-- [ ] T015 [US1] Run the focused US1 suites from T008-T014 and prove startup, reload, restart, dispatch, retry, reconciliation, cancellation, cleanup, review, and merge-queue behavior remains unchanged in `elixir/test/symphony_plus/`
+- [X] T011 [US1] Rename executable creation, startup dispatch, GitHub App setup/verify commands, launcher variables, and stable user messages without aliases in `elixir/lib/symphony_plus/cli.ex`, `elixir/scripts/run-github`, and `elixir/bin/`
+- [X] T012 [US1] Rename workflow eligibility, control-command parsing and guidance, managed branch defaults, PR label metadata, and fixtures while preserving checkpoint and authorization semantics in `elixir/lib/symphony_plus/github/`, `elixir/test/fixtures/`, and `.github/pull_request_template.md`
+- [X] T013 [US1] Rename the repository workflow directory from `.symphony/` to `.symphony-plus/` and update its workflow, operator guide, startup paths, command vocabulary, branch contract, and issue label in `.symphony-plus/WORKFLOW.md` and `.symphony-plus/README.md`
+- [X] T014 [US1] Rename repository-controlled profile, quota-wait, log, workspace-default, and other persisted path slugs without legacy migration or fallback, preserving boundary validation and atomic writes in `elixir/lib/symphony_plus/`, `elixir/config/`, and `elixir/test/support/`
+- [X] T015 [US1] Run the focused US1 suites from T008-T014 and prove startup, reload, restart, dispatch, retry, reconciliation, cancellation, cleanup, review, and merge-queue behavior remains unchanged in `elixir/test/symphony_plus/`
 
 **Checkpoint**: User Story 1 is independently operable using only canonical interfaces.
 
@@ -76,14 +76,14 @@ description: "Implementation tasks for the Symphony Plus repository-wide rename"
 
 ### Tests for User Story 2
 
-- [ ] T016 [P] [US2] Add documentation and release-metadata assertions for canonical product text and contextualized upstream references in `elixir/test/symphony_plus/documentation_contract_test.exs`
+- [X] T016 [P] [US2] Add documentation and release-metadata assertions for canonical product text and contextualized upstream references in `elixir/test/symphony_plus/documentation_contract_test.exs`
 
 ### Implementation for User Story 2
 
-- [ ] T017 [P] [US2] Rename the normative product contract and root-facing guides while preserving valid upstream URLs in `SPEC.md`, `README.md`, and `docs/`
-- [ ] T018 [P] [US2] Rename implementation and operator documentation, examples, templates, skill prose, logging guidance, commands, paths, and environment variables in `elixir/README.md`, `elixir/AGENTS.md`, `elixir/docs/`, `elixir/examples/`, `.codex/skills/`, and `.agents/skills/`
-- [ ] T019 [P] [US2] Rename controlled media and document filenames and all inbound references, retaining externally published URLs only when immutable and classified, in `.github/media/` and `docs/`
-- [ ] T020 [US2] Run the documentation contract test and manually classify every retained prose occurrence against FR-001, FR-009, and FR-011 in `elixir/test/symphony_plus/documentation_contract_test.exs` and `elixir/test/fixtures/product_identity_allowlist.txt`
+- [X] T017 [P] [US2] Rename the normative product contract and root-facing guides while preserving valid upstream URLs in `SPEC.md`, `README.md`, and `docs/`
+- [X] T018 [P] [US2] Rename implementation and operator documentation, examples, templates, skill prose, logging guidance, commands, paths, and environment variables in `elixir/README.md`, `elixir/AGENTS.md`, `elixir/docs/`, `elixir/examples/`, `.codex/skills/`, and `.agents/skills/`
+- [X] T019 [P] [US2] Rename controlled media and document filenames and all inbound references, retaining externally published URLs only when immutable and classified, in `.github/media/` and `docs/`
+- [X] T020 [US2] Run the documentation contract test and manually classify every retained prose occurrence against FR-001, FR-009, and FR-011 in `elixir/test/symphony_plus/documentation_contract_test.exs` and `elixir/test/fixtures/product_identity_allowlist.txt`
 
 **Checkpoint**: User Story 2 is independently reviewable with consistent branding and explicit exceptions.
 
@@ -97,13 +97,13 @@ description: "Implementation tasks for the Symphony Plus repository-wide rename"
 
 ### Tests for User Story 3
 
-- [ ] T021 [P] [US3] Extend the product-identity audit coverage to configuration keys, log/UI text, fixtures, file paths, scripts, workflows, and application metadata in `elixir/test/symphony_plus/product_identity_test.exs`
+- [X] T021 [P] [US3] Extend the product-identity audit coverage to configuration keys, log/UI text, fixtures, file paths, scripts, workflows, and application metadata in `elixir/test/symphony_plus/product_identity_test.exs`
 
 ### Implementation for User Story 3
 
-- [ ] T022 [US3] Rename remaining repository-controlled configuration keys, logger names, process metadata, dashboard titles, UI strings, fixtures, and source/test filenames in `elixir/config/`, `elixir/lib/symphony_plus/`, `elixir/lib/symphony_plus_web/`, and `elixir/test/`
-- [ ] T023 [US3] Rename Burrito targets, release commands, artifact/checksum names, smoke assertions, release titles, and installation variables in `.github/workflows/burrito-release.yml`, `elixir/rel/`, and `elixir/mix.exs`
-- [ ] T024 [US3] Execute the classified file-and-path audit and resolve or explicitly classify every remaining occurrence in `elixir/scripts/audit_product_identity.exs` and `elixir/test/fixtures/product_identity_allowlist.txt`
+- [X] T022 [US3] Rename remaining repository-controlled configuration keys, logger names, process metadata, dashboard titles, UI strings, fixtures, and source/test filenames in `elixir/config/`, `elixir/lib/symphony_plus/`, `elixir/lib/symphony_plus_web/`, and `elixir/test/`
+- [X] T023 [US3] Rename Burrito targets, release commands, artifact/checksum names, smoke assertions, release titles, and installation variables in `.github/workflows/burrito-release.yml`, `elixir/rel/`, and `elixir/mix.exs`
+- [X] T024 [US3] Execute the classified file-and-path audit and resolve or explicitly classify every remaining occurrence in `elixir/scripts/audit_product_identity.exs` and `elixir/test/fixtures/product_identity_allowlist.txt`
 
 **Checkpoint**: All three stories use one canonical identity and every retained legacy occurrence has an allowed classification.
 
@@ -113,9 +113,9 @@ description: "Implementation tasks for the Symphony Plus repository-wide rename"
 
 **Purpose**: Validate the coordinated migration and perform the live metadata transition only at the safe handoff.
 
-- [ ] T025 Run all commands and expected outcomes in `specs/gh-18-rename-symphony-plus/quickstart.md`, including targeted rename/lifecycle tests and `make -C elixir all`
-- [ ] T026 Review the complete diff for secrets, generated output, unrelated refactors, unsupported aliases, broken upstream URLs, workspace-boundary regressions, and unexplained legacy occurrences across the repository
-- [ ] T027 At the workflow-safe final handoff, rename the live GitHub label `symphony` to `symphony-plus` in `rohanyupadhyay/symphony-plus` through the host-mediated GitHub API, preserving issue/PR association and recording the resulting metadata evidence
+- [X] T025 Run all commands and expected outcomes in `specs/gh-18-rename-symphony-plus/quickstart.md`, including targeted rename/lifecycle tests and `make -C elixir all`
+- [X] T026 Review the complete diff for secrets, generated output, unrelated refactors, unsupported aliases, broken upstream URLs, workspace-boundary regressions, and unexplained legacy occurrences across the repository
+- [X] T027 At the workflow-safe final handoff, rename the live GitHub label `symphony` to `symphony-plus` in `rohanyupadhyay/symphony-plus` through the host-mediated GitHub API, preserving issue/PR association and recording the resulting metadata evidence
 
 ---
 

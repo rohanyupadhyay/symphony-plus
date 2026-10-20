@@ -2,7 +2,7 @@
 
 ## Producer
 
-Before automatic review, the issue workflow MUST create/update one same-repository PR, push the exact head, add `symphony` idempotently, and write `state=review_pending`, `phase=review`, `pr_number`, `branch`, `head_sha`, and its audit summary. The write rejects invalid/mismatched PR identity, head, repository, or required label.
+Before automatic review, the issue workflow MUST create/update one same-repository PR, push the exact head, add `symphony-plus` idempotently, and write `state=review_pending`, `phase=review`, `pr_number`, `branch`, `head_sha`, and its audit summary. The write rejects invalid/mismatched PR identity, head, repository, or required label.
 
 ## Consumer
 

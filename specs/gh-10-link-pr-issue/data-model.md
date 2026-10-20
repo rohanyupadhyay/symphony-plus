@@ -1,6 +1,6 @@
 # Data Model: Pull Request Tracking Reference
 
-This feature adds no persisted Symphony entity or database state. It constrains existing GitHub and workflow concepts.
+This feature adds no persisted Symphony Plus entity or database state. It constrains existing GitHub and workflow concepts.
 
 ## Originating Issue
 

@@ -5,7 +5,7 @@ integration remains serialized per repository and target branch.
 
 ## Admission and ordering
 
-A successful trusted automatic review of a same-repository pull request created by Symphony from
+A successful trusted automatic review of a same-repository pull request created by Symphony Plus from
 an issue becomes a provider-visible `merge_queued` checkpoint containing the PR number, reviewed
 head SHA, target branch, stable admission sequence, and dependency PR numbers. Human approval is
 not required. A current human `CHANGES_REQUESTED` review suspends automatic review and all queue

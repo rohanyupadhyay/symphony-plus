@@ -1,12 +1,12 @@
 # Implementation Plan: Safely Queue Parallel Pull Requests
 
-**Branch**: `symphony/gh-11-merge-queue` | **Date**: 2026-10-05 | **Spec**: [spec.md](spec.md)
+**Branch**: `symphony-plus/gh-11-merge-queue` | **Date**: 2026-10-05 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `specs/gh-11-merge-queue/spec.md`
 
 ## Summary
 
-Add a GitHub-backed merge queue that admits successfully auto-reviewed Symphony-managed pull requests without human approval while allowing their issue workspaces and reviews to continue independently. One OTP coordinator owns queue advancement for each configured repository and target branch. Queue order, dependency declarations, candidate revisions, and outcomes remain reconstructable from GitHub-visible pull-request/checkpoint state. The coordinator processes only the head entry, validates an exact candidate against the current target SHA, rejects stale results if either SHA changes, and merges conditionally before considering the next entry. An active human change request suspends all Symphony mutations until dismissal. Deterministic conflicts or validation failures return the pull request for an author update; transient provider failures retain or explicitly block the entry without misclassifying its code.
+Add a GitHub-backed merge queue that admits successfully auto-reviewed Symphony Plus-managed pull requests without human approval while allowing their issue workspaces and reviews to continue independently. One OTP coordinator owns queue advancement for each configured repository and target branch. Queue order, dependency declarations, candidate revisions, and outcomes remain reconstructable from GitHub-visible pull-request/checkpoint state. The coordinator processes only the head entry, validates an exact candidate against the current target SHA, rejects stale results if either SHA changes, and merges conditionally before considering the next entry. An active human change request suspends all Symphony Plus mutations until dismissal. Deterministic conflicts or validation failures return the pull request for an author update; transient provider failures retain or explicitly block the entry without misclassifying its code.
 
 ## Technical Context
 
@@ -14,11 +14,11 @@ Add a GitHub-backed merge queue that admits successfully auto-reviewed Symphony-
 
 **Primary Dependencies**: OTP supervision/GenServer, Req-based GitHub client, Jason, existing GitHub tracker/workflow-control and configuration abstractions
 
-**Storage**: GitHub pull-request metadata, labels, comments/checkpoints, check runs, commit statuses, and refs; no new Symphony database
+**Storage**: GitHub pull-request metadata, labels, comments/checkpoints, check runs, commit statuses, and refs; no new Symphony Plus database
 
 **Testing**: ExUnit with focused queue/coordinator/client/config tests using deterministic GitHub fixtures; `make -C elixir all`
 
-**Target Platform**: Long-running Linux/macOS Symphony service using the GitHub Issues adapter with GitHub App or PAT authentication
+**Target Platform**: Long-running Linux/macOS Symphony Plus service using the GitHub Issues adapter with GitHub App or PAT authentication
 
 **Project Type**: Elixir/OTP service and CLI
 
@@ -72,7 +72,7 @@ specs/gh-11-merge-queue/
 ```text
 SPEC.md
 README.md
-.symphony/
+.symphony-plus/
 ├── README.md
 └── WORKFLOW.md
 elixir/
@@ -80,7 +80,7 @@ elixir/
 ├── docs/
 │   ├── github-workflow-control.md
 │   └── logging.md
-├── lib/symphony_elixir/
+├── lib/symphony_plus/
 │   ├── agent_runtime_supervisor.ex
 │   ├── config.ex
 │   ├── config/schema.ex
@@ -88,14 +88,14 @@ elixir/
 │       ├── client.ex
 │       ├── merge_queue.ex
 │       └── workflow_control.ex
-└── test/symphony_elixir/
+└── test/symphony_plus/
     ├── github_adapter_test.exs
     ├── github_merge_queue_test.exs
     ├── github_workflow_control_test.exs
     └── workspace_and_config_test.exs
 ```
 
-**Structure Decision**: Extend the existing GitHub provider boundary with one focused coordinator. `WorkflowControl` owns durable admission/outcome checkpoint semantics, `Client` owns GitHub reads and conditional mutations, and `MergeQueue` alone owns ordering and integration decisions. The generic issue orchestrator and per-issue workspaces remain unchanged; configuration continues through `SymphonyElixir.Config`.
+**Structure Decision**: Extend the existing GitHub provider boundary with one focused coordinator. `WorkflowControl` owns durable admission/outcome checkpoint semantics, `Client` owns GitHub reads and conditional mutations, and `MergeQueue` alone owns ordering and integration decisions. The generic issue orchestrator and per-issue workspaces remain unchanged; configuration continues through `SymphonyPlus.Config`.
 
 ## Phase 0: Research
 

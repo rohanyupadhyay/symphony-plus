@@ -1,4 +1,4 @@
-# Research: Automatically Review Symphony Pull Requests
+# Research: Automatically Review Symphony Plus Pull Requests
 
 ## Durable automatic-dispatch signal
 

@@ -1,4 +1,4 @@
-# Symphony Service Specification
+# Symphony Plus Service Specification
 
 Status: Draft v1 (language-agnostic)
 
@@ -15,7 +15,7 @@ behavior.
 
 ## 1. Problem Statement
 
-Symphony is a long-running automation service that continuously reads work from a configured issue
+Symphony Plus is a long-running automation service that continuously reads work from a configured issue
 tracker, creates an isolated workspace for each issue, and runs a coding agent session for that
 issue inside the workspace.
 
@@ -35,9 +35,9 @@ stricter approvals or sandboxing.
 
 Important boundary:
 
-- Symphony is a scheduler/runner and tracker reader.
+- Symphony Plus is a scheduler/runner and tracker reader.
 - Ticket writes (state transitions, comments, PR links) are typically performed by the coding agent
-  through provider-native tools executed by Symphony with the configured tracker credential.
+  through provider-native tools executed by Symphony Plus with the configured tracker credential.
 - When tracker credentials are supplied through host-side secret references, the coding-agent child
   process does not need a duplicate tracker login or direct access to raw tracker credentials.
 - A successful run can end at a workflow-defined handoff state (for example `Human Review`), not
@@ -139,7 +139,7 @@ Important boundary:
 
 ### 3.2 Abstraction Levels
 
-Symphony is easiest to port when kept in these layers:
+Symphony Plus is easiest to port when kept in these layers:
 
 1. `Policy Layer` (repo-defined)
    - `WORKFLOW.md` prompt body.
@@ -404,7 +404,7 @@ Fields:
 - `provider` (object)
   - Default: `{}`.
   - Adapter-owned configuration such as endpoint, scope/project selector, and credentials.
-  - Core Symphony MUST preserve unknown keys and MUST NOT prescribe one cross-provider credential
+  - Core Symphony Plus MUST preserve unknown keys and MUST NOT prescribe one cross-provider credential
     or scope schema.
   - Each adapter MUST document its required keys, defaults, secret keys, `$VAR_NAME` support, and
     validation errors.
@@ -721,7 +721,7 @@ Distinct terminal reasons are important because retry logic and logs differ.
 
 Recognized Codex quota exhaustion is a scheduler wait, not a worker failure. Before releasing the
 worker slot, the orchestrator MUST atomically persist an allowlisted issue-scoped record beneath
-`<workspace-root>/.symphony/quota-waits/`. The record identifies the issue, Codex quota pool,
+`<workspace-root>/.symphony-plus/quota-waits/`. The record identifies the issue, Codex quota pool,
 renewal or bounded recheck time, workspace key, native thread identity, and stable outcome; it MUST
 NOT contain credentials, prompts, model output, or raw provider payloads.
 
@@ -995,7 +995,7 @@ Invariant 3: Workspace key is sanitized.
 
 ## 10. Agent Runner Protocol (Coding Agent Integration)
 
-This section defines Symphony's language-neutral responsibilities when integrating a Codex
+This section defines Symphony Plus's language-neutral responsibilities when integrating a Codex
 app-server. The Codex app-server protocol for the targeted Codex version is the source of truth for
 protocol schemas, message payloads, transport framing, and method names.
 
@@ -1006,7 +1006,7 @@ Protocol source of truth:
   instead of treating this specification as a protocol schema.
 - If this specification appears to conflict with the targeted Codex app-server protocol, the Codex
   protocol controls protocol shape and transport behavior.
-- Symphony-specific requirements in this section still control orchestration behavior, workspace
+- Symphony Plus-specific requirements in this section still control orchestration behavior, workspace
   selection, prompt construction, continuation handling, and observability extraction.
 
 ### 10.1 Launch Contract
@@ -1032,7 +1032,7 @@ RECOMMENDED additional process settings:
 
 Reference: https://developers.openai.com/codex/app-server/
 
-Startup MUST follow the targeted Codex app-server contract. Symphony additionally requires the
+Startup MUST follow the targeted Codex app-server contract. Symphony Plus additionally requires the
 client to:
 
 - Start the app-server subprocess in the per-issue workspace.
@@ -1142,7 +1142,7 @@ Optional provider-native agent tool extension:
 - Tool specs, adapter selection, and effective tracker settings MUST be bound to one session
   snapshot. A workflow reload applies to future sessions; it MUST NOT make an in-flight session
   advertise one provider and execute another.
-- Tool names, schemas, and result payloads are adapter-owned. Symphony does not standardize a
+- Tool names, schemas, and result payloads are adapter-owned. Symphony Plus does not standardize a
   lowest-common-denominator CRUD API.
 - The runtime MUST execute advertised tool calls host-side with the active adapter configuration and
   MUST NOT require the coding-agent child process to read raw tracker tokens from disk or
@@ -1355,11 +1355,11 @@ Orchestrator behavior on tracker errors:
 
 ### 11.5 Tracker Writes and Agent Tools (Important Boundary)
 
-Symphony does not require first-class tracker write APIs in the orchestrator.
+Symphony Plus does not require first-class tracker write APIs in the orchestrator.
 
 - Ticket mutations (state transitions, comments, attachments, PR metadata) are typically handled by
   the coding agent through the selected adapter's provider-native tools.
-- Tools execute in Symphony with the configured adapter credential; the child receives tool results,
+- Tools execute in Symphony Plus with the configured adapter credential; the child receives tool results,
   not a raw token.
 - The current normalized issue is available to tool execution as context, including opaque
   `native_ref`, so adapters can retain provider richness without adding it to the core scheduler.
@@ -1632,7 +1632,7 @@ Minimum endpoints:
         "codex_session_logs": [
           {
             "label": "latest",
-            "path": "/var/log/symphony/codex/MT-649/latest.log",
+            "path": "/var/log/symphony-plus/codex/MT-649/latest.log",
             "url": null
           }
         ]
@@ -1796,7 +1796,7 @@ RECOMMENDED additional hardening for ports:
 - Support `$VAR` indirection in workflow config.
 - Do not log API tokens or secret env values.
 - Validate presence of secrets without printing them.
-- Execute provider-native tracker tools in the Symphony host process with the configured adapter
+- Execute provider-native tracker tools in the Symphony Plus host process with the configured adapter
   credential.
 - Do not pass tracker credentials through the coding-agent child environment. Adapters MUST declare
   secret environment names so local and remote launchers can remove them from child environments.
@@ -2297,7 +2297,7 @@ Use the same validation profiles as Section 17:
 
 ## Appendix A. SSH Worker Extension (OPTIONAL)
 
-This appendix describes a common extension profile in which Symphony keeps one central
+This appendix describes a common extension profile in which Symphony Plus keeps one central
 orchestrator but executes worker runs on one or more remote hosts over SSH.
 
 Extension config:

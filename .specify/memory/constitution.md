@@ -22,7 +22,7 @@ silently redefine the root specification.
 ### II. Workspace and Credential Safety
 
 Coding agents MUST run only inside deterministic, per-issue workspaces under the configured
-workspace root; they MUST NOT run in the Symphony source checkout or another issue's workspace.
+workspace root; they MUST NOT run in the Symphony Plus source checkout or another issue's workspace.
 Tracker credentials and private keys MUST remain host-side, MUST NOT enter agent environments,
 logs, prompts, commits, issues, or pull requests, and MUST be exposed only through approved
 host-mediated tools. Workspace paths, lifecycle hooks, pushes, and cleanup MUST validate their
@@ -40,7 +40,7 @@ passes.
 ### IV. Simplicity and Clear Ownership
 
 Changes MUST use the smallest coherent design with one clear owner and invariant. Configuration
-access MUST flow through `SymphonyElixir.Config`; workflow policy MUST remain in repository-owned
+access MUST flow through `SymphonyPlus.Config`; workflow policy MUST remain in repository-owned
 workflow prompts; tracker-specific behavior MUST remain behind adapter and host-tool boundaries.
 Speculative flexibility, duplicated policy, unrelated refactors, and abstractions without a current
 consumer MUST be rejected or justified explicitly in the feature plan.
@@ -67,7 +67,7 @@ pull request.
 
 Authority descends in this order:
 
-1. `SPEC.md` defines normative Symphony product behavior and cannot be relaxed by this document.
+1. `SPEC.md` defines normative Symphony Plus product behavior and cannot be relaxed by this document.
 2. This constitution governs how changes are specified, planned, implemented, validated, and
    reviewed.
 3. `elixir/AGENTS.md`, `elixir/docs/logging.md`, `elixir/Makefile`, and
@@ -76,7 +76,7 @@ Authority descends in this order:
    source.
 
 The supported implementation uses Elixir 1.19 on OTP 28 through `mise`. Changes MUST follow
-existing `lib/symphony_elixir/*` module and style patterns. Trust and sandbox choices MUST be
+existing `lib/symphony_plus/*` module and style patterns. Trust and sandbox choices MUST be
 documented explicitly because the service operates coding agents with repository access.
 
 ## Development Workflow and Quality Gates

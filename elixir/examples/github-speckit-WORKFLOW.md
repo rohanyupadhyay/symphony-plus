@@ -11,7 +11,7 @@ tracker:
     workflow_control:
       enabled: true
       authorized_associations: [OWNER, MEMBER, COLLABORATOR]
-  required_labels: [symphony]
+  required_labels: [symphony-plus]
   active_states: [open]
   terminal_states: [closed]
 polling:
@@ -21,7 +21,7 @@ merge_queue:
   poll_interval_ms: 30000
   max_retry_backoff_ms: 300000
 workspace:
-  root: /absolute/path/to/symphony-workspaces/PROJECT
+  root: /absolute/path/to/symphony-plus-workspaces/PROJECT
 hooks:
   after_create: |
     git clone --depth 1 https://github.com/OWNER/REPOSITORY.git .
@@ -49,7 +49,7 @@ Create commits locally, then use `github_git_push` with the exact issue branch a
 Do not run `git push` directly. The host tool validates the workspace, clean tree, branch, SHA, and
 remote before using a short-lived GitHub App installation token.
 
-Use one branch named `symphony/gh-{{ issue.id }}-<short-slug>` and one feature directory named
+Use one branch named `symphony-plus/gh-{{ issue.id }}-<short-slug>` and one feature directory named
 `specs/gh-{{ issue.id }}-<short-slug>`. Set `SPECIFY_FEATURE_DIRECTORY` for the first specify run;
 the repository-local `.specify/feature.json` preserves it for later sessions.
 
@@ -80,7 +80,7 @@ Never omit a phase from the ledger or claim that a phase ran when it was skipped
 as `completed`, `not run`, or `skipped: <reason>`, including its cumulative run count and outcome,
 rather than collapsing phases into broad labels such as “planning” or “implementation.” If a phase
 asks zero questions, record `zero questions` and the concrete reason. Include the same report in `awaiting_input`, `blocked`,
-`awaiting_approval`, `review_pending`, `merge_queued`, `/symphony status`, and final merged-PR comments.
+`awaiting_approval`, `review_pending`, `merge_queued`, `/symphony-plus status`, and final merged-PR comments.
 
 Advance exactly one state machine:
 
@@ -88,7 +88,7 @@ Advance exactly one state machine:
    report each phase separately, its question count, and every material assumption adopted.
 2. Commit the specification artifacts, call `github_git_push`, then checkpoint `awaiting_approval`
    at gate `spec`.
-3. After `/symphony approve spec`, run `speckit-plan`, commit, call `github_git_push`, then
+3. After `/symphony-plus approve spec`, run `speckit-plan`, commit, call `github_git_push`, then
    checkpoint gate `plan`.
 4. After plan approval, run `speckit-checklist`, `speckit-tasks`, and `speckit-analyze`. At the
    implementation gate, report each phase separately and the analyze cycle count. Remediate
@@ -104,7 +104,7 @@ Advance exactly one state machine:
    keywords for the source issue. Preserve this single reference across create, update, retry, and
    revision. For a newly created managed pull request, post a `review_pending` checkpoint with
    `phase=review`, the pull request number, issue branch, and exact pushed head. The host applies
-   the `symphony` label before recording the checkpoint, and the next poll starts the automatic
+   the `symphony-plus` label before recording the checkpoint, and the next poll starts the automatic
    review without another command.
 8. On an `automatic_review` trigger, review the complete diff and supplied PR conversation,
    reviews, inline comments, merge state, and current-head checks. If any human review remains
@@ -119,7 +119,7 @@ Advance exactly one state machine:
    `merge_queued` with the exact PR, branch, head, repository, target branch, the trigger's
    `admission_sequence`, and normalized dependencies. Human approval is not required; only the host
    queue performs the guarded merge.
-9. `/symphony revise` may request another cycle when no human change request is active. Requirements
+9. `/symphony-plus revise` may request another cycle when no human change request is active. Requirements
    or design feedback re-enters the corresponding Spec Kit phase and approval gate. Update the same
    branch and PR, then post a fresh `review_pending` checkpoint for automatic review.
 10. After merge, comment with final validation and close the parent issue explicitly. The tracking
@@ -134,11 +134,11 @@ authorized issue input already specifies checklist focus, depth, and audience. I
 missing, `checklist` must ask one initial batch of up to three questions covering the missing
 dimensions; GitHub checkpoints make interaction possible, so do not silently apply its fallback
 defaults. It may ask one follow-up batch of up to two only when necessary. If all three dimensions
-were explicit, report zero questions and cite the controlling issue input. Treat `/symphony
+were explicit, report zero questions and cite the controlling issue input. Treat `/symphony-plus
 approve implementation` as permission to proceed past intentionally unchecked reviewer-owned
 checklists.
 
-Use `blocked` only with a concrete recovery prompt. `/symphony status` reports current artifacts
-and validation and then restores the same checkpoint. `/symphony cancel` removes the `symphony`
+Use `blocked` only with a concrete recovery prompt. `/symphony-plus status` reports current artifacts
+and validation and then restores the same checkpoint. `/symphony-plus cancel` removes the `symphony-plus`
 label and posts a cancellation comment. Never merge automatically, expose credentials, install the
 official GitHub Spec Kit extension, or use `speckit-taskstoissues`.
