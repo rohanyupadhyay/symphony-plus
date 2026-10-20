@@ -4,7 +4,7 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
   require Logger
 
   alias SymphonyElixir.Config
-  alias SymphonyElixir.GitHub.{Client, WorkflowControl}
+  alias SymphonyElixir.GitHub.{Auth, Client, WorkflowControl}
   alias SymphonyElixir.GitHub.MergeQueue
   alias SymphonyElixir.GitHub.MergeQueue.State
 
@@ -312,18 +312,14 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
   defp configured_labels, do: Config.settings!().tracker.required_labels
 
   defp configured_app_id do
-    case get_in(Config.settings!().tracker.provider, ["auth", "app_id"]) do
-      app_id when is_integer(app_id) and app_id > 0 ->
-        {:ok, app_id}
+    provider = Config.settings!().tracker.provider
 
-      app_id when is_binary(app_id) ->
-        case Integer.parse(app_id) do
-          {parsed, ""} when parsed > 0 -> {:ok, parsed}
-          _ -> {:error, :missing_github_app_id}
-        end
-
-      _ ->
-        {:error, :missing_github_app_id}
+    with {:ok, repo} <- configured_repo(),
+         {:ok, %{kind: :github_app, app_id: app_id}} <- Auth.config(provider, repo) do
+      {:ok, app_id}
+    else
+      {:ok, _other_auth} -> {:error, :missing_github_app_id}
+      error -> error
     end
   end
 
