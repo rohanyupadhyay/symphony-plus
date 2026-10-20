@@ -9,6 +9,30 @@ legacy_display = Regex.compile!("\\b" <> "Sym" <> "phony" <> "\\b(?! Plus)")
 legacy_slug = Regex.compile!("\\b" <> "sym" <> "phony" <> "\\b(?![-_]plus)")
 legacy_env = Regex.compile!("\\b" <> "SYM" <> "PHONY_(?!PLUS_)")
 
+allowlist_path = Path.join(root, "elixir/test/fixtures/product_identity_allowlist.txt")
+allowed_classifications = ~w(upstream historical immutable_external)
+
+allowlisted_literals =
+  allowlist_path
+  |> File.stream!()
+  |> Enum.map(&String.trim/1)
+  |> Enum.reject(&(&1 == "" or String.starts_with?(&1, "#")))
+  |> Enum.map(fn entry ->
+    case String.split(entry, ~r/\s+/, parts: 2) do
+      [classification, literal] ->
+        if classification in allowed_classifications and literal != "" do
+          literal
+        else
+          IO.puts(:stderr, "#{allowlist_path}: invalid classified allowlist entry: #{entry}")
+          System.halt(1)
+        end
+
+      _invalid ->
+        IO.puts(:stderr, "#{allowlist_path}: invalid classified allowlist entry: #{entry}")
+        System.halt(1)
+    end
+  end)
+
 excluded_prefixes = ["specs/gh-18-rename-symphony-plus/"]
 excluded_files = [
   "elixir/test/fixtures/product_identity_allowlist.txt",
@@ -38,10 +62,11 @@ violations =
             contents
             |> String.split("\n")
             |> Enum.with_index(1)
-            |> Enum.reject(fn {line, _line_number} -> String.contains?(line, "openai/symphony") end)
             |> Enum.filter(fn {line, _line_number} ->
-              Regex.match?(legacy_display, line) or Regex.match?(legacy_slug, line) or
-                Regex.match?(legacy_env, line)
+              sanitized = Enum.reduce(allowlisted_literals, line, &String.replace(&2, &1, ""))
+
+              Regex.match?(legacy_display, sanitized) or Regex.match?(legacy_slug, sanitized) or
+                Regex.match?(legacy_env, sanitized)
             end)
             |> Enum.map(fn {_line, line_number} -> "#{path}:#{line_number}: legacy product identity" end)
             |> Kernel.++(path_findings)

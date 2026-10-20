@@ -11,5 +11,9 @@ defmodule SymphonyPlus.DocumentationContractTest do
     assert readme =~ "# Symphony Plus"
     assert readme =~ ".symphony-plus/WORKFLOW.md"
     assert readme =~ "OpenAI Symphony"
+
+    implementation_readme = File.read!(Path.join(@root, "elixir/README.md"))
+    assert implementation_readme =~ "rohanyupadhyay/symphony-plus/releases/tag/nightly"
+    refute implementation_readme =~ "openai/symphony/releases/tag/nightly"
   end
 end

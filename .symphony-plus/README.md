@@ -50,8 +50,8 @@ Use these commands at approval and recovery checkpoints:
 ```
 
 Each issue keeps one `symphony-plus/gh-<number>-<slug>` branch and one
-`specs/gh-<number>-<slug>` directory through the complete Spec Kit lifecycle. Symphony Plus never
-merges automatically. Human review and merge are mandatory.
+`specs/gh-<number>-<slug>` directory through the complete Spec Kit lifecycle. Symphony Plus
+reviews and queues eligible PRs for a guarded merge after CI passes.
 
 ## Security and recovery
 

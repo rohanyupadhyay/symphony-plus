@@ -63,7 +63,6 @@ defmodule SymphonyPlus.GitHub.AgentTool do
       "pr_number" => %{"type" => ["integer", "null"]},
       "repository" => %{"type" => ["string", "null"]},
       "target_branch" => %{"type" => ["string", "null"]},
-      "admission_sequence" => %{"type" => ["integer", "null"], "minimum" => 0},
       "dependencies" => %{
         "type" => ["array", "null"],
         "items" => %{"type" => "integer", "minimum" => 1}
@@ -137,7 +136,7 @@ defmodule SymphonyPlus.GitHub.AgentTool do
     result =
       with true <- WorkflowControl.enabled?(provider) or {:error, :github_workflow_control_disabled},
            {:ok, issue_number, repo} <- checkpoint_issue_context(issue),
-           {:ok, checkpoint} <- normalize_checkpoint(arguments),
+           {:ok, checkpoint} <- normalize_checkpoint(arguments, issue),
            :ok <- verify_checkpoint_head(checkpoint, repo, github_client, client_opts),
            :ok <- validate_queue_authority(checkpoint, issue, repo, github_client, client_opts),
            :ok <- prepare_managed_pull_request(checkpoint, repo, tracker_settings, github_client, client_opts),
@@ -180,20 +179,33 @@ defmodule SymphonyPlus.GitHub.AgentTool do
 
   defp checkpoint_issue_context(_issue), do: {:error, :missing_github_issue_context}
 
-  defp normalize_checkpoint(arguments) when is_map(arguments) do
+  defp normalize_checkpoint(arguments, issue) when is_map(arguments) do
     checkpoint =
       Map.take(
         arguments,
-        ~w(state phase summary prompt gate branch head_sha pr_number repository target_branch admission_sequence dependencies)
+        ~w(state phase summary prompt gate branch head_sha pr_number repository target_branch dependencies)
       )
 
-    with :ok <- WorkflowControl.valid_checkpoint(checkpoint),
+    with {:ok, checkpoint} <- add_queue_sequence(checkpoint, issue),
+         :ok <- WorkflowControl.valid_checkpoint(checkpoint),
          :ok <- validate_approval_ref(checkpoint) do
       {:ok, checkpoint}
     end
   end
 
-  defp normalize_checkpoint(_arguments), do: {:error, :invalid_workflow_checkpoint}
+  defp normalize_checkpoint(_arguments, _issue), do: {:error, :invalid_workflow_checkpoint}
+
+  defp add_queue_sequence(%{"state" => "merge_queued"} = checkpoint, %Issue{} = issue) do
+    trigger = get_in(issue.native_ref || %{}, ["workflow_control", "trigger"]) || %{}
+
+    if trigger["kind"] == "automatic_review" and is_integer(trigger["admission_sequence"]) do
+      {:ok, Map.put(checkpoint, "admission_sequence", trigger["admission_sequence"])}
+    else
+      {:error, :workflow_queue_unmanaged_pull_request}
+    end
+  end
+
+  defp add_queue_sequence(checkpoint, _issue), do: {:ok, checkpoint}
 
   defp validate_approval_ref(%{"state" => "awaiting_approval"} = checkpoint) do
     if present?(checkpoint["branch"]) and valid_sha?(checkpoint["head_sha"]) do
@@ -262,11 +274,9 @@ defmodule SymphonyPlus.GitHub.AgentTool do
   defp automatic_review_authority?(%Issue{} = issue, checkpoint) do
     trigger = get_in(issue.native_ref || %{}, ["workflow_control", "trigger"]) || %{}
 
-    trigger["kind"] == "automatic_review" and
-      trigger["pr_number"] == checkpoint["pr_number"] and
+    trigger["pr_number"] == checkpoint["pr_number"] and
       trigger["branch"] == checkpoint["branch"] and
-      trigger["head_sha"] == checkpoint["head_sha"] and
-      trigger["admission_sequence"] == checkpoint["admission_sequence"]
+      trigger["head_sha"] == checkpoint["head_sha"]
   end
 
   defp prepare_managed_pull_request(

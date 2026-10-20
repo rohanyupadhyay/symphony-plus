@@ -4,7 +4,7 @@ defmodule SymphonyPlus.GitHub.MergeQueue.Backend do
   require Logger
 
   alias SymphonyPlus.Config
-  alias SymphonyPlus.GitHub.{Client, WorkflowControl}
+  alias SymphonyPlus.GitHub.{Auth, Client, WorkflowControl}
   alias SymphonyPlus.GitHub.MergeQueue
   alias SymphonyPlus.GitHub.MergeQueue.State
 
@@ -12,7 +12,8 @@ defmodule SymphonyPlus.GitHub.MergeQueue.Backend do
   def load do
     with {:ok, repo} <- configured_repo(),
          {:ok, app_id} <- configured_app_id(),
-         {:ok, issues} <- api("GET", "/repos/#{repo}/issues", %{"state" => "all", "labels" => "symphony-plus"}, nil) do
+         {:ok, issues} <-
+           api("GET", "/repos/#{repo}/issues", %{"state" => "all", "labels" => Enum.join(configured_labels(), ",")}, nil) do
       with {:ok, entries} <-
              load_issue_admissions(repo, Enum.reject(issues, &Map.has_key?(&1, "pull_request")), app_id) do
         resolve_dependencies(repo, entries)
@@ -28,16 +29,19 @@ defmodule SymphonyPlus.GitHub.MergeQueue.Backend do
            :ok <- admission_preflight(fresh, entry) do
         MergeQueue.advance(entry, adapter(entry.repository))
       else
+        {:merged, detail} -> {:merged, detail}
         {:retry, reason} -> {:retry, reason}
         {:blocked, reason} -> {:blocked, reason}
         {:error, reason} -> {:blocked, reason}
       end
 
+    persisted = persist_outcome(entry, result)
+
     Logger.info(
-      "GitHub merge queue outcome=#{outcome(result)} repository=#{entry.repository} target=#{entry.target_branch} pr=#{entry.pr_number} source_head_sha=#{entry.source_head_sha} reason=#{inspect(result)}"
+      "GitHub merge queue outcome=#{outcome(persisted)} repository=#{entry.repository} target=#{entry.target_branch} pr=#{entry.pr_number} source_head_sha=#{entry.source_head_sha} reason=#{inspect(persisted)}"
     )
 
-    persist_outcome(entry, result)
+    persisted
   end
 
   def execute({:block_dependency, entry, reason}) do
@@ -51,7 +55,9 @@ defmodule SymphonyPlus.GitHub.MergeQueue.Backend do
   def execute(_action), do: {:blocked, :invalid_action}
 
   @doc false
-  @spec admission_preflight(map(), State.Entry.t()) :: :ok | {:retry, term()} | {:blocked, term()}
+  @spec admission_preflight(map(), State.Entry.t()) :: :ok | {:merged, map()} | {:retry, term()} | {:blocked, term()}
+  def admission_preflight(%{merged: true}, _entry), do: {:merged, %{}}
+
   def admission_preflight(%{hold_reason: :human_changes_requested}, _entry),
     do: {:retry, :human_changes_requested}
 
@@ -249,13 +255,14 @@ defmodule SymphonyPlus.GitHub.MergeQueue.Backend do
     with {:ok, pull_request} <- Client.pull_request(repo, entry.pr_number),
          {:ok, target_sha} <- target_sha(repo, entry.target_branch),
          {:ok, reviews} <- Client.reviews(repo, entry.pr_number) do
-      eligible = eligible_for_autonomous_merge?(pull_request, reviews, entry)
+      eligible = eligible_for_autonomous_merge?(pull_request, reviews, entry, configured_labels())
       hold_reason = if WorkflowControl.autonomous_merge_allowed?(reviews), do: nil, else: :human_changes_requested
 
       {:ok,
        %{
          head_sha: get_in(pull_request, ["head", "sha"]),
          target_sha: target_sha,
+         merged: pull_request["merged"] == true,
          eligible: eligible,
          hold_reason: hold_reason
        }}
@@ -265,10 +272,16 @@ defmodule SymphonyPlus.GitHub.MergeQueue.Backend do
   @doc false
   @spec eligible_for_autonomous_merge?(map(), [map()], State.Entry.t()) :: boolean()
   def eligible_for_autonomous_merge?(pull_request, reviews, entry) do
+    eligible_for_autonomous_merge?(pull_request, reviews, entry, ["symphony-plus"])
+  end
+
+  @doc false
+  @spec eligible_for_autonomous_merge?(map(), [map()], State.Entry.t(), [String.t()]) :: boolean()
+  def eligible_for_autonomous_merge?(pull_request, reviews, entry, required_labels) do
     labels = pull_request |> Map.get("labels", []) |> Enum.map(&(&1["name"] || &1))
 
     pull_request["state"] == "open" and pull_request["merged"] != true and
-      pull_request["mergeable"] != false and "symphony-plus" in labels and
+      pull_request["mergeable"] != false and Enum.all?(required_labels, &(&1 in labels)) and
       get_in(pull_request, ["base", "ref"]) == entry.target_branch and
       same_repository_pull_request?(pull_request, entry.repository) and
       WorkflowControl.autonomous_merge_allowed?(reviews)
@@ -297,19 +310,17 @@ defmodule SymphonyPlus.GitHub.MergeQueue.Backend do
     end
   end
 
+  defp configured_labels, do: Config.settings!().tracker.required_labels
+
   defp configured_app_id do
-    case get_in(Config.settings!().tracker.provider, ["auth", "app_id"]) do
-      app_id when is_integer(app_id) and app_id > 0 ->
-        {:ok, app_id}
+    provider = Config.settings!().tracker.provider
 
-      app_id when is_binary(app_id) ->
-        case Integer.parse(app_id) do
-          {parsed, ""} when parsed > 0 -> {:ok, parsed}
-          _ -> {:error, :missing_github_app_id}
-        end
-
-      _ ->
-        {:error, :missing_github_app_id}
+    with {:ok, repo} <- configured_repo(),
+         {:ok, %{kind: :github_app, app_id: app_id}} <- Auth.config(provider, repo) do
+      {:ok, app_id}
+    else
+      {:ok, _other_auth} -> {:error, :missing_github_app_id}
+      error -> error
     end
   end
 
@@ -337,6 +348,8 @@ defmodule SymphonyPlus.GitHub.MergeQueue.Backend do
 
   defp persist_outcome(_entry, {:retry, _reason} = result), do: result
 
+  defp persist_outcome(entry, {:merged, detail}), do: complete_merged(entry, detail, &api/4)
+
   defp persist_outcome(entry, {kind, detail} = result) do
     checkpoint = WorkflowControl.queue_outcome(entry, kind, detail)
     body = %{"body" => WorkflowControl.render_comment(checkpoint)}
@@ -344,6 +357,26 @@ defmodule SymphonyPlus.GitHub.MergeQueue.Backend do
     case api("POST", "/repos/#{entry.repository}/issues/#{entry.originating_issue}/comments", %{}, body) do
       {:ok, _comment} -> result
       {:error, reason} -> {:retry, {:outcome_checkpoint_failed, reason}}
+    end
+  end
+
+  @doc false
+  @spec complete_merged(State.Entry.t(), term(), function()) :: {:merged, term()} | {:retry, term()}
+  def complete_merged(entry, detail, request) do
+    issue_path = "/repos/#{entry.repository}/issues/#{entry.originating_issue}"
+
+    case request.("PATCH", issue_path, %{}, %{"state" => "closed"}) do
+      {:ok, _issue} ->
+        checkpoint = WorkflowControl.queue_outcome(entry, :merged, detail)
+        body = %{"body" => WorkflowControl.render_comment(checkpoint)}
+
+        case request.("POST", issue_path <> "/comments", %{}, body) do
+          {:ok, _comment} -> {:merged, detail}
+          {:error, reason} -> {:retry, {:outcome_checkpoint_failed, reason}}
+        end
+
+      {:error, reason} ->
+        {:retry, {:issue_close_failed, reason}}
     end
   end
 

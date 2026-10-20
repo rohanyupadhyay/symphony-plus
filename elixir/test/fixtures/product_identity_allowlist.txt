@@ -1,3 +1,4 @@
-# Retained legacy product references must be immutable external references to openai/symphony.
-# The audit enforces this classification inline and this file documents the only allowed class.
-immutable_external openai/symphony
+# Format: <upstream|historical|immutable_external> <exact literal>
+# Every retained legacy occurrence must be covered by one classified literal.
+upstream openai/symphony
+upstream OpenAI Symphony

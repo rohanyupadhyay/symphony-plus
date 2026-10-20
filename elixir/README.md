@@ -100,7 +100,7 @@ artifacts without creating a release.
 
 The `burrito-nightly` workflow builds each push to `main`, with no scheduled rebuilds.
 After all four platform smoke tests pass, it updates the rolling
-[`nightly` prerelease](https://github.com/openai/symphony/releases/tag/nightly),
+[`nightly` prerelease](https://github.com/rohanyupadhyay/symphony-plus/releases/tag/nightly),
 including binaries and checksums. Nightly binaries use a `-nightly` version suffix;
 the release notes identify the source commit. Stable releases remain unchanged.
 

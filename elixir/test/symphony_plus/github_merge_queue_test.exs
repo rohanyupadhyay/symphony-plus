@@ -51,6 +51,10 @@ defmodule SymphonyPlus.GitHub.MergeQueueTest do
 
     refute Backend.eligible_for_autonomous_merge?(put_in(pull_request, ["base", "ref"], "release"), [], queued)
     refute Backend.eligible_for_autonomous_merge?(put_in(pull_request, ["head", "repo", "id"], 456), [], queued)
+
+    configured_label = put_in(pull_request, ["labels"], [%{"name" => "symphony-plus"}])
+    assert Backend.eligible_for_autonomous_merge?(configured_label, [], queued, ["symphony-plus"])
+    refute Backend.eligible_for_autonomous_merge?(configured_label, [], queued, ["sym" <> "phony"])
   end
 
   test "durable admissions trust only the configured GitHub App" do
@@ -71,6 +75,8 @@ defmodule SymphonyPlus.GitHub.MergeQueueTest do
   test "human change request preflight retries without consuming the queue generation" do
     queued = entry(2, @sha_b, 1)
 
+    assert {:merged, %{}} = Backend.admission_preflight(%{merged: true}, queued)
+
     assert {:retry, :human_changes_requested} =
              Backend.admission_preflight(
                %{eligible: false, hold_reason: :human_changes_requested, head_sha: @sha_b},
@@ -78,6 +84,44 @@ defmodule SymphonyPlus.GitHub.MergeQueueTest do
              )
 
     assert :ok = Backend.admission_preflight(%{eligible: true, head_sha: @sha_b}, queued)
+  end
+
+  test "merged queue entry closes its issue before recording completion" do
+    queued = %{entry(2, @sha_b, 1) | originating_issue: 13}
+
+    request = fn method, path, _params, body ->
+      send(self(), {:completion_request, method, path, body})
+      {:ok, %{}}
+    end
+
+    assert {:merged, %{}} = Backend.complete_merged(queued, %{}, request)
+    assert_receive {:completion_request, "PATCH", "/repos/octo/repo/issues/13", %{"state" => "closed"}}
+    assert_receive {:completion_request, "POST", "/repos/octo/repo/issues/13/comments", %{"body" => body}}
+    assert {:ok, %{"state" => "merge_merged"}} = WorkflowControl.decode_checkpoint(body)
+  end
+
+  test "failed issue closure leaves the merged queue entry retryable" do
+    queued = %{entry(2, @sha_b, 1) | originating_issue: 13}
+
+    request = fn method, _path, _params, _body ->
+      if method == "PATCH", do: {:error, :unavailable}, else: flunk("completion checkpoint must wait for issue closure")
+    end
+
+    assert {:retry, {:issue_close_failed, :unavailable}} = Backend.complete_merged(queued, %{}, request)
+  end
+
+  test "failed completion checkpoint retries after closing the issue" do
+    queued = %{entry(2, @sha_b, 1) | originating_issue: 13}
+
+    request = fn method, _path, _params, _body ->
+      case method do
+        "PATCH" -> {:ok, %{}}
+        "POST" -> {:error, :unavailable}
+      end
+    end
+
+    assert {:retry, {:outcome_checkpoint_failed, :unavailable}} =
+             Backend.complete_merged(queued, %{}, request)
   end
 
   test "orders admissions stably, deduplicates generations, and isolates queue keys" do
