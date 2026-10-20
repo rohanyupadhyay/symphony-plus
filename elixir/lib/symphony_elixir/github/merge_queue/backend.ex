@@ -12,7 +12,7 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
   def load do
     with {:ok, repo} <- configured_repo(),
          {:ok, app_id} <- configured_app_id(),
-         {:ok, issues} <- api("GET", "/repos/#{repo}/issues", %{"state" => "all", "labels" => "symphony"}, nil) do
+         {:ok, issues} <- api("GET", "/repos/#{repo}/issues", %{"state" => "all", "labels" => Enum.join(configured_labels(), ",")}, nil) do
       with {:ok, entries} <-
              load_issue_admissions(repo, Enum.reject(issues, &Map.has_key?(&1, "pull_request")), app_id) do
         resolve_dependencies(repo, entries)
@@ -249,7 +249,7 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
     with {:ok, pull_request} <- Client.pull_request(repo, entry.pr_number),
          {:ok, target_sha} <- target_sha(repo, entry.target_branch),
          {:ok, reviews} <- Client.reviews(repo, entry.pr_number) do
-      eligible = eligible_for_autonomous_merge?(pull_request, reviews, entry)
+      eligible = eligible_for_autonomous_merge?(pull_request, reviews, entry, configured_labels())
       hold_reason = if WorkflowControl.autonomous_merge_allowed?(reviews), do: nil, else: :human_changes_requested
 
       {:ok,
@@ -265,10 +265,16 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
   @doc false
   @spec eligible_for_autonomous_merge?(map(), [map()], State.Entry.t()) :: boolean()
   def eligible_for_autonomous_merge?(pull_request, reviews, entry) do
+    eligible_for_autonomous_merge?(pull_request, reviews, entry, ["symphony"])
+  end
+
+  @doc false
+  @spec eligible_for_autonomous_merge?(map(), [map()], State.Entry.t(), [String.t()]) :: boolean()
+  def eligible_for_autonomous_merge?(pull_request, reviews, entry, required_labels) do
     labels = pull_request |> Map.get("labels", []) |> Enum.map(&(&1["name"] || &1))
 
     pull_request["state"] == "open" and pull_request["merged"] != true and
-      pull_request["mergeable"] != false and "symphony" in labels and
+      pull_request["mergeable"] != false and Enum.all?(required_labels, &(&1 in labels)) and
       get_in(pull_request, ["base", "ref"]) == entry.target_branch and
       same_repository_pull_request?(pull_request, entry.repository) and
       WorkflowControl.autonomous_merge_allowed?(reviews)
@@ -296,6 +302,8 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
       _ -> {:error, :missing_github_repo}
     end
   end
+
+  defp configured_labels, do: Config.settings!().tracker.required_labels
 
   defp configured_app_id do
     case get_in(Config.settings!().tracker.provider, ["auth", "app_id"]) do

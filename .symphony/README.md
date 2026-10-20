@@ -32,9 +32,9 @@ issue workspaces. Do not run a second process with the same workflow and workspa
 
 ## Dispatch and control work
 
-- Open without `symphony`: ignored.
-- Open with `symphony`: authorized to run or waiting at a checkpoint.
-- Remove `symphony`: stop or cancel future dispatch.
+- Open without `symphony-plus`: ignored.
+- Open with `symphony-plus`: authorized to run or waiting at a checkpoint.
+- Remove `symphony-plus`: stop or cancel future dispatch.
 - Closed: terminal; startup reconciliation removes its workspace.
 
 Use these commands at approval and recovery checkpoints:
@@ -51,7 +51,7 @@ Use these commands at approval and recovery checkpoints:
 
 Each issue keeps one `symphony/gh-<number>-<slug>` branch and one
 `specs/gh-<number>-<slug>` directory through the complete Spec Kit lifecycle. Symphony never
-merges automatically. Human review and merge are mandatory.
+reviews and queues eligible PRs for a guarded merge after CI passes.
 
 ## Security and recovery
 
@@ -75,7 +75,7 @@ not install the official GitHub extension or turn `tasks.md` entries into child 
 ## Installation smoke test
 
 After the setup pull request is merged, create one disposable issue whose only purpose is reaching
-the specification approval checkpoint. Add `symphony`, verify its branch, feature directory,
+the specification approval checkpoint. Add `symphony-plus`, verify its branch, feature directory,
 checkpoint SHA, and App-bot comment, then exercise `/symphony status`, restart recovery, and
 `/symphony cancel`. Close the issue and restart once more to verify workspace cleanup. Do not use a
 real feature or deferred issue for this smoke test.

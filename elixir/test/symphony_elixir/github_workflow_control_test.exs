@@ -277,6 +277,26 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
     refute WorkflowControl.derive([checkpoint, consumed], context, @authorized).dispatchable
   end
 
+  test "automatic review uses the configured issue label for the managed pull request" do
+    sha = String.duplicate("a", 40)
+    checkpoint = checkpoint_comment(80, "review_pending", %{"phase" => "review", "pr_number" => 7, "branch" => "topic", "head_sha" => sha})
+
+    context = %{
+      "pull_request" => %{
+        "number" => 7,
+        "state" => "open",
+        "merged" => false,
+        "labels" => [%{"name" => "symphony-plus"}],
+        "head" => %{"ref" => "topic", "sha" => sha, "repo" => %{"full_name" => "octo/repo"}},
+        "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+      },
+      "checks" => %{"head_sha" => sha}
+    }
+
+    assert %{trigger: %{"kind" => "automatic_review"}} =
+             WorkflowControl.derive([checkpoint], context, @authorized, nil, ["symphony-plus"])
+  end
+
   test "human change requests suspend automatic review until dismissed" do
     sha = String.duplicate("a", 40)
 
@@ -558,6 +578,35 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
                %{},
                @authorized
              )
+  end
+
+  test "retrying a blocked queue admission starts a fresh automatic review" do
+    sha = String.duplicate("a", 40)
+
+    checkpoint =
+      checkpoint_comment(80, "blocked", %{
+        "phase" => "merge_queue",
+        "pr_number" => 7,
+        "branch" => "topic",
+        "head_sha" => sha
+      })
+
+    retry = comment(81, "OWNER", "/symphony retry")
+
+    context = %{
+      "pull_request" => %{
+        "number" => 7,
+        "state" => "open",
+        "merged" => false,
+        "labels" => [%{"name" => "symphony-plus"}],
+        "head" => %{"ref" => "topic", "sha" => sha, "repo" => %{"full_name" => "octo/repo"}},
+        "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+      },
+      "checks" => %{"head_sha" => sha}
+    }
+
+    assert %{trigger: %{"kind" => "automatic_review", "admission_sequence" => 80}} =
+             WorkflowControl.derive([checkpoint, retry], context, @authorized, nil, ["symphony-plus"])
   end
 
   test "review state prioritizes unresolved change requests and ignores general PR comments" do

@@ -14,7 +14,7 @@ defmodule SymphonyElixir.GitHubLauncherTest do
              "rohanyupadhyay/symphony-plus"
 
     assert get_in(workflow.config, ["tracker", "provider", "auth", "kind"]) == "github_app"
-    assert get_in(workflow.config, ["tracker", "required_labels"]) == ["symphony"]
+    assert get_in(workflow.config, ["tracker", "required_labels"]) == ["symphony-plus"]
     assert get_in(workflow.config, ["tracker", "active_states"]) == ["open"]
     assert get_in(workflow.config, ["tracker", "terminal_states"]) == ["closed"]
     assert get_in(workflow.config, ["polling", "interval_ms"]) == 30_000

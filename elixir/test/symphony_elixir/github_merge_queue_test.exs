@@ -51,6 +51,10 @@ defmodule SymphonyElixir.GitHub.MergeQueueTest do
 
     refute Backend.eligible_for_autonomous_merge?(put_in(pull_request, ["base", "ref"], "release"), [], queued)
     refute Backend.eligible_for_autonomous_merge?(put_in(pull_request, ["head", "repo", "id"], 456), [], queued)
+
+    configured_label = put_in(pull_request, ["labels"], [%{"name" => "symphony-plus"}])
+    assert Backend.eligible_for_autonomous_merge?(configured_label, [], queued, ["symphony-plus"])
+    refute Backend.eligible_for_autonomous_merge?(configured_label, [], queued, ["symphony"])
   end
 
   test "durable admissions trust only the configured GitHub App" do
