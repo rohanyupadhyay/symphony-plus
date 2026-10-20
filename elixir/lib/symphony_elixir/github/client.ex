@@ -619,15 +619,17 @@ defmodule SymphonyElixir.GitHub.Client do
              comments,
              %{},
              WorkflowControl.authorized_associations(settings.provider),
-             trusted_bot_login
+             trusted_bot_login,
+             settings.required_labels
            ),
-         {:ok, review_context} <- maybe_fetch_review_context(initial.checkpoint, settings, request_fun) do
+         {:ok, review_context} <- maybe_fetch_review_context(initial, settings, request_fun) do
       derived =
         WorkflowControl.derive(
           comments,
           review_context,
           WorkflowControl.authorized_associations(settings.provider),
-          trusted_bot_login
+          trusted_bot_login,
+          settings.required_labels
         )
 
       control = %{
@@ -680,12 +682,20 @@ defmodule SymphonyElixir.GitHub.Client do
     Enum.all?(required_labels, &MapSet.member?(normalized, normalize_label(&1)))
   end
 
-  defp maybe_fetch_review_context(%{"state" => state, "pr_number" => pr_number}, settings, request_fun)
+  defp maybe_fetch_review_context(%{checkpoint: %{"state" => state, "pr_number" => pr_number}}, settings, request_fun)
        when state in ["review_pending", "awaiting_review"] do
     fetch_review_context(pr_number, settings, request_fun)
   end
 
-  defp maybe_fetch_review_context(_checkpoint, _settings, _request_fun), do: {:ok, %{}}
+  defp maybe_fetch_review_context(
+         %{checkpoint: %{"state" => "blocked", "phase" => "merge_queue", "pr_number" => pr_number}, trigger: %{"command" => "retry"}},
+         settings,
+         request_fun
+       ) do
+    fetch_review_context(pr_number, settings, request_fun)
+  end
+
+  defp maybe_fetch_review_context(_derived, _settings, _request_fun), do: {:ok, %{}}
 
   defp fetch_review_context(pr_number, settings, request_fun) do
     with {:ok, pull_request} <-
