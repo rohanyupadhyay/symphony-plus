@@ -332,13 +332,16 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
       "blocked" ->
         blocked_trigger(checkpoint, checkpoint_comment, later_comments, review_context, required_labels)
 
+      "merge_blocked" ->
+        blocked_trigger(checkpoint, checkpoint_comment, later_comments, review_context, required_labels)
+
       "review_pending" ->
         automatic_review_trigger(checkpoint, checkpoint_comment, review_context, required_labels)
 
       "awaiting_review" ->
         review_trigger(checkpoint, later_comments, review_context, authorized)
 
-      state when state in ["merge_queued", "merge_validating", "merge_update_required", "merge_blocked", "merge_merged"] ->
+      state when state in ["merge_queued", "merge_validating", "merge_update_required", "merge_merged"] ->
         nil
     end
   end
@@ -348,11 +351,22 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
 
     if checkpoint["phase"] == "merge_queue" and command != nil and command["command"] == "retry" and
          Map.has_key?(review_context, "pull_request") do
-      automatic_review_trigger(checkpoint, checkpoint_comment, review_context, required_labels)
+      review_checkpoint = retry_review_checkpoint(checkpoint, review_context)
+      automatic_review_trigger(review_checkpoint, checkpoint_comment, review_context, required_labels)
     else
       command
     end
   end
+
+  defp retry_review_checkpoint(%{"state" => "merge_blocked"} = checkpoint, context) do
+    pull_request = context["pull_request"]
+
+    checkpoint
+    |> Map.put("branch", get_in(pull_request, ["head", "ref"]))
+    |> Map.put("head_sha", get_in(pull_request, ["head", "sha"]))
+  end
+
+  defp retry_review_checkpoint(checkpoint, _context), do: checkpoint
 
   defp automatic_review_trigger(checkpoint, checkpoint_comment, context, required_labels) do
     pull_request = Map.get(context, "pull_request", %{})
@@ -457,7 +471,7 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
   defp valid_command_for_checkpoint?(%{"command" => command}, checkpoint)
        when command in @commands do
     case command do
-      "retry" -> checkpoint["state"] == "blocked"
+      "retry" -> checkpoint["state"] in ["blocked", "merge_blocked"]
       _ -> true
     end
   end

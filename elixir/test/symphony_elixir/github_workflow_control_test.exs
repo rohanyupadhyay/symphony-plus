@@ -609,6 +609,38 @@ defmodule SymphonyElixir.GitHub.WorkflowControlTest do
              WorkflowControl.derive([checkpoint, retry], context, @authorized, nil, ["symphony-plus"])
   end
 
+  test "retrying a queue block reviews the branch head GitHub updated" do
+    old_sha = String.duplicate("a", 40)
+    current_sha = String.duplicate("b", 40)
+
+    checkpoint =
+      checkpoint_comment(80, "merge_blocked", %{
+        "phase" => "merge_queue",
+        "pr_number" => 7,
+        "head_sha" => old_sha
+      })
+
+    retry = comment(81, "OWNER", "/symphony retry")
+
+    assert %{trigger: %{"command" => "retry"}} =
+             WorkflowControl.derive([checkpoint, retry], %{}, @authorized, nil, ["symphony-plus"])
+
+    context = %{
+      "pull_request" => %{
+        "number" => 7,
+        "state" => "open",
+        "merged" => false,
+        "labels" => [%{"name" => "symphony-plus"}],
+        "head" => %{"ref" => "topic", "sha" => current_sha, "repo" => %{"full_name" => "octo/repo"}},
+        "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+      },
+      "checks" => %{"head_sha" => current_sha}
+    }
+
+    assert %{trigger: %{"kind" => "automatic_review", "head_sha" => ^current_sha, "admission_sequence" => 80}} =
+             WorkflowControl.derive([checkpoint, retry], context, @authorized, nil, ["symphony-plus"])
+  end
+
   test "review state prioritizes unresolved change requests and ignores general PR comments" do
     checkpoint =
       checkpoint_comment(40, "awaiting_review", %{
