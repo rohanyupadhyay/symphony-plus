@@ -299,6 +299,8 @@ defmodule SymphonyElixir.ExtensionsTest do
                  "issue_url" => "https://example.org/issues/MT-BLOCKED",
                  "state" => "In Progress",
                  "error" => "codex turn requires operator input",
+                 "reason" => "codex turn requires operator input",
+                 "quota_context" => nil,
                  "worker_host" => "dm-dev2",
                  "workspace_path" => "/workspaces/MT-BLOCKED",
                  "session_id" => "thread-blocked",
@@ -414,6 +416,62 @@ defmodule SymphonyElixir.ExtensionsTest do
                  "message" => "Orchestrator is unavailable"
                }
              }
+  end
+
+  test "observability state and issue detail use one primary status for overlapping records" do
+    shared = %{issue_id: "issue-overlap", identifier: "MT-OVERLAP", issue_url: nil}
+
+    running =
+      Map.merge(shared, %{
+        state: "In Progress",
+        session_id: "thread-overlap",
+        turn_count: 1,
+        codex_app_server_pid: nil,
+        last_codex_message: nil,
+        last_codex_timestamp: nil,
+        last_codex_event: nil,
+        codex_input_tokens: 0,
+        codex_output_tokens: 0,
+        codex_total_tokens: 0,
+        started_at: DateTime.utc_now()
+      })
+
+    snapshot = %{
+      running: [running],
+      retrying: [Map.merge(shared, %{attempt: 2, due_in_ms: 1_000, error: "retry"})],
+      quota_waiting: [
+        Map.merge(shared, %{
+          status: :waiting,
+          harness: :codex,
+          pool_key: "default",
+          renewal_at: nil,
+          next_recheck_at: nil,
+          native_context_available: true,
+          workspace_path: nil,
+          worker_host: nil,
+          last_outcome: "waiting",
+          updated_at: DateTime.utc_now()
+        })
+      ],
+      blocked: [Map.merge(shared, %{error: "operator approval required"})],
+      codex_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0},
+      rate_limits: nil
+    }
+
+    orchestrator_name = Module.concat(__MODULE__, :OverlappingStatusOrchestrator)
+    start_supervised!({StaticOrchestrator, name: orchestrator_name, snapshot: snapshot})
+    start_test_endpoint(orchestrator: orchestrator_name, snapshot_timeout_ms: 50)
+
+    state = json_response(get(build_conn(), "/api/v1/state"), 200)
+    assert state["counts"] == %{"running" => 0, "retrying" => 0, "quota_waiting" => 0, "blocked" => 1}
+    assert Enum.map(state["blocked"], & &1["issue_identifier"]) == ["MT-OVERLAP"]
+
+    detail = json_response(get(build_conn(), "/api/v1/MT-OVERLAP"), 200)
+    assert detail["status"] == "blocked"
+    assert detail["blocked"]["reason"] == "operator approval required"
+    assert detail["running"] == nil
+    assert detail["retry"] == nil
+    assert detail["quota_wait"] == nil
   end
 
   test "phoenix observability api preserves snapshot timeout behavior" do

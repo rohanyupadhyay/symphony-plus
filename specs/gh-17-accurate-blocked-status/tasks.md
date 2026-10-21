@@ -18,8 +18,8 @@
 
 **Purpose**: Confirm the existing project boundaries and establish the shared test/module locations without adding dependencies.
 
-- [ ] T001 Verify existing ignore rules and Elixir project configuration need no feature-specific additions in `.gitignore` and `elixir/mix.exs`
-- [ ] T002 Create the pure projection module skeleton with public type/function specs in `elixir/lib/symphony_elixir/runtime_status.ex`
+- [X] T001 Verify existing ignore rules and Elixir project configuration need no feature-specific additions in `.gitignore` and `elixir/mix.exs`
+- [X] T002 Create the pure projection module skeleton with public type/function specs in `elixir/lib/symphony_elixir/runtime_status.ex`
 
 ---
 
@@ -29,11 +29,12 @@
 
 **⚠️ CRITICAL**: No renderer or lifecycle integration may begin until the projection invariant is covered by a failing test and implemented.
 
-- [ ] T003 Add failing unit tests for identity deduplication, precedence `blocked > quota_waiting > retrying > running`, and count/list partition equality in `elixir/test/symphony_elixir/runtime_status_test.exs`
-- [ ] T004 Implement normalized runtime entries, deterministic identity merging, primary lists, and derived counts in `elixir/lib/symphony_elixir/runtime_status.ex`
-- [ ] T005 Add failing unit tests that reasons are one line and at most 160 Unicode graphemes including any truncation marker, missing blocked reasons project as `Operator action required`, missing quota timing projects as `Renewal time unavailable`, control characters are removed, and quota `operator_blocked` context is retained in `elixir/test/symphony_elixir/runtime_status_test.exs`
-- [ ] T006 Implement the exact T005 reason/timing constraints and secret-safe quota-context projection without raw payload or prompt fields in `elixir/lib/symphony_elixir/runtime_status.ex`
-- [ ] T007 Run `mix test test/symphony_elixir/runtime_status_test.exs` from `elixir/` and record the focused foundational result in `specs/gh-17-accurate-blocked-status/tasks.md`
+- [X] T003 Add failing unit tests for identity deduplication, precedence `blocked > quota_waiting > retrying > running`, and count/list partition equality in `elixir/test/symphony_elixir/runtime_status_test.exs`
+- [X] T004 Implement normalized runtime entries, deterministic identity merging, primary lists, and derived counts in `elixir/lib/symphony_elixir/runtime_status.ex`
+- [X] T005 Add failing unit tests that reasons are one line and at most 160 Unicode graphemes including any truncation marker, missing blocked reasons project as `Operator action required`, missing quota timing projects as `Renewal time unavailable`, control characters are removed, and quota `operator_blocked` context is retained in `elixir/test/symphony_elixir/runtime_status_test.exs`
+- [X] T006 Implement the exact T005 reason/timing constraints and secret-safe quota-context projection without raw payload or prompt fields in `elixir/lib/symphony_elixir/runtime_status.ex`
+- [X] T007 Run `mix test test/symphony_elixir/runtime_status_test.exs` from `elixir/` and record the focused foundational result in `specs/gh-17-accurate-blocked-status/tasks.md`
+  - Result: 3 tests, 0 failures. Adversarial red/green evidence additionally proved that quota-derived blocked entries exclude raw payload fields.
 
 **Checkpoint**: One pure, tested projection owns lifecycle classification and safety rules.
 
@@ -47,17 +48,18 @@
 
 ### Tests for User Story 1
 
-- [ ] T008 [US1] Add failing orchestrator snapshot tests for ordinary blocked, recoverable quota, and quota-derived operator-blocked records in `elixir/test/symphony_elixir/orchestrator_status_test.exs`
-- [ ] T009 [P] [US1] Add failing terminal snapshot assertions for distinct blocked and quota-waiting sections and concise reasons in `elixir/test/symphony_elixir/status_dashboard_snapshot_test.exs`
-- [ ] T010 [P] [US1] Add failing JSON presenter assertions for primary status, supplementary tracker state, and safe diagnostic fields in `elixir/test/symphony_elixir/extensions_test.exs`
+- [X] T008 [US1] Add failing orchestrator snapshot tests for ordinary blocked, recoverable quota, and quota-derived operator-blocked records in `elixir/test/symphony_elixir/orchestrator_status_test.exs`
+- [X] T009 [P] [US1] Add failing terminal snapshot assertions for distinct blocked and quota-waiting sections and concise reasons in `elixir/test/symphony_elixir/status_dashboard_snapshot_test.exs`
+- [X] T010 [P] [US1] Add failing JSON presenter assertions for primary status, supplementary tracker state, and safe diagnostic fields in `elixir/test/symphony_elixir/extensions_test.exs`
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Route `handle_call(:snapshot)` raw running/retrying/blocked/quota records through `SymphonyElixir.RuntimeStatus` in `elixir/lib/symphony_elixir/orchestrator.ex`
-- [ ] T012 [P] [US1] Render blocked and recoverable quota entries with shared lifecycle terminology in `elixir/lib/symphony_elixir/status_dashboard.ex`
-- [ ] T013 [P] [US1] Serialize normalized state and issue-detail entries without incompatible simultaneous primary objects in `elixir/lib/symphony_elixir_web/presenter.ex`
-- [ ] T014 [P] [US1] Render normalized blocked/quota status, reason, next action, and supplementary tracker state in `elixir/lib/symphony_elixir_web/live/dashboard_live.ex`
-- [ ] T015 [US1] Run the US1 focused test files from `elixir/` and record results in `specs/gh-17-accurate-blocked-status/tasks.md`
+- [X] T011 [US1] Route `handle_call(:snapshot)` raw running/retrying/blocked/quota records through `SymphonyElixir.RuntimeStatus` in `elixir/lib/symphony_elixir/orchestrator.ex`
+- [X] T012 [P] [US1] Render blocked and recoverable quota entries with shared lifecycle terminology in `elixir/lib/symphony_elixir/status_dashboard.ex`
+- [X] T013 [P] [US1] Serialize normalized state and issue-detail entries without incompatible simultaneous primary objects in `elixir/lib/symphony_elixir_web/presenter.ex`
+- [X] T014 [P] [US1] Render normalized blocked/quota status, reason, next action, and supplementary tracker state in `elixir/lib/symphony_elixir_web/live/dashboard_live.ex`
+- [X] T015 [US1] Run the US1 focused test files from `elixir/` and record results in `specs/gh-17-accurate-blocked-status/tasks.md`
+  - Result: the four focused feature files completed with 67 tests, 0 failures before final coverage additions.
 
 **Checkpoint**: An operator can distinguish intervention-required blocks from automatically recoverable quota waits on every surface.
 
@@ -71,14 +73,15 @@
 
 ### Tests for User Story 2
 
-- [ ] T016 [P] [US2] Add failing presenter and API assertions that counts equal normalized array lengths under overlapping raw records in `elixir/test/symphony_elixir/extensions_test.exs`
-- [ ] T017 [P] [US2] Add failing terminal assertions that overlapping records produce one row in only the highest-precedence section in `elixir/test/symphony_elixir/status_dashboard_snapshot_test.exs`
+- [X] T016 [P] [US2] Add failing presenter and API assertions that counts equal normalized array lengths under overlapping raw records in `elixir/test/symphony_elixir/extensions_test.exs`
+- [X] T017 [P] [US2] Add failing terminal assertions that overlapping records produce one row in only the highest-precedence section in `elixir/test/symphony_elixir/status_dashboard_snapshot_test.exs`
 
 ### Implementation for User Story 2
 
-- [ ] T018 [US2] Consume projection-derived counts and lists rather than raw collection lengths in `elixir/lib/symphony_elixir_web/presenter.ex`
-- [ ] T019 [US2] Consume the same projection-derived lists for terminal summary and table output in `elixir/lib/symphony_elixir/status_dashboard.ex`
-- [ ] T020 [US2] Run the US2 focused test files from `elixir/` and record results in `specs/gh-17-accurate-blocked-status/tasks.md`
+- [X] T018 [US2] Consume projection-derived counts and lists rather than raw collection lengths in `elixir/lib/symphony_elixir_web/presenter.ex`
+- [X] T019 [US2] Consume the same projection-derived lists for terminal summary and table output in `elixir/lib/symphony_elixir/status_dashboard.ex`
+- [X] T020 [US2] Run the US2 focused test files from `elixir/` and record results in `specs/gh-17-accurate-blocked-status/tasks.md`
+  - Result: overlap assertions passed in the focused 67-test run; counts and lists derive from the same normalized partition.
 
 **Checkpoint**: Counts, primary arrays, and terminal rows describe the same distinct issue inventory.
 
@@ -92,14 +95,15 @@
 
 ### Tests for User Story 3
 
-- [ ] T021 [US3] Add failing real-orchestrator tests for block release, quota resume/fallback, retry, cancellation, terminal cleanup, eligibility loss, and durable quota reconstruction in `elixir/test/symphony_elixir/orchestrator_status_test.exs`
-- [ ] T022 [P] [US3] Add failing LiveView PubSub refresh and whole-snapshot unavailable-state regression tests in `elixir/test/symphony_elixir/extensions_test.exs`
+- [X] T021 [US3] Add failing real-orchestrator tests for block release, quota resume/fallback, retry, cancellation, terminal cleanup, eligibility loss, and durable quota reconstruction in `elixir/test/symphony_elixir/orchestrator_status_test.exs`
+- [X] T022 [P] [US3] Add failing LiveView PubSub refresh and whole-snapshot unavailable-state regression tests in `elixir/test/symphony_elixir/extensions_test.exs`
 
 ### Implementation for User Story 3
 
-- [ ] T023 [US3] Apply the normalized read projection after existing lifecycle mutation and quota-restart reconstruction paths so the next completed snapshot omits obsolete classifications without introducing a second state owner in `elixir/lib/symphony_elixir/orchestrator.ex`
-- [ ] T024 [US3] Ensure one PubSub-triggered reload replaces LiveView counts and rows from the same normalized payload in `elixir/lib/symphony_elixir_web/live/dashboard_live.ex`
-- [ ] T025 [US3] Run the US3 focused test files from `elixir/` and record results in `specs/gh-17-accurate-blocked-status/tasks.md`
+- [X] T023 [US3] Apply the normalized read projection after existing lifecycle mutation and quota-restart reconstruction paths so the next completed snapshot omits obsolete classifications without introducing a second state owner in `elixir/lib/symphony_elixir/orchestrator.ex`
+- [X] T024 [US3] Ensure one PubSub-triggered reload replaces LiveView counts and rows from the same normalized payload in `elixir/lib/symphony_elixir_web/live/dashboard_live.ex`
+- [X] T025 [US3] Run the US3 focused test files from `elixir/` and record results in `specs/gh-17-accurate-blocked-status/tasks.md`
+  - Result: existing real-orchestrator lifecycle coverage plus LiveView PubSub and unavailable-state regressions passed in focused and full-suite runs.
 
 **Checkpoint**: Transition, restart, and refresh paths preserve a single current lifecycle truth.
 
@@ -109,12 +113,19 @@
 
 **Purpose**: Align normative/operator documentation and complete adversarial and repository-wide validation.
 
-- [ ] T026 [P] Document unique runtime classification and blocked/quota-waiting surface semantics in `SPEC.md`
-- [ ] T027 [P] Document operator-visible blocked and quota-waiting dashboard behavior in `README.md` and `elixir/README.md`
-- [ ] T028 [P] Align quota recovery terminology and operator-action outcomes in `elixir/docs/quota-resume.md`
-- [ ] T029 Perform adversarial review of overlap precedence, lifecycle cleanup, restart, partial failure, secret-safe reasons, and unrelated status regressions; record findings and corrections in `specs/gh-17-accurate-blocked-status/tasks.md`
-- [ ] T030 Run all quickstart focused commands and `make -C elixir all`, then record results and any omissions in `specs/gh-17-accurate-blocked-status/tasks.md`
-- [ ] T031 Review the final diff for secrets, raw provider payloads, unrelated changes, generated artifacts, incomplete tasks, and constitution/documentation violations; record the result in `specs/gh-17-accurate-blocked-status/tasks.md`
+- [X] T026 [P] Document unique runtime classification and blocked/quota-waiting surface semantics in `SPEC.md`
+- [X] T027 [P] Document operator-visible blocked and quota-waiting dashboard behavior in `README.md` and `elixir/README.md`
+- [X] T028 [P] Align quota recovery terminology and operator-action outcomes in `elixir/docs/quota-resume.md`
+- [X] T029 Perform adversarial review of overlap precedence, lifecycle cleanup, restart, partial failure, secret-safe reasons, and unrelated status regressions; record findings and corrections in `specs/gh-17-accurate-blocked-status/tasks.md`
+  - Finding corrected: quota-derived blocked entries retained arbitrary top-level fields even though `quota_context` was filtered. Added a failing regression assertion and replaced the open-ended projection with an explicit safe-field allowlist.
+  - Fixture correction: backoff snapshot records reused one `issue_id` across four identifiers, causing correct identity deduplication; assigned distinct fixture identities and asserted terminal content after ANSI stripping.
+- [X] T030 Run all quickstart focused commands and `make -C elixir all`, then record results and any omissions in `specs/gh-17-accurate-blocked-status/tasks.md`
+  - Focused: 67 tests, 0 failures; runtime projection finished with 3 tests, 0 failures.
+  - Full gate: `TMPDIR=/tmp make -C elixir all` passed with 415 tests, 0 failures, 6 skipped, 100.00% coverage, Credo clean, public-spec check clean, and Dialyzer 0 errors.
+  - Dependency advisory output: existing locked dependencies reported HIGH/MEDIUM/LOW advisories in Bandit, Decimal, HPAX, LazyHTML, Mint, Phoenix, Phoenix LiveView, Plug, and Req; dependency upgrades are outside this feature scope and will be disclosed in the PR.
+  - Environment note: the first full-gate attempt exposed a sandbox-specific compile-time/runtime temporary-directory mismatch in an unrelated config default test. Cleaning and rerunning with stable `TMPDIR=/tmp` resolved it without source changes.
+- [X] T031 Review the final diff for secrets, raw provider payloads, unrelated changes, generated artifacts, incomplete tasks, and constitution/documentation violations; record the result in `specs/gh-17-accurate-blocked-status/tasks.md`
+  - Result: no secrets or generated build/coverage artifacts are tracked; scope is limited to the shared runtime projection, three existing status surfaces, focused tests/snapshots, and required docs. Constitution checks remain satisfied and all 31 tasks are complete.
 
 ---
 

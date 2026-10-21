@@ -1,5 +1,9 @@
 # Symphony Plus
 
+The operations dashboard reports mutually exclusive running, retrying, quota-waiting, and blocked
+runtime states. “Quota-waiting” means automatic renewal or recheck remains possible; “blocked”
+means operator action is required. Counts and rows use the same classification.
+
 Symphony Plus extends [OpenAI Symphony](https://github.com/openai/symphony) with optional, durable
 GitHub comment-driven workflow control and support for orchestrating repository-local Spec Kit
 phases. It retains Symphony's isolated, autonomous implementation model so teams can manage work
