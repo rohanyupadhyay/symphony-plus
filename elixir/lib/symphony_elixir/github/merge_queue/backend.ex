@@ -216,13 +216,34 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
 
   defp update_candidate(repo, number, expected) do
     with {:ok, _response} <- Client.update_branch(repo, number, expected),
-         {:ok, pull_request} <- Client.pull_request(repo, number),
-         sha when is_binary(sha) <- get_in(pull_request, ["head", "sha"]) do
+         {:ok, sha} <- await_updated_head(expected, fn -> Client.pull_request(repo, number) end) do
       {:ok, sha}
     else
       {:error, {:github_api_status, 422, _}} -> reconcile_update(repo, number, expected)
       {:error, reason} -> {:error, reason}
-      _ -> {:error, :unknown_candidate}
+    end
+  end
+
+  @doc false
+  @spec await_updated_head(String.t(), (-> {:ok, map()} | {:error, term()}), pos_integer()) ::
+          {:ok, String.t()} | {:error, term()}
+  def await_updated_head(expected, fetch, attempts \\ 10) do
+    case fetch.() do
+      {:ok, %{"head" => %{"sha" => sha}}} when is_binary(sha) and sha != expected ->
+        {:ok, sha}
+
+      {:ok, %{"head" => %{"sha" => ^expected}}} when attempts > 1 ->
+        Process.sleep(1_000)
+        await_updated_head(expected, fetch, attempts - 1)
+
+      {:ok, %{"head" => %{"sha" => ^expected}}} ->
+        {:error, :branch_update_pending}
+
+      {:error, reason} ->
+        {:error, reason}
+
+      _ ->
+        {:error, :unknown_candidate}
     end
   end
 
@@ -392,10 +413,19 @@ defmodule SymphonyElixir.GitHub.MergeQueue.Backend do
   defp reconcile_update(repo, number, expected) do
     with {:ok, pull_request} <- Client.pull_request(repo, number),
          head when is_binary(head) <- get_in(pull_request, ["head", "sha"]) do
-      if head == expected, do: {:error, :merge_conflict}, else: {:ok, head}
+      if head == expected, do: reconcile_unchanged_head(repo, pull_request, head), else: {:ok, head}
     else
       {:error, reason} -> {:error, reason}
       _ -> {:error, :unknown_candidate}
+    end
+  end
+
+  defp reconcile_unchanged_head(repo, pull_request, head) do
+    with {:ok, target} <- target_sha(repo, get_in(pull_request, ["base", "ref"])),
+         {:ok, comparison} <- api("GET", "/repos/#{repo}/compare/#{target}...#{head}", %{}, nil) do
+      if comparison["status"] in ["ahead", "identical"],
+        do: {:ok, head},
+        else: {:error, :merge_conflict}
     end
   end
 
