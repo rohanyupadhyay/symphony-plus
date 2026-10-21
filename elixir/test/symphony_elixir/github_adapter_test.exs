@@ -623,17 +623,17 @@ defmodule SymphonyElixir.GitHub.AdapterTest do
     assert get_in(enriched.native_ref, ["workflow_control", "checkpoint", "head_sha"]) == sha
   end
 
-  test "blocked queue retry enriches PR context and restarts automatic review" do
-    sha = String.duplicate("a", 40)
+  test "merge-blocked queue retry enriches the updated PR head for automatic review" do
+    old_sha = String.duplicate("a", 40)
+    sha = String.duplicate("b", 40)
 
     marker =
       WorkflowControl.render_comment(%{
-        "state" => "blocked",
+        "state" => "merge_blocked",
         "phase" => "merge_queue",
         "summary" => "Queue admission failed.",
         "pr_number" => 7,
-        "branch" => "topic",
-        "head_sha" => sha
+        "head_sha" => old_sha
       })
 
     request_fun = fn "GET", path, _params, nil, _settings ->
