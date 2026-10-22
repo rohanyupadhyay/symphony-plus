@@ -8,6 +8,12 @@
 
 **Input**: User description: "Symphony Plus should periodically check for changes in the remote main branch on GitHub and auto update, pull, and restart itself without disrupting existing work, when the time is right."
 
+## Clarifications
+
+### Session 2026-10-22
+
+- Q: Which installation type should the first automatic-update release support? → A: Source checkout only.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Adopt an Available Update Safely (Priority: P1)
@@ -87,7 +93,7 @@ As an operator, I want update behavior to be explicitly configurable and observa
 - **FR-013**: The service MUST expose the running revision, last update check time and outcome, pending candidate revision, and any deferral or blocked reason through existing operator-visible status and structured logging.
 - **FR-014**: Update lifecycle logs MUST use stable, concise wording, include the installation and revision context needed for diagnosis, and MUST NOT contain repository credentials, tokens, private keys, or unnecessary remote payloads.
 - **FR-015**: Configuration changes that disable automatic updating MUST take effect without waiting for the next restart; changes to update-source or activation settings MUST be validated before replacing the last known-good settings.
-- **FR-016**: The supported installation target for the first release MUST be [NEEDS CLARIFICATION: source checkouts that can fast-forward and rebuild, downloaded release executables replaced from published assets, or both].
+- **FR-016**: The first release MUST support only a clean source checkout that can fast-forward to the admitted revision, rebuild, and restart through the documented launcher or supervisor boundary; downloaded release executables and mixed installation modes are out of scope.
 - **FR-017**: The operator documentation MUST define eligibility, safe-idle semantics, update/restart ownership, failure recovery, configuration, and the external mechanism responsible for bringing the process back after activation.
 
 ### Key Entities
@@ -117,3 +123,4 @@ As an operator, I want update behavior to be explicitly configurable and observa
 - Update checks use existing host-side authentication boundaries and never provide repository credentials to coding-agent child processes.
 - An external launcher or service supervisor remains responsible for guaranteeing that a deliberately stopped process starts again; the service must coordinate with and document that boundary.
 - Multi-node coordinated rollout is out of scope. A filesystem-level ownership mechanism prevents concurrent mutation of one installation by multiple local processes.
+- Published executable replacement and mixed source/executable installation modes are out of scope for the first release.
