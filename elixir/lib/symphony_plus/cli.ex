@@ -11,6 +11,7 @@ defmodule SymphonyPlus.CLI do
 
   @type ensure_started_result :: {:ok, [atom()]} | {:error, term()}
   @type deps :: %{
+          optional(:add_project) => (String.t() -> {:ok, map(), :created | :existing} | {:error, term()}),
           file_regular?: (String.t() -> boolean()),
           set_workflow_file_path: (String.t() -> :ok | {:error, term()}),
           set_logs_root: (String.t() -> :ok | {:error, term()}),
@@ -57,9 +58,8 @@ defmodule SymphonyPlus.CLI do
     case OptionParser.parse(args, strict: [data_root: :string, format: :string]) do
       {opts, [], []} ->
         if root = opts[:data_root], do: Application.put_env(:symphony_plus, :data_root, Path.expand(root))
-        projects = if Process.whereis(SymphonyPlus.ProjectRegistry), do: SymphonyPlus.ProjectRegistry.list(), else: []
-        IO.puts(if opts[:format] == "json", do: Jason.encode!(projects), else: format_projects(projects))
-        :command_ok
+
+        list_projects(opts)
 
       _ ->
         {:error, usage_message()}
@@ -117,15 +117,7 @@ defmodule SymphonyPlus.CLI do
     expanded_path = Path.expand(workflow_path)
 
     if deps.file_regular?.(expanded_path) do
-      :ok = deps.set_workflow_file_path.(expanded_path)
-
-      case deps.ensure_all_started.() do
-        {:ok, _started_apps} ->
-          :ok
-
-        {:error, reason} ->
-          {:error, "Failed to start Symphony Plus with workflow #{expanded_path}: #{inspect(reason)}"}
-      end
+      start_with_workflow(expanded_path, deps, Map.get(deps, :add_project))
     else
       {:error, "Workflow file not found: #{expanded_path}"}
     end
@@ -152,6 +144,7 @@ defmodule SymphonyPlus.CLI do
       set_logs_root: &set_logs_root/1,
       set_server_port_override: &set_server_port_override/1,
       github_app_command: &AppCLI.run/1,
+      add_project: &SymphonyPlus.ProjectRegistry.add/1,
       ensure_all_started: ensure_all_started
     }
   end
@@ -185,6 +178,46 @@ defmodule SymphonyPlus.CLI do
 
   defp format_projects([]), do: "No projects registered."
   defp format_projects(projects), do: Enum.map_join(projects, "\n", &"#{&1.id}\t#{&1.workflow_path}")
+
+  defp durable_projects do
+    if Process.whereis(SymphonyPlus.ProjectRegistry) do
+      {:ok, SymphonyPlus.ProjectRegistry.list()}
+    else
+      SymphonyPlus.ProjectRegistry.list_from_disk()
+    end
+  end
+
+  defp list_projects(opts) do
+    case durable_projects() do
+      {:ok, projects} ->
+        IO.puts(if opts[:format] == "json", do: Jason.encode!(projects), else: format_projects(projects))
+        :command_ok
+
+      {:error, reason} ->
+        {:error, "Project registry is unavailable: #{inspect(reason)}"}
+    end
+  end
+
+  defp start_with_workflow(expanded_path, deps, add_project) when is_function(add_project, 1) do
+    with {:ok, _started_apps} <- deps.ensure_all_started.(),
+         {:ok, _registration, _result} <- add_project.(expanded_path) do
+      :ok
+    else
+      {:error, reason} -> startup_workflow_error(expanded_path, reason)
+    end
+  end
+
+  defp start_with_workflow(expanded_path, deps, _add_project) do
+    :ok = deps.set_workflow_file_path.(expanded_path)
+
+    case deps.ensure_all_started.() do
+      {:ok, _started_apps} -> :ok
+      {:error, reason} -> startup_workflow_error(expanded_path, reason)
+    end
+  end
+
+  defp startup_workflow_error(path, reason),
+    do: {:error, "Failed to start Symphony Plus with workflow #{path}: #{inspect(reason)}"}
 
   defp projects_url(opts) do
     Keyword.get(opts, :service_url, "http://127.0.0.1:4000")

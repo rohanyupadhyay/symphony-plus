@@ -13,6 +13,8 @@ defmodule SymphonyPlusWeb.ObservabilityApiController do
     case SymphonyPlus.ProjectRegistry.add(workflow_path) do
       {:ok, registration, :created} -> conn |> put_status(201) |> json(%{result: "created", project: registration})
       {:ok, registration, :existing} -> json(conn, %{result: "already_registered", project: registration})
+      {:error, :workspace_conflict} -> error_response(conn, 409, "workspace_conflict", "Project workspace overlaps an existing project")
+      {:error, {:registry_write_failed, _reason}} -> error_response(conn, 503, "registry_unavailable", "Project registry is unavailable")
       {:error, _reason} -> error_response(conn, 422, "invalid_workflow", "Workflow is missing or invalid")
     end
   end
@@ -23,8 +25,11 @@ defmodule SymphonyPlusWeb.ObservabilityApiController do
   def remove_project(conn, %{"project_id" => project_id}) do
     case SymphonyPlus.ProjectRegistry.get(project_id) do
       {:ok, _registration} ->
-        :ok = SymphonyPlus.ProjectRegistry.remove(project_id)
-        json(conn, %{result: "removed", project_id: project_id})
+        case SymphonyPlus.ProjectRegistry.remove(project_id) do
+          :ok -> json(conn, %{result: "removed", project_id: project_id})
+          {:error, :project_busy} -> error_response(conn, 409, "project_busy", "Project has retained work")
+          {:error, {:registry_write_failed, _reason}} -> error_response(conn, 503, "registry_unavailable", "Project registry is unavailable")
+        end
 
       {:error, :not_found} ->
         error_response(conn, 404, "project_not_found", "Project not found")

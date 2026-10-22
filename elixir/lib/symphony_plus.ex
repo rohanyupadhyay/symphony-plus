@@ -43,7 +43,7 @@ defmodule SymphonyPlus.Application do
       SymphonyPlus.GitHub.AuthCache,
       SymphonyPlus.ProjectRuntimeSupervisor,
       SymphonyPlus.ProjectRegistry,
-      {SymphonyPlus.HttpServer, port: Application.get_env(:symphony_plus, :server_port_override), host: "127.0.0.1"},
+      {SymphonyPlus.HttpServer, http_server_options()},
       {SymphonyPlus.StatusDashboard, enabled: false, refresh_ms: 1_000, render_interval_ms: 16}
     ]
 
@@ -79,6 +79,13 @@ defmodule SymphonyPlus.Application do
   end
 
   defp burrito_runtime?, do: System.get_env("__BURRITO") == "1"
+
+  defp http_server_options do
+    case Application.get_env(:symphony_plus, :server_port_override) do
+      port when is_integer(port) and port >= 0 -> [port: port, host: "127.0.0.1"]
+      _ -> [host: "127.0.0.1"]
+    end
+  end
 
   defp plain_arguments, do: Enum.map(:init.get_plain_arguments(), &to_string/1)
 end

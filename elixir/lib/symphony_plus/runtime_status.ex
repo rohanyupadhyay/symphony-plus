@@ -115,6 +115,9 @@ defmodule SymphonyPlus.RuntimeStatus do
 
   defp quota_classification(_entry, classification), do: classification
 
+  defp identity(%{project_id: project_id} = entry),
+    do: {project_id, Map.get(entry, :issue_id) || Map.fetch!(entry, :identifier)}
+
   defp identity(entry), do: Map.get(entry, :issue_id) || Map.fetch!(entry, :identifier)
 
   defp select_entry(candidates) do

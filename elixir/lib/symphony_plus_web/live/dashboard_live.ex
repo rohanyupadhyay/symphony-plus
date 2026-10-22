@@ -50,8 +50,14 @@ defmodule SymphonyPlusWeb.DashboardLive do
   end
 
   def handle_event("remove_project", %{"id" => id}, socket) do
-    :ok = SymphonyPlus.ProjectRegistry.remove(id)
-    {:noreply, socket |> put_flash(:info, "Project removed") |> assign(:payload, load_payload())}
+    message =
+      case SymphonyPlus.ProjectRegistry.remove(id) do
+        :ok -> "Project removed"
+        {:error, :project_busy} -> "Project has retained work and cannot be removed"
+        {:error, _reason} -> "Project registry is unavailable"
+      end
+
+    {:noreply, socket |> put_flash(:info, message) |> assign(:payload, load_payload())}
   end
 
   @impl true

@@ -212,3 +212,7 @@ Task T025: LiveView project-management requirements in elixir/test/symphony_plus
 - Story labels provide traceability to the approved specification.
 - Custom checklist markers are reviewer-owned and are not changed during implementation.
 - Mark each task `[X]` only after its work and targeted validation succeed.
+
+## Phase 8: Convergence
+
+- [X] T043 CRITICAL: Add a failing two-project runtime test, then replace validation-only project children and singleton/global workflow access with independently configured project orchestrator runtimes so two registered workflows poll concurrently and reload/fail in isolation per US1/AC1, US1/AC2, FR-001, FR-006, FR-007, FR-016, and plan: project runtime ownership (missing)

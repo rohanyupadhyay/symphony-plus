@@ -7,7 +7,6 @@ defmodule SymphonyPlus.StatusDashboard do
   require Logger
 
   alias SymphonyPlus.{Config, HttpServer, RuntimeStatus}
-  alias SymphonyPlus.Orchestrator
   alias SymphonyPlusWeb.ObservabilityPubSub
 
   @minimum_idle_rerender_ms 1_000
@@ -352,7 +351,7 @@ defmodule SymphonyPlus.StatusDashboard do
         codex_total_tokens = Map.get(codex_totals, :total_tokens, 0)
         codex_seconds_running = Map.get(codex_totals, :seconds_running, 0)
         agent_count = length(running)
-        max_agents = Config.settings!().agent.max_concurrent_agents
+        max_agents = Map.get(snapshot, :max_concurrent_agents) || Config.settings!().agent.max_concurrent_agents
         running_event_width = running_event_width(terminal_columns_override)
         running_rows = format_running_rows(running, running_event_width)
         running_to_backoff_spacer = if(running == [], do: [], else: ["│"])
@@ -566,8 +565,8 @@ defmodule SymphonyPlus.StatusDashboard do
     do: dashboard_url(host, configured_port, bound_port)
 
   defp snapshot_payload do
-    if Process.whereis(Orchestrator) do
-      case Orchestrator.snapshot() do
+    if Process.whereis(SymphonyPlus.ProjectRuntimeSupervisor) do
+      case SymphonyPlus.ProjectRuntimeSupervisor.aggregate_snapshot() do
         %{
           running: running,
           retrying: retrying,
@@ -582,7 +581,8 @@ defmodule SymphonyPlus.StatusDashboard do
              quota_waiting: Map.get(snapshot, :quota_waiting, []),
              codex_totals: codex_totals,
              rate_limits: Map.get(snapshot, :rate_limits),
-             polling: Map.get(snapshot, :polling)
+             polling: Map.get(snapshot, :polling),
+             max_concurrent_agents: Map.get(snapshot, :max_concurrent_agents)
            }}
 
         _ ->

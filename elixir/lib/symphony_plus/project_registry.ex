@@ -38,6 +38,15 @@ defmodule SymphonyPlus.ProjectRegistry do
     end
   end
 
+  @doc "Reads durable registrations without starting or mutating the service."
+  @spec list_from_disk(Path.t()) :: {:ok, [registration()]} | {:error, term()}
+  def list_from_disk(path \\ Config.project_registry_path()) do
+    case load(path) do
+      {:ok, registrations} -> {:ok, registrations |> Map.values() |> Enum.sort_by(& &1.id)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @impl true
   def init(opts) do
     path = Keyword.get(opts, :path, Config.project_registry_path())
@@ -84,20 +93,25 @@ defmodule SymphonyPlus.ProjectRegistry do
   end
 
   def handle_call({:remove, id}, _from, state) do
-    if Map.has_key?(state.registrations, id) do
-      registrations = Map.delete(state.registrations, id)
+    cond do
+      not Map.has_key?(state.registrations, id) ->
+        {:reply, :ok, state}
 
-      case persist(state.path, registrations) do
-        :ok ->
-          stop_runtime(state.runtime_supervisor, id)
-          Logger.info("project_registry.removed project_id=#{id}")
-          {:reply, :ok, %{state | registrations: registrations}}
+      not project_idle?(state.runtime_supervisor, id) ->
+        {:reply, {:error, :project_busy}, state}
 
-        {:error, reason} ->
-          {:reply, {:error, {:registry_write_failed, reason}}, state}
-      end
-    else
-      {:reply, :ok, state}
+      true ->
+        registrations = Map.delete(state.registrations, id)
+
+        case persist(state.path, registrations) do
+          :ok ->
+            stop_runtime(state.runtime_supervisor, id)
+            Logger.info("project_registry.removed project_id=#{id}")
+            {:reply, :ok, %{state | registrations: registrations}}
+
+          {:error, reason} ->
+            {:reply, {:error, {:registry_write_failed, reason}}, state}
+        end
     end
   end
 
@@ -115,6 +129,9 @@ defmodule SymphonyPlus.ProjectRegistry do
 
   defp stop_runtime(nil, _id), do: :ok
   defp stop_runtime(supervisor, id), do: SymphonyPlus.ProjectRuntimeSupervisor.stop_project(id, supervisor)
+
+  defp project_idle?(nil, _id), do: true
+  defp project_idle?(supervisor, id), do: SymphonyPlus.ProjectRuntimeSupervisor.project_idle?(id, supervisor)
 
   defp canonical_workflow_path(path) when is_binary(path) do
     expanded = Path.expand(path)

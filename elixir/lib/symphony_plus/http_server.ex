@@ -22,7 +22,8 @@ defmodule SymphonyPlus.HttpServer do
 
     case port do
       port when is_integer(port) and port >= 0 ->
-        host = if Keyword.has_key?(opts, :host), do: Keyword.get(opts, :host), else: Config.settings!().server.host
+        host = configured_host(opts)
+
         orchestrator = Keyword.get(opts, :orchestrator, Orchestrator)
         snapshot_timeout_ms = Keyword.get(opts, :snapshot_timeout_ms, 15_000)
 
@@ -83,6 +84,17 @@ defmodule SymphonyPlus.HttpServer do
   defp normalize_host(host) when host in ["", nil], do: "127.0.0.1"
   defp normalize_host(host) when is_binary(host), do: host
   defp normalize_host(host), do: to_string(host)
+
+  defp configured_host(opts) do
+    if Keyword.has_key?(opts, :host) do
+      Keyword.get(opts, :host)
+    else
+      case Config.settings() do
+        {:ok, settings} -> settings.server.host
+        {:error, _reason} -> "127.0.0.1"
+      end
+    end
+  end
 
   defp secret_key_base do
     Base.encode64(:crypto.strong_rand_bytes(@secret_key_bytes), padding: false)

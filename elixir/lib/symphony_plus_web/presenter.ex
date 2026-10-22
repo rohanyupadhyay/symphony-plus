@@ -9,7 +9,7 @@ defmodule SymphonyPlusWeb.Presenter do
   def state_payload(orchestrator, snapshot_timeout_ms) do
     generated_at = DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
 
-    case Orchestrator.snapshot(orchestrator, snapshot_timeout_ms) do
+    case snapshot(orchestrator, snapshot_timeout_ms) do
       %{} = snapshot ->
         snapshot = RuntimeStatus.project(snapshot)
 
@@ -78,7 +78,7 @@ defmodule SymphonyPlusWeb.Presenter do
 
   @spec issue_payload(String.t(), GenServer.name(), timeout()) :: {:ok, map()} | {:error, :issue_not_found}
   def issue_payload(issue_identifier, orchestrator, snapshot_timeout_ms) when is_binary(issue_identifier) do
-    case Orchestrator.snapshot(orchestrator, snapshot_timeout_ms) do
+    case snapshot(orchestrator, snapshot_timeout_ms) do
       %{} = snapshot ->
         snapshot = RuntimeStatus.project(snapshot)
         running = Enum.find(snapshot.running, &(&1.identifier == issue_identifier))
@@ -107,6 +107,16 @@ defmodule SymphonyPlusWeb.Presenter do
         {:ok, Map.update!(payload, :requested_at, &DateTime.to_iso8601/1)}
     end
   end
+
+  defp snapshot(SymphonyPlus.Orchestrator, _timeout) do
+    if Process.whereis(SymphonyPlus.ProjectRuntimeSupervisor) do
+      SymphonyPlus.ProjectRuntimeSupervisor.aggregate_snapshot()
+    else
+      :unavailable
+    end
+  end
+
+  defp snapshot(orchestrator, timeout), do: Orchestrator.snapshot(orchestrator, timeout)
 
   defp issue_payload_body(issue_identifier, running, retry, blocked, quota_wait) do
     %{
