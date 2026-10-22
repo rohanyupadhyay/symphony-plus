@@ -14,11 +14,11 @@ Use [the harness contract](contracts/harness-quota-resume.md), [JSON schema](con
 
 ```bash
 cd elixir
-mix test test/symphony_elixir/app_server_test.exs \
-  test/symphony_elixir/quota_wait_store_test.exs \
-  test/symphony_elixir/orchestrator_status_test.exs \
-  test/symphony_elixir/workspace_and_config_test.exs \
-  test/symphony_elixir/status_dashboard_snapshot_test.exs
+mix test test/symphony_plus/app_server_test.exs \
+  test/symphony_plus/quota_wait_store_test.exs \
+  test/symphony_plus/orchestrator_status_test.exs \
+  test/symphony_plus/workspace_and_config_test.exs \
+  test/symphony_plus/status_dashboard_snapshot_test.exs
 ```
 
 The suite must prove:

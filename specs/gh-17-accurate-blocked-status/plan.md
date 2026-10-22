@@ -1,6 +1,6 @@
 # Implementation Plan: Accurate Blocked Session Status
 
-**Branch**: `symphony/gh-17-accurate-blocked-status` | **Date**: 2026-10-12 | **Spec**: [spec.md](spec.md)
+**Branch**: `symphony-plus/gh-17-accurate-blocked-status` | **Date**: 2026-10-12 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `specs/gh-17-accurate-blocked-status/spec.md`
 
@@ -18,7 +18,7 @@ Introduce one pure runtime-status projection boundary that classifies each issue
 
 **Testing**: ExUnit with pure projection tests plus real orchestrator/status-surface tests; targeted `mix test` and final `make -C elixir all`
 
-**Target Platform**: Existing long-running Linux/macOS Symphony service
+**Target Platform**: Existing long-running Linux/macOS Symphony Plus service
 
 **Project Type**: Elixir/OTP service with terminal, HTTP JSON, and Phoenix LiveView observability surfaces
 

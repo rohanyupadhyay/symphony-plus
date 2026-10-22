@@ -10,7 +10,7 @@
 
 ## Decision 2: Persist small issue-scoped records under the workspace root
 
-**Decision**: Store one versioned JSON record per issue in `<workspace-root>/.symphony/quota-waits/`, written atomically by temporary-file rename. Validate root and filenames before mutation and reconstruct the in-memory pool index from records.
+**Decision**: Store one versioned JSON record per issue in `<workspace-root>/.symphony-plus/quota-waits/`, written atomically by temporary-file rename. Validate root and filenames before mutation and reconstruct the in-memory pool index from records.
 
 **Rationale**: `SPEC.md` permits tracker/filesystem-driven restart recovery without a database. Host-side metadata works for local and SSH workers, survives app-server exit, and can be removed during cancellation or cleanup. Issue-scoped records minimize contention and corruption blast radius.
 

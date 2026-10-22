@@ -1,6 +1,6 @@
 # Implementation Plan: Install and Run Documentation
 
-**Branch**: `symphony/gh-13-install-run-docs` | **Date**: 2026-10-12 | **Spec**: [spec.md](spec.md)
+**Branch**: `symphony-plus/gh-13-install-run-docs` | **Date**: 2026-10-12 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `/specs/gh-13-install-run-docs/spec.md`
 
@@ -17,7 +17,7 @@ behavior or `SPEC.md`.
 
 **Language/Version**: Markdown for an Elixir 1.19 / OTP 28 application managed by `mise`
 
-**Primary Dependencies**: `mise`, Mix, generated `elixir/bin/symphony`, and `elixir/scripts/run-github`
+**Primary Dependencies**: `mise`, Mix, generated `elixir/bin/symphony-plus`, and `elixir/scripts/run-github`
 
 **Storage**: N/A; repository-tracked Markdown only
 
@@ -31,7 +31,7 @@ behavior or `SPEC.md`.
 
 **Constraints**: commands must be copyable in order; working directories and workflow paths must be explicit; generic and GitHub modes must remain distinct; credentials stay host-side; issue agents never operate from the source checkout
 
-**Scale/Scope**: `README.md`, `elixir/README.md`, `elixir/AGENTS.md`, `.symphony/README.md`, and `elixir/docs/agent-installation.md`
+**Scale/Scope**: `README.md`, `elixir/README.md`, `elixir/AGENTS.md`, `.symphony-plus/README.md`, and `elixir/docs/agent-installation.md`
 
 ## Constitution Check
 
@@ -69,7 +69,7 @@ specs/gh-13-install-run-docs/
 README.md                            # human-facing source quick start and routing
 elixir/README.md                     # canonical source install and generic run commands
 elixir/AGENTS.md                     # agent-facing command summary and links
-.symphony/README.md                  # repository-specific GitHub self-hosting guide
+.symphony-plus/README.md                  # repository-specific GitHub self-hosting guide
 elixir/docs/agent-installation.md    # canonical agent-operated GitHub onboarding
 SPEC.md                              # read-only normative compatibility reference
 ```
@@ -95,7 +95,7 @@ guides. Keep duplicated text short and consistent with the canonical sequence.
 
 ### Phase 3 — Reconcile focused GitHub guidance
 
-Audit `.symphony/README.md` and `elixir/docs/agent-installation.md` for command consistency,
+Audit `.symphony-plus/README.md` and `elixir/docs/agent-installation.md` for command consistency,
 source-checkout versus issue-workspace boundaries, App-authenticated launcher use, and cross-links.
 Change only omissions or conflicts; preserve repository-specific self-hosting values.
 

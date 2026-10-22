@@ -11,7 +11,7 @@ classification; tests pin every accepted Codex protocol shape.
 ## Native resume request
 
 Inputs are validated issue/workspace identity, a Codex continuation reference, continuation
-guidance, and normal approval/sandbox/tool config from `SymphonyElixir.Config`.
+guidance, and normal approval/sandbox/tool config from `SymphonyPlus.Config`.
 
 Required behavior:
 

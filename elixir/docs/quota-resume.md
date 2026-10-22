@@ -1,6 +1,6 @@
 # Quota Waits and Native Resume
 
-Symphony treats recognized Codex quota exhaustion as a durable scheduler wait rather than an
+Symphony Plus treats recognized Codex quota exhaustion as a durable scheduler wait rather than an
 ordinary failed attempt. This preserves work, avoids retry pressure, and keeps execution capacity
 available for unrelated work.
 
@@ -20,7 +20,7 @@ normal global, tracker-state, and worker-host concurrency limits.
 
 Future RFC 3339 renewal timestamps are honored. Missing, malformed, or past timestamps use the
 configured `quota.unknown_recheck_ms` interval, which defaults to five minutes. Durable version-1
-JSON records live beneath `<workspace-root>/.symphony/quota-waits/` and are written by atomic
+JSON records live beneath `<workspace-root>/.symphony-plus/quota-waits/` and are written by atomic
 replacement before a worker slot is released or a resume is dispatched.
 
 Records contain only issue identity, harness and pool, wait status, renewal/recheck timestamps,
@@ -29,9 +29,9 @@ raw provider payloads, and authentication material are rejected or omitted.
 
 ## Native resume lifecycle
 
-At eligibility, Symphony writes a `resuming` reservation, validates that the continuation belongs
+At eligibility, Symphony Plus writes a `resuming` reservation, validates that the continuation belongs
 to the same issue and workspace, then uses Codex `thread/resume` followed by a continuation turn.
-The prompt directs Codex to continue remaining work from durable workspace state. Symphony never
+The prompt directs Codex to continue remaining work from durable workspace state. Symphony Plus never
 uses `thread/start` as a fallback for quota-paused work.
 
 If the native thread is missing, mismatched, or unavailable, the record becomes

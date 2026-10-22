@@ -18,7 +18,7 @@
 
 **Purpose**: Establish the checked-in command and path evidence used by every story.
 
-- [X] T001 Audit supported source setup, build, validation, generated launcher, safe GitHub launcher, and workflow paths against `elixir/README.md`, `elixir/Makefile`, `elixir/mix.exs`, `elixir/scripts/run-github`, and `.symphony/WORKFLOW.md`; record any required documentation corrections in the relevant story task before editing
+- [X] T001 Audit supported source setup, build, validation, generated launcher, safe GitHub launcher, and workflow paths against `elixir/README.md`, `elixir/Makefile`, `elixir/mix.exs`, `elixir/scripts/run-github`, and `.symphony-plus/WORKFLOW.md`; record any required documentation corrections in the relevant story task before editing
 
 ---
 
@@ -40,7 +40,7 @@
 
 **Independent Test**: Read only `README.md`; verify a clean-checkout reader can identify prerequisites, enter `elixir/`, prepare the supported toolchain, install dependencies, build, run with an explicit workflow path, recognize startup, and route GitHub orchestration to focused guidance.
 
-- [X] T003 [US1] Add a concise source-install and generic-run quick start to `README.md` that satisfies FR-001 through FR-003 and links directly to `elixir/README.md`, `elixir/docs/agent-installation.md`, and `.symphony/README.md`
+- [X] T003 [US1] Add a concise source-install and generic-run quick start to `README.md` that satisfies FR-001 through FR-003 and links directly to `elixir/README.md`, `elixir/docs/agent-installation.md`, and `.symphony-plus/README.md`
 - [X] T004 [US1] Review the completed `README.md` flow against User Story 1 acceptance scenarios and SC-001, SC-002, and SC-005, correcting any undocumented directory transition or ambiguous execution-mode wording in `README.md`
 
 **Checkpoint**: User Story 1 is independently usable from the root README.
@@ -66,9 +66,9 @@
 
 **Independent Test**: Compare all five in-scope documentation surfaces; verify command order, working directories, workflow paths, mode labels, link destinations, credential handling, and workspace boundaries agree.
 
-- [X] T007 [P] [US3] Audit and correct only command, cross-link, or safety-boundary inconsistencies in `.symphony/README.md` while preserving repository-specific self-hosting values
+- [X] T007 [P] [US3] Audit and correct only command, cross-link, or safety-boundary inconsistencies in `.symphony-plus/README.md` while preserving repository-specific self-hosting values
 - [X] T008 [P] [US3] Audit and correct only command, cross-link, or safety-boundary inconsistencies in `elixir/docs/agent-installation.md` while preserving its role as the end-to-end GitHub onboarding authority
-- [X] T009 [US3] Compare `README.md`, `elixir/README.md`, `elixir/AGENTS.md`, `.symphony/README.md`, and `elixir/docs/agent-installation.md` against `specs/gh-13-install-run-docs/contracts/documentation-surfaces.md`; resolve conflicting command order, directory assumptions, workflow paths, launch-mode labels, or canonical-owner claims in the owning documentation file
+- [X] T009 [US3] Compare `README.md`, `elixir/README.md`, `elixir/AGENTS.md`, `.symphony-plus/README.md`, and `elixir/docs/agent-installation.md` against `specs/gh-13-install-run-docs/contracts/documentation-surfaces.md`; resolve conflicting command order, directory assumptions, workflow paths, launch-mode labels, or canonical-owner claims in the owning documentation file
 
 **Checkpoint**: All documentation surfaces are consistent and point to their canonical owners.
 
@@ -78,8 +78,8 @@
 
 **Purpose**: Prove link, path, scope, safety, and repository quality requirements across all stories.
 
-- [X] T010 Validate every changed repository-relative Markdown link and every named checked-in or generated executable path across `README.md`, `elixir/README.md`, `elixir/AGENTS.md`, `.symphony/README.md`, and `elixir/docs/agent-installation.md`
-- [X] T011 Search `README.md`, `elixir/README.md`, `elixir/AGENTS.md`, `.symphony/README.md`, and `elixir/docs/agent-installation.md` for unresolved placeholders, literal secrets, unsafe credential-copying guidance, and ambiguous generic-versus-GitHub launch examples; correct findings in the owning Markdown file
+- [X] T010 Validate every changed repository-relative Markdown link and every named checked-in or generated executable path across `README.md`, `elixir/README.md`, `elixir/AGENTS.md`, `.symphony-plus/README.md`, and `elixir/docs/agent-installation.md`
+- [X] T011 Search `README.md`, `elixir/README.md`, `elixir/AGENTS.md`, `.symphony-plus/README.md`, and `elixir/docs/agent-installation.md` for unresolved placeholders, literal secrets, unsafe credential-copying guidance, and ambiguous generic-versus-GitHub launch examples; correct findings in the owning Markdown file
 - [X] T012 Run `git diff --check` and the scenarios in `specs/gh-13-install-run-docs/quickstart.md`, then record the validation outcome for handoff
 - [X] T013 Run `make -C elixir all` and review the final diff for unrelated changes, generated artifacts, runtime/configuration changes, `SPEC.md` changes, and constitution violations
 
@@ -111,7 +111,7 @@
 ## Parallel Example: User Story 3
 
 ```text
-Task T007: Audit `.symphony/README.md` for command, link, and safety consistency.
+Task T007: Audit `.symphony-plus/README.md` for command, link, and safety consistency.
 Task T008: Audit `elixir/docs/agent-installation.md` for command, link, and safety consistency.
 ```
 

@@ -1,0 +1,4 @@
+# Format: <upstream|historical|immutable_external> <exact literal>
+# Every retained legacy occurrence must be covered by one classified literal.
+upstream openai/symphony
+upstream OpenAI Symphony

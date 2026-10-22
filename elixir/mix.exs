@@ -1,9 +1,9 @@
-defmodule SymphonyElixir.MixProject do
+defmodule SymphonyPlus.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :symphony_elixir,
+      app: :symphony_plus,
       version: "0.0.3",
       elixir: "~> 1.19",
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
@@ -13,42 +13,42 @@ defmodule SymphonyElixir.MixProject do
           threshold: 100
         ],
         ignore_modules: [
-          SymphonyElixir.Asana.Client,
-          SymphonyElixir.Config,
-          SymphonyElixir.GitHub.AppCLI,
-          SymphonyElixir.GitHub.AppProfile,
-          SymphonyElixir.GitHub.Auth,
-          SymphonyElixir.GitHub.AuthCache,
-          SymphonyElixir.GitHub.Client,
-          SymphonyElixir.GitHub.GitPush,
-          SymphonyElixir.GitHub.MergeQueue.Backend,
-          SymphonyElixir.GitLab.Client,
-          SymphonyElixir.Jira.Client,
-          SymphonyElixir.Linear.Client,
-          SymphonyElixir.SpecsCheck,
-          SymphonyElixir.Orchestrator,
-          SymphonyElixir.Orchestrator.State,
-          SymphonyElixir.QuotaWaitStore,
-          SymphonyElixir.AgentRunner,
-          SymphonyElixir.Application,
-          SymphonyElixir.CLI,
-          SymphonyElixir.Codex.AppServer,
-          SymphonyElixir.Codex.DynamicTool,
-          SymphonyElixir.HttpServer,
-          SymphonyElixir.StatusDashboard,
-          SymphonyElixir.LogFile,
-          SymphonyElixir.Workspace,
-          SymphonyElixirWeb.DashboardLive,
-          SymphonyElixirWeb.Endpoint,
-          SymphonyElixirWeb.ErrorHTML,
-          SymphonyElixirWeb.ErrorJSON,
-          SymphonyElixirWeb.Layouts,
-          SymphonyElixirWeb.ObservabilityApiController,
-          SymphonyElixirWeb.Presenter,
-          SymphonyElixirWeb.StaticAssetController,
-          SymphonyElixirWeb.StaticAssets,
-          SymphonyElixirWeb.Router,
-          SymphonyElixirWeb.Router.Helpers
+          SymphonyPlus.Asana.Client,
+          SymphonyPlus.Config,
+          SymphonyPlus.GitHub.AppCLI,
+          SymphonyPlus.GitHub.AppProfile,
+          SymphonyPlus.GitHub.Auth,
+          SymphonyPlus.GitHub.AuthCache,
+          SymphonyPlus.GitHub.Client,
+          SymphonyPlus.GitHub.GitPush,
+          SymphonyPlus.GitHub.MergeQueue.Backend,
+          SymphonyPlus.GitLab.Client,
+          SymphonyPlus.Jira.Client,
+          SymphonyPlus.Linear.Client,
+          SymphonyPlus.SpecsCheck,
+          SymphonyPlus.Orchestrator,
+          SymphonyPlus.Orchestrator.State,
+          SymphonyPlus.QuotaWaitStore,
+          SymphonyPlus.AgentRunner,
+          SymphonyPlus.Application,
+          SymphonyPlus.CLI,
+          SymphonyPlus.Codex.AppServer,
+          SymphonyPlus.Codex.DynamicTool,
+          SymphonyPlus.HttpServer,
+          SymphonyPlus.StatusDashboard,
+          SymphonyPlus.LogFile,
+          SymphonyPlus.Workspace,
+          SymphonyPlusWeb.DashboardLive,
+          SymphonyPlusWeb.Endpoint,
+          SymphonyPlusWeb.ErrorHTML,
+          SymphonyPlusWeb.ErrorJSON,
+          SymphonyPlusWeb.Layouts,
+          SymphonyPlusWeb.ObservabilityApiController,
+          SymphonyPlusWeb.Presenter,
+          SymphonyPlusWeb.StaticAssetController,
+          SymphonyPlusWeb.StaticAssets,
+          SymphonyPlusWeb.Router,
+          SymphonyPlusWeb.Router.Helpers
         ]
       ],
       test_ignore_filters: [
@@ -69,7 +69,7 @@ defmodule SymphonyElixir.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      mod: {SymphonyElixir.Application, []},
+      mod: {SymphonyPlus.Application, []},
       extra_applications: [:logger, :public_key]
     ]
   end
@@ -105,15 +105,15 @@ defmodule SymphonyElixir.MixProject do
   defp escript do
     [
       app: nil,
-      main_module: SymphonyElixir.CLI,
-      name: "symphony",
-      path: "bin/symphony"
+      main_module: SymphonyPlus.CLI,
+      name: "symphony-plus",
+      path: "bin/symphony-plus"
     ]
   end
 
   defp releases do
     [
-      symphony: [
+      symphony_plus: [
         steps: [:assemble, &Burrito.wrap/1],
         burrito: [
           targets: [

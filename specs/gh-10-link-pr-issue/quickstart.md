@@ -10,7 +10,7 @@
 
 ```bash
 cd elixir
-mise exec -- mix test test/symphony_elixir/github_launcher_test.exs
+mise exec -- mix test test/symphony_plus/github_launcher_test.exs
 ```
 
 Expected: the reusable workflow contract requires one `Tracks #{{ issue.id }}` reference, rejects auto-closing wording, and retains explicit merged-PR issue closure.
@@ -36,8 +36,8 @@ Expected: formatting, public-spec validation, Credo, coverage, and Dialyzer pass
 
 ## 4. Optional disposable GitHub validation
 
-1. Label a disposable issue for Symphony and advance it through implementation approval.
-2. Let Symphony create its pull request.
+1. Label a disposable issue for Symphony Plus and advance it through implementation approval.
+2. Let Symphony Plus create its pull request.
 3. Inspect the PR body and issue timeline: each must provide a direct link to the other, and the PR body must contain one `Tracks #<issue>` line.
 4. Update the same PR through a revision and confirm the reference remains singular.
 5. Close the PR without merging and confirm the issue remains open.

@@ -1,12 +1,12 @@
 # Implementation Plan: Quota-Aware Harness Resume
 
-**Branch**: `symphony/gh-8-quota-renewal-resume` | **Date**: 2026-09-30 | **Spec**: [spec.md](spec.md)
+**Branch**: `symphony-plus/gh-8-quota-renewal-resume` | **Date**: 2026-09-30 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `specs/gh-8-quota-renewal-resume/spec.md`
 
 ## Summary
 
-Treat Codex quota exhaustion as a durable scheduler wait rather than a worker failure. The Codex adapter normalizes app-server quota errors into a harness-neutral signal containing a stable, non-secret pool key, validated renewal information, and native thread identity. The existing orchestrator remains the single owner of mutable scheduling state: it releases the worker slot, persists an issue-scoped quota wait through a small filesystem store under the configured workspace root, suppresses dispatch for the exhausted pool, reconciles eligibility on every poll, and resumes the saved Codex thread exactly once when eligible. An unavailable native thread becomes an operator block; Symphony never reconstructs a fresh conversation automatically.
+Treat Codex quota exhaustion as a durable scheduler wait rather than a worker failure. The Codex adapter normalizes app-server quota errors into a harness-neutral signal containing a stable, non-secret pool key, validated renewal information, and native thread identity. The existing orchestrator remains the single owner of mutable scheduling state: it releases the worker slot, persists an issue-scoped quota wait through a small filesystem store under the configured workspace root, suppresses dispatch for the exhausted pool, reconciles eligibility on every poll, and resumes the saved Codex thread exactly once when eligible. An unavailable native thread becomes an operator block; Symphony Plus never reconstructs a fresh conversation automatically.
 
 ## Technical Context
 
@@ -14,7 +14,7 @@ Treat Codex quota exhaustion as a durable scheduler wait rather than a worker fa
 
 **Primary Dependencies**: Existing OTP/GenServer orchestration, Ecto embedded configuration schema, Jason JSON encoding, Codex app-server JSON-RPC over stdio, Phoenix status surface
 
-**Storage**: Atomic JSON quota-wait records in a reserved `.symphony/quota-waits/` directory under the configured workspace root; no database and no prompt/provider-payload persistence
+**Storage**: Atomic JSON quota-wait records in a reserved `.symphony-plus/quota-waits/` directory under the configured workspace root; no database and no prompt/provider-payload persistence
 
 **Testing**: ExUnit with real orchestrator processes and deterministic fake Codex/tracker inputs; targeted `mix test` and final `make -C elixir all`
 
@@ -69,7 +69,7 @@ elixir/
 ├── docs/
 │   ├── logging.md
 │   └── quota-resume.md
-├── lib/symphony_elixir/
+├── lib/symphony_plus/
 │   ├── agent_runner.ex
 │   ├── config.ex
 │   ├── config/schema.ex
@@ -78,10 +78,10 @@ elixir/
 │   ├── orchestrator.ex
 │   ├── codex/app_server.ex
 │   └── status_dashboard.ex
-├── lib/symphony_elixir_web/
+├── lib/symphony_plus_web/
 │   ├── presenter.ex
 │   └── live/dashboard_live.ex
-└── test/symphony_elixir/
+└── test/symphony_plus/
     ├── app_server_test.exs
     ├── orchestrator_status_test.exs
     ├── quota_wait_store_test.exs

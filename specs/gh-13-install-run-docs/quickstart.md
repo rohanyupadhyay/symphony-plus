@@ -25,7 +25,7 @@
 
 ## Scenario 3: Cross-surface consistency
 
-Compare `README.md`, `elixir/README.md`, `elixir/AGENTS.md`, `.symphony/README.md`, and
+Compare `README.md`, `elixir/README.md`, `elixir/AGENTS.md`, `.symphony-plus/README.md`, and
 `elixir/docs/agent-installation.md`. Confirm source setup order, working directories, workflow
 paths, mode labels, credentials, and workspace boundaries agree with the
 [documentation contract](contracts/documentation-surfaces.md).

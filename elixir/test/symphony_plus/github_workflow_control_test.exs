@@ -1,0 +1,852 @@
+defmodule SymphonyPlus.GitHub.WorkflowControlTest do
+  use ExUnit.Case, async: true
+
+  alias SymphonyPlus.GitHub.WorkflowControl
+
+  test "approved review evidence becomes a durable queue admission" do
+    sha = String.duplicate("a", 40)
+
+    checkpoint =
+      WorkflowControl.queue_admission(
+        %{"pr_number" => 7, "branch" => "topic", "head_sha" => sha},
+        %{
+          "repository" => "octo/repo",
+          "target_branch" => "main",
+          "admission_sequence" => 12,
+          "dependencies" => [3]
+        }
+      )
+
+    assert :ok = WorkflowControl.valid_checkpoint(checkpoint)
+    assert {:ok, decoded} = checkpoint |> WorkflowControl.render_comment() |> WorkflowControl.decode_checkpoint()
+    assert decoded["state"] == "merge_queued"
+    assert decoded["dependencies"] == [3]
+
+    assert {:error, :invalid_merge_queue_admission} =
+             checkpoint |> Map.delete("branch") |> WorkflowControl.valid_checkpoint()
+  end
+
+  test "blocked and merged queue outcomes remain durable without automatic dispatch" do
+    for state <- ["merge_blocked", "merge_merged"] do
+      checkpoint = %{
+        "state" => state,
+        "phase" => "merge_queue",
+        "summary" => "Queue outcome recorded."
+      }
+
+      body = WorkflowControl.render_comment(checkpoint)
+      assert {:ok, decoded} = WorkflowControl.decode_checkpoint(body)
+
+      comment = %{
+        "id" => 10,
+        "body" => body,
+        "author_association" => "OWNER",
+        "user" => %{"login" => "owner", "type" => "User"}
+      }
+
+      assert %{checkpoint: ^decoded, trigger: nil, dispatchable: false} =
+               WorkflowControl.derive([comment], %{}, ["OWNER"])
+    end
+  end
+
+  test "queue outcomes retain exact generation and recovery evidence" do
+    admission = %{
+      pr_number: 7,
+      repository: "octo/repo",
+      target_branch: "main",
+      source_head_sha: String.duplicate("a", 40)
+    }
+
+    checkpoint = WorkflowControl.queue_outcome(admission, :update_required, :merge_conflict)
+
+    assert checkpoint["state"] == "merge_update_required"
+    assert checkpoint["head_sha"] == admission.source_head_sha
+    assert checkpoint["reason"] =~ "merge_conflict"
+    assert checkpoint["recovery"] =~ "Update the pull request"
+    assert :ok = WorkflowControl.valid_checkpoint(checkpoint)
+
+    assert %{"state" => "merge_merged", "recovery" => "No action required."} =
+             WorkflowControl.queue_outcome(admission, :merged, %{candidate_sha: admission.source_head_sha})
+
+    assert %{"state" => "merge_blocked", "recovery" => blocked_recovery} =
+             WorkflowControl.queue_outcome(admission, :blocked, :unknown_mergeability)
+
+    assert blocked_recovery =~ "Resolve the reported blocker"
+
+    assert %{"state" => "merge_blocked", "recovery" => retry_recovery} =
+             WorkflowControl.queue_outcome(admission, :cancelled, :closed)
+
+    assert retry_recovery =~ "Retry after inspecting"
+  end
+
+  test "dependency outcomes preserve the specific blocker and recovery action" do
+    admission = %{
+      pr_number: 7,
+      repository: "octo/repo",
+      target_branch: "main",
+      source_head_sha: String.duplicate("a", 40)
+    }
+
+    checkpoint =
+      WorkflowControl.queue_outcome(
+        admission,
+        :blocked,
+        {:dependency, :missing_dependency, "Repair the dependency declaration and re-enter the queue."}
+      )
+
+    assert checkpoint["reason"] =~ "missing_dependency"
+    assert checkpoint["recovery"] == "Repair the dependency declaration and re-enter the queue."
+  end
+
+  test "candidate checkpoints retain the exact source target and updated head" do
+    admission = %{
+      pr_number: 7,
+      repository: "octo/repo",
+      target_branch: "main",
+      source_head_sha: String.duplicate("a", 40),
+      admission_sequence: 12,
+      dependencies: [3]
+    }
+
+    target = String.duplicate("b", 40)
+    candidate = String.duplicate("c", 40)
+    checkpoint = WorkflowControl.queue_candidate(admission, target, candidate)
+
+    assert checkpoint["state"] == "merge_validating"
+    assert checkpoint["source_head_sha"] == admission.source_head_sha
+    assert checkpoint["target_sha"] == target
+    assert checkpoint["candidate_sha"] == candidate
+    assert :ok = WorkflowControl.valid_checkpoint(checkpoint)
+  end
+
+  @authorized ["OWNER", "MEMBER", "COLLABORATOR"]
+
+  test "validates optional workflow-control provider settings" do
+    assert :ok = WorkflowControl.validate_settings(%{})
+
+    assert :ok =
+             WorkflowControl.validate_settings(%{
+               "workflow_control" => %{
+                 "enabled" => true,
+                 "authorized_associations" => @authorized
+               }
+             })
+
+    assert {:error, :invalid_github_workflow_control} =
+             WorkflowControl.validate_settings(%{"workflow_control" => true})
+
+    assert {:error, :invalid_github_workflow_associations} =
+             WorkflowControl.validate_settings(%{
+               "workflow_control" => %{
+                 "enabled" => true,
+                 "authorized_associations" => ["OWNER", "CONTRIBUTOR"]
+               }
+             })
+
+    refute WorkflowControl.enabled?(%{})
+
+    assert WorkflowControl.enabled?(%{
+             "workflow_control" => %{"enabled" => true}
+           })
+
+    assert WorkflowControl.authorized_associations(%{
+             "workflow_control" => %{"enabled" => true}
+           }) == @authorized
+
+    assert {:error, :invalid_github_workflow_control} = WorkflowControl.validate_settings(nil)
+    refute WorkflowControl.enabled?(nil)
+    assert WorkflowControl.authorized_associations(nil) == @authorized
+
+    assert {:error, :invalid_github_workflow_control} =
+             WorkflowControl.validate_settings(%{"workflow_control" => %{"enabled" => "yes"}})
+
+    assert {:error, :invalid_github_workflow_associations} =
+             WorkflowControl.validate_settings(%{
+               "workflow_control" => %{"authorized_associations" => []}
+             })
+
+    assert {:error, :invalid_github_workflow_associations} =
+             WorkflowControl.validate_settings(%{
+               "workflow_control" => %{"authorized_associations" => "OWNER"}
+             })
+
+    assert WorkflowControl.authorized_associations(%{
+             "workflow_control" => %{"authorized_associations" => [" owner ", 7]}
+           }) == ["OWNER", ""]
+  end
+
+  test "input checkpoints put the question before the audit report and retain durable state" do
+    checkpoint = %{
+      "state" => "awaiting_input",
+      "phase" => "specify",
+      "prompt" => "If native resume is unavailable, choose `block` (recommended) or `reconstruct`.",
+      "summary" => "### Spec Kit progress\n- Questions asked this run: specify 1\n- Questions asked total: specify 1"
+    }
+
+    body = WorkflowControl.render_comment(checkpoint)
+    [question, report, marker] = String.split(body, "\n\n")
+
+    assert question == checkpoint["prompt"]
+    assert report == checkpoint["summary"]
+    assert marker =~ "<!-- symphony-plus-control:v1:"
+    assert length(:binary.matches(body, checkpoint["prompt"])) == 1
+    assert {:ok, decoded} = WorkflowControl.decode_checkpoint(body)
+    assert decoded == Map.put(checkpoint, "version", 1)
+  end
+
+  test "renders and decodes a versioned checkpoint without exposing marker data as prose" do
+    checkpoint = %{
+      "state" => "awaiting_approval",
+      "phase" => "specify",
+      "summary" => "The specification is ready.",
+      "gate" => "spec",
+      "branch" => "symphony-plus/gh-42-add-auth",
+      "head_sha" => String.duplicate("a", 40),
+      "cursor" => %{"review_id" => 8}
+    }
+
+    body = WorkflowControl.render_comment(checkpoint)
+
+    assert body =~ "The specification is ready."
+    assert body =~ "/symphony-plus approve spec"
+    assert {:ok, decoded} = WorkflowControl.decode_checkpoint(body)
+    assert decoded == Map.put(checkpoint, "version", 1)
+    assert :error = WorkflowControl.decode_checkpoint(body <> "\n<!-- symphony-plus-control:v1:not-base64 -->")
+    assert :error = WorkflowControl.decode_checkpoint(nil)
+
+    for invalid <- [
+          nil,
+          %{},
+          %{"state" => "unknown", "phase" => "x", "summary" => "x"},
+          %{"state" => "blocked", "phase" => "", "summary" => "x"},
+          %{"state" => "blocked", "phase" => "x", "summary" => ""},
+          %{"state" => "awaiting_input", "phase" => "x", "summary" => "x"},
+          %{"state" => "awaiting_input", "phase" => "x", "summary" => "x", "prompt" => ""},
+          %{"state" => "awaiting_approval", "phase" => "x", "summary" => "x"},
+          %{"state" => "awaiting_approval", "phase" => "x", "summary" => "x", "gate" => "x"},
+          %{"state" => "awaiting_review", "phase" => "x", "summary" => "x"},
+          %{"state" => "awaiting_review", "phase" => "x", "summary" => "x", "pr_number" => 0},
+          %{"state" => "review_pending", "phase" => "review", "summary" => "x", "pr_number" => 7},
+          %{
+            "state" => "review_pending",
+            "phase" => "review",
+            "summary" => "x",
+            "pr_number" => 0,
+            "branch" => "topic",
+            "head_sha" => String.duplicate("a", 40)
+          },
+          %{"state" => "review_pending", "phase" => "review", "summary" => "x", "pr_number" => 7, "branch" => "topic", "head_sha" => "short"}
+        ] do
+      assert {:error, _reason} = WorkflowControl.valid_checkpoint(invalid)
+    end
+
+    assert WorkflowControl.render_comment(%{
+             "state" => "awaiting_review",
+             "phase" => "review",
+             "summary" => "Review it.",
+             "pr_number" => 2
+           }) =~ "pull-request review"
+
+    assert WorkflowControl.render_comment(%{
+             "state" => "blocked",
+             "phase" => "push",
+             "summary" => "Blocked."
+           }) =~ "/symphony-plus retry"
+
+    assert WorkflowControl.render_comment(%{"phase" => "other"}) =~ "Symphony Plus is waiting."
+  end
+
+  test "review pending is an automatic one-shot trigger with durable identity" do
+    checkpoint =
+      checkpoint_comment(80, "review_pending", %{
+        "phase" => "review",
+        "pr_number" => 7,
+        "branch" => "symphony-plus/gh-15-auto-review-pr",
+        "head_sha" => String.duplicate("a", 40)
+      })
+
+    context = %{
+      "pull_request" => %{
+        "number" => 7,
+        "state" => "open",
+        "merged" => false,
+        "labels" => [%{"name" => "symphony-plus"}],
+        "head" => %{
+          "ref" => "symphony-plus/gh-15-auto-review-pr",
+          "sha" => String.duplicate("a", 40),
+          "repo" => %{"full_name" => "octo/repo", "fork" => false}
+        },
+        "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+      },
+      "checks" => %{"head_sha" => String.duplicate("a", 40)}
+    }
+
+    assert %{dispatchable: true, trigger: trigger} =
+             WorkflowControl.derive([checkpoint], context, @authorized)
+
+    assert trigger == %{
+             "kind" => "automatic_review",
+             "admission_sequence" => 80,
+             "pr_number" => 7,
+             "branch" => "symphony-plus/gh-15-auto-review-pr",
+             "head_sha" => String.duplicate("a", 40)
+           }
+
+    consumed = checkpoint_comment(81, "awaiting_review", %{"pr_number" => 7})
+    refute WorkflowControl.derive([checkpoint, consumed], context, @authorized).dispatchable
+  end
+
+  test "automatic review uses the configured issue label for the managed pull request" do
+    sha = String.duplicate("a", 40)
+    checkpoint = checkpoint_comment(80, "review_pending", %{"phase" => "review", "pr_number" => 7, "branch" => "topic", "head_sha" => sha})
+
+    context = %{
+      "pull_request" => %{
+        "number" => 7,
+        "state" => "open",
+        "merged" => false,
+        "labels" => [%{"name" => "symphony-plus"}],
+        "head" => %{"ref" => "topic", "sha" => sha, "repo" => %{"full_name" => "octo/repo"}},
+        "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+      },
+      "checks" => %{"head_sha" => sha}
+    }
+
+    assert %{trigger: %{"kind" => "automatic_review"}} =
+             WorkflowControl.derive([checkpoint], context, @authorized, nil, ["symphony-plus"])
+  end
+
+  test "human change requests suspend automatic review until dismissed" do
+    sha = String.duplicate("a", 40)
+
+    checkpoint =
+      checkpoint_comment(80, "review_pending", %{
+        "phase" => "review",
+        "pr_number" => 7,
+        "branch" => "topic",
+        "head_sha" => sha
+      })
+
+    context = %{
+      "pull_request" => %{
+        "number" => 7,
+        "state" => "open",
+        "merged" => false,
+        "labels" => [%{"name" => "symphony-plus"}],
+        "head" => %{"ref" => "topic", "sha" => sha, "repo" => %{"id" => 123, "full_name" => "octo/repo"}},
+        "base" => %{"repo" => %{"id" => 123, "full_name" => "octo/repo"}}
+      },
+      "checks" => %{"head_sha" => sha},
+      "reviews" => [review(101, "alice", "MEMBER", "CHANGES_REQUESTED")]
+    }
+
+    refute WorkflowControl.derive([checkpoint], context, @authorized).dispatchable
+
+    dismissed = put_in(context, ["reviews"], [review(101, "alice", "MEMBER", "DISMISSED")])
+
+    assert %{dispatchable: true, trigger: %{"kind" => "automatic_review"}} =
+             WorkflowControl.derive([checkpoint], dismissed, @authorized)
+  end
+
+  test "changed managed heads and queue repair outcomes resume review without a command" do
+    old_sha = String.duplicate("a", 40)
+    current_sha = String.duplicate("b", 40)
+
+    context = %{
+      "pull_request" => %{
+        "number" => 7,
+        "state" => "open",
+        "merged" => false,
+        "mergeable" => false,
+        "labels" => [%{"name" => "symphony-plus"}],
+        "head" => %{"ref" => "topic", "sha" => current_sha, "repo" => %{"full_name" => "octo/repo"}},
+        "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+      },
+      "checks" => %{"head_sha" => current_sha}
+    }
+
+    checkpoints = [
+      checkpoint_comment(80, "review_pending", %{"phase" => "review", "pr_number" => 7, "branch" => "topic", "head_sha" => old_sha}),
+      checkpoint_comment(80, "merge_update_required", %{"phase" => "merge_queue", "pr_number" => 7, "head_sha" => old_sha})
+    ]
+
+    for checkpoint <- checkpoints do
+      assert %{dispatchable: true, trigger: %{"kind" => "automatic_review", "head_sha" => ^current_sha, "branch" => "topic"}} =
+               WorkflowControl.derive([checkpoint], context, @authorized)
+
+      held = Map.put(context, "reviews", [review(101, "alice", "MEMBER", "CHANGES_REQUESTED")])
+      refute WorkflowControl.derive([checkpoint], held, @authorized).dispatchable
+    end
+  end
+
+  test "autonomous merge needs no approval but rejects an active human change request" do
+    assert WorkflowControl.autonomous_merge_allowed?([])
+    assert WorkflowControl.autonomous_merge_allowed?([review(1, "alice", "MEMBER", "APPROVED")])
+
+    refute WorkflowControl.autonomous_merge_allowed?([
+             review(1, "alice", "MEMBER", "CHANGES_REQUESTED")
+           ])
+
+    refute WorkflowControl.autonomous_merge_allowed?([
+             review(1, "alice", "MEMBER", "CHANGES_REQUESTED"),
+             review(2, "alice", "MEMBER", "APPROVED")
+           ])
+
+    assert WorkflowControl.autonomous_merge_allowed?([
+             review(1, "alice", "MEMBER", "DISMISSED"),
+             review(2, "alice", "MEMBER", "APPROVED")
+           ])
+  end
+
+  test "review pending suppresses unsafe PRs and stale check context" do
+    sha = String.duplicate("a", 40)
+
+    checkpoint =
+      checkpoint_comment(80, "review_pending", %{
+        "phase" => "review",
+        "pr_number" => 7,
+        "branch" => "topic",
+        "head_sha" => sha
+      })
+
+    valid = %{
+      "pull_request" => %{
+        "number" => 7,
+        "state" => "open",
+        "merged" => false,
+        "labels" => [%{"name" => "symphony-plus"}],
+        "head" => %{
+          "ref" => "topic",
+          "sha" => sha,
+          "repo" => %{"id" => 123, "full_name" => "octo/repo", "fork" => false}
+        },
+        "base" => %{"repo" => %{"id" => 123, "full_name" => "octo/repo", "fork" => true}}
+      },
+      "checks" => %{"head_sha" => sha}
+    }
+
+    mutations = [
+      fn context -> put_in(context, ["pull_request", "state"], "closed") end,
+      fn context -> put_in(context, ["pull_request", "merged"], true) end,
+      fn context -> put_in(context, ["pull_request", "labels"], []) end,
+      fn context -> put_in(context, ["pull_request", "head", "repo", "id"], 456) end,
+      fn context -> put_in(context, ["pull_request", "head", "repo"], nil) end,
+      fn context -> put_in(context, ["pull_request", "head", "ref"], "other") end,
+      fn context -> put_in(context, ["pull_request", "head", "sha"], String.duplicate("b", 40)) end,
+      fn context -> put_in(context, ["checks", "head_sha"], String.duplicate("b", 40)) end
+    ]
+
+    for mutate <- mutations do
+      refute WorkflowControl.derive([checkpoint], mutate.(valid), @authorized).dispatchable
+    end
+
+    assert %{dispatchable: true} =
+             WorkflowControl.derive(
+               [checkpoint],
+               put_in(valid, ["pull_request", "labels"], ["symphony-plus", 7]),
+               @authorized
+             )
+
+    assert %{dispatchable: true} =
+             WorkflowControl.derive(
+               [checkpoint],
+               put_in(valid, ["pull_request", "head", "repo", "fork"], true),
+               @authorized
+             )
+  end
+
+  test "derives an initially dispatchable issue and ignores malformed event fields" do
+    assert %{checkpoint: nil, trigger: nil, dispatchable: true} =
+             WorkflowControl.derive(
+               [
+                 %{"id" => "bad", "author_association" => "OWNER", "body" => nil},
+                 %{"id" => 1, "author_association" => 7, "body" => nil}
+               ],
+               %{},
+               @authorized
+             )
+
+    malformed_id_checkpoint =
+      checkpoint_comment(2, "blocked", %{})
+      |> Map.put("id", "not-an-integer")
+
+    assert %{checkpoint: %{"state" => "blocked"}, dispatchable: false} =
+             WorkflowControl.derive([malformed_id_checkpoint], %{}, @authorized)
+  end
+
+  test "awaiting input distinguishes control commands from ordinary answers" do
+    checkpoint = checkpoint_comment(10, "awaiting_input", %{"prompt" => "Which retention period?"})
+
+    unauthorized = comment(11, "NONE", "Forever")
+    marker = checkpoint_comment(12, "awaiting_input", %{"prompt" => "Still waiting"})
+    answer = comment(13, "COLLABORATOR", "Use 30 days.")
+
+    assert %{dispatchable: false, checkpoint: %{"prompt" => "Still waiting"}, trigger: nil} =
+             WorkflowControl.derive([checkpoint, unauthorized, marker], %{}, @authorized)
+
+    assert %{dispatchable: true, trigger: %{"kind" => "answer", "id" => 13, "body" => "Use 30 days."}} =
+             WorkflowControl.derive([checkpoint, unauthorized, marker, answer], %{}, @authorized)
+
+    for command <- ["status", "cancel"] do
+      assert %{dispatchable: true, trigger: %{"kind" => "command", "command" => ^command}} =
+               WorkflowControl.derive(
+                 [checkpoint, comment(14, "OWNER", "/symphony-plus #{command}")],
+                 %{},
+                 @authorized
+               )
+    end
+  end
+
+  test "trusts exact App bot checkpoints without allowing the bot to answer itself" do
+    bot_checkpoint =
+      checkpoint_comment(14, "awaiting_input", %{"prompt" => "Choose a retention period."})
+      |> put_in(["author_association"], "NONE")
+      |> put_in(["user"], %{"login" => "verity-symphony-plus[bot]", "type" => "Bot"})
+
+    bot_answer =
+      comment(15, "NONE", "Use forever")
+      |> put_in(["user"], %{"login" => "verity-symphony-plus[bot]", "type" => "Bot"})
+
+    assert %{dispatchable: false, checkpoint: %{"state" => "awaiting_input"}, trigger: nil} =
+             WorkflowControl.derive(
+               [bot_checkpoint, bot_answer],
+               %{},
+               @authorized,
+               "verity-symphony-plus[bot]"
+             )
+
+    human_answer = comment(16, "OWNER", "Use 30 days")
+
+    assert %{dispatchable: true, trigger: %{"kind" => "answer", "id" => 16}} =
+             WorkflowControl.derive(
+               [bot_checkpoint, bot_answer, human_answer],
+               %{},
+               @authorized,
+               "verity-symphony-plus[bot]"
+             )
+  end
+
+  test "rejects spoofed or different bot checkpoint authors" do
+    checkpoint_body =
+      checkpoint_comment(17, "blocked", %{})
+      |> Map.fetch!("body")
+
+    spoofed_user = %{
+      "id" => 17,
+      "author_association" => "NONE",
+      "body" => checkpoint_body,
+      "user" => %{"login" => "verity-symphony-plus[bot]", "type" => "User"}
+    }
+
+    other_bot = put_in(spoofed_user, ["user"], %{"login" => "other[bot]", "type" => "Bot"})
+
+    assert %{checkpoint: nil, dispatchable: true} =
+             WorkflowControl.derive(
+               [spoofed_user, other_bot],
+               %{},
+               @authorized,
+               "verity-symphony-plus[bot]"
+             )
+  end
+
+  test "approval gates accept only matching explicit commands and classify revisions" do
+    checkpoint = checkpoint_comment(20, "awaiting_approval", %{"gate" => "plan"})
+
+    refute WorkflowControl.derive(
+             [checkpoint, comment(21, "OWNER", "looks good")],
+             %{},
+             @authorized
+           ).dispatchable
+
+    refute WorkflowControl.derive(
+             [checkpoint, comment(22, "OWNER", "/symphony-plus approve spec")],
+             %{},
+             @authorized
+           ).dispatchable
+
+    assert %{
+             dispatchable: true,
+             trigger: %{"kind" => "command", "command" => "approve", "scope" => "plan"}
+           } =
+             WorkflowControl.derive(
+               [checkpoint, comment(23, "MEMBER", "/symphony-plus approve plan")],
+               %{},
+               @authorized
+             )
+
+    assert %{
+             dispatchable: true,
+             trigger: %{
+               "kind" => "command",
+               "command" => "revise",
+               "scope" => "implementation",
+               "instructions" => "Cover the Timeout Path"
+             }
+           } =
+             WorkflowControl.derive(
+               [
+                 checkpoint,
+                 comment(
+                   24,
+                   "COLLABORATOR",
+                   "/symphony-plus revise implementation Cover the Timeout Path"
+                 )
+               ],
+               %{},
+               @authorized
+             )
+  end
+
+  test "blocked checkpoints accept retry status revise and cancel but not general comments" do
+    checkpoint = checkpoint_comment(30, "blocked", %{"prompt" => "Push permission is missing."})
+
+    refute WorkflowControl.derive(
+             [checkpoint, comment(31, "OWNER", "I fixed it")],
+             %{},
+             @authorized
+           ).dispatchable
+
+    for command <- ["retry", "status", "cancel"] do
+      assert %{dispatchable: true, trigger: %{"command" => ^command}} =
+               WorkflowControl.derive(
+                 [checkpoint, comment(32, "OWNER", "/symphony-plus #{command}")],
+                 %{},
+                 @authorized
+               )
+    end
+
+    assert %{dispatchable: true, trigger: %{"command" => "revise"}} =
+             WorkflowControl.derive(
+               [checkpoint, comment(33, "OWNER", "/symphony-plus revise")],
+               %{},
+               @authorized
+             )
+
+    assert %{dispatchable: true, trigger: %{"command" => "revise", "scope" => "plan"}} =
+             WorkflowControl.derive(
+               [checkpoint, comment(34, "OWNER", "/symphony-plus revise plan")],
+               %{},
+               @authorized
+             )
+  end
+
+  test "retrying a blocked queue admission starts a fresh automatic review" do
+    sha = String.duplicate("a", 40)
+
+    checkpoint =
+      checkpoint_comment(80, "blocked", %{
+        "phase" => "merge_queue",
+        "pr_number" => 7,
+        "branch" => "topic",
+        "head_sha" => sha
+      })
+
+    retry = comment(81, "OWNER", "/symphony-plus retry")
+
+    context = %{
+      "pull_request" => %{
+        "number" => 7,
+        "state" => "open",
+        "merged" => false,
+        "labels" => [%{"name" => "symphony-plus"}],
+        "head" => %{"ref" => "topic", "sha" => sha, "repo" => %{"full_name" => "octo/repo"}},
+        "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+      },
+      "checks" => %{"head_sha" => sha}
+    }
+
+    assert %{trigger: %{"kind" => "automatic_review", "admission_sequence" => 80}} =
+             WorkflowControl.derive([checkpoint, retry], context, @authorized, nil, ["symphony-plus"])
+  end
+
+  test "retrying a queue block reviews the branch head GitHub updated" do
+    old_sha = String.duplicate("a", 40)
+    current_sha = String.duplicate("b", 40)
+
+    checkpoint =
+      checkpoint_comment(80, "merge_blocked", %{
+        "phase" => "merge_queue",
+        "pr_number" => 7,
+        "head_sha" => old_sha
+      })
+
+    retry = comment(81, "OWNER", "/symphony-plus retry")
+
+    assert %{trigger: %{"command" => "retry"}} =
+             WorkflowControl.derive([checkpoint, retry], %{}, @authorized, nil, ["symphony-plus"])
+
+    context = %{
+      "pull_request" => %{
+        "number" => 7,
+        "state" => "open",
+        "merged" => false,
+        "labels" => [%{"name" => "symphony-plus"}],
+        "head" => %{"ref" => "topic", "sha" => current_sha, "repo" => %{"full_name" => "octo/repo"}},
+        "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+      },
+      "checks" => %{"head_sha" => current_sha}
+    }
+
+    assert %{trigger: %{"kind" => "automatic_review", "head_sha" => ^current_sha, "admission_sequence" => 80}} =
+             WorkflowControl.derive([checkpoint, retry], context, @authorized, nil, ["symphony-plus"])
+  end
+
+  test "review state prioritizes unresolved change requests and ignores general PR comments" do
+    checkpoint =
+      checkpoint_comment(40, "awaiting_review", %{
+        "pr_number" => 7,
+        "cursor" => %{"review_id" => 100, "pr_comment_id" => 200, "review_comment_id" => 300}
+      })
+
+    context = %{
+      "pull_request" => %{"number" => 7, "state" => "open", "merged" => false},
+      "conversation_comments" => [comment(201, "OWNER", "A general observation")],
+      "review_comments" => [comment(301, "COLLABORATOR", "Please rename this variable")],
+      "reviews" => [
+        review(101, "alice", "COLLABORATOR", "APPROVED"),
+        review(102, "bob", "MEMBER", "CHANGES_REQUESTED")
+      ]
+    }
+
+    assert %{
+             dispatchable: true,
+             trigger: %{"kind" => "review", "state" => "changes_requested", "id" => 102}
+           } = WorkflowControl.derive([checkpoint], context, @authorized)
+
+    superseded =
+      put_in(context, ["reviews"], context["reviews"] ++ [review(103, "bob", "MEMBER", "APPROVED")])
+
+    assert %{
+             dispatchable: true,
+             trigger: %{"kind" => "review", "state" => "changes_requested", "id" => 102}
+           } = WorkflowControl.derive([checkpoint], superseded, @authorized)
+  end
+
+  test "a refreshed review checkpoint consumes an acknowledged formal approval" do
+    original = checkpoint_comment(40, "awaiting_review", %{"pr_number" => 7})
+
+    context = %{
+      "pull_request" => %{"number" => 7, "state" => "open", "merged" => false},
+      "reviews" => [review(101, "alice", "COLLABORATOR", "APPROVED")]
+    }
+
+    assert %{dispatchable: true, trigger: %{"kind" => "review", "state" => "approved"}} =
+             WorkflowControl.derive([original], context, @authorized)
+
+    refreshed =
+      checkpoint_comment(41, "awaiting_review", %{
+        "pr_number" => 7,
+        "cursor" => %{"review_id" => 101}
+      })
+
+    assert %{dispatchable: false, trigger: nil} =
+             WorkflowControl.derive([original, refreshed], context, @authorized)
+  end
+
+  test "a new approval does not override another reviewer's pre-checkpoint change request" do
+    checkpoint =
+      checkpoint_comment(45, "awaiting_review", %{
+        "pr_number" => 7,
+        "cursor" => %{"review_id" => 101}
+      })
+
+    context = %{
+      "pull_request" => %{"number" => 7, "state" => "open", "merged" => false},
+      "reviews" => [
+        review(101, "bob", "MEMBER", "CHANGES_REQUESTED"),
+        review(102, "alice", "COLLABORATOR", "APPROVED")
+      ]
+    }
+
+    assert %{
+             dispatchable: true,
+             trigger: %{"kind" => "review", "state" => "changes_requested", "id" => 101}
+           } = WorkflowControl.derive([checkpoint], context, @authorized)
+  end
+
+  test "review state dispatches explicit PR commands and merge or close events" do
+    checkpoint = checkpoint_comment(50, "awaiting_review", %{"pr_number" => 9})
+
+    explicit = %{
+      "pull_request" => %{"number" => 9, "state" => "open", "merged" => false},
+      "conversation_comments" => [comment(60, "OWNER", "/symphony-plus revise fix the API name")]
+    }
+
+    assert %{dispatchable: true, trigger: %{"command" => "revise"}} =
+             WorkflowControl.derive([checkpoint], explicit, @authorized)
+
+    assert %{dispatchable: true, trigger: %{"kind" => "pull_request", "state" => "merged"}} =
+             WorkflowControl.derive(
+               [checkpoint],
+               %{"pull_request" => %{"number" => 9, "state" => "closed", "merged" => true}},
+               @authorized
+             )
+
+    assert %{dispatchable: true, trigger: %{"kind" => "pull_request", "state" => "closed"}} =
+             WorkflowControl.derive(
+               [checkpoint],
+               %{"pull_request" => %{"number" => 9, "state" => "closed", "merged" => false}},
+               @authorized
+             )
+
+    invalid_command_context = %{
+      "pull_request" => %{"number" => 9, "state" => "open", "merged" => false},
+      "review_comments" => [comment(61, "OWNER", "/symphony-plus approve plan")],
+      "reviews" => [review(62, "nobody", "OWNER", nil)]
+    }
+
+    refute WorkflowControl.derive([checkpoint], invalid_command_context, @authorized).dispatchable
+  end
+
+  test "review commands are ordered by creation time across GitHub event collections" do
+    checkpoint = checkpoint_comment(70, "awaiting_review", %{"pr_number" => 11})
+
+    older_inline =
+      comment(900, "OWNER", "/symphony-plus cancel")
+      |> Map.delete("created_at")
+
+    newer_conversation =
+      comment(100, "OWNER", "/symphony-plus status")
+      |> Map.put("created_at", "2026-09-24T02:00:00Z")
+
+    context = %{
+      "pull_request" => %{"number" => 11, "state" => "open", "merged" => false},
+      "conversation_comments" => [newer_conversation],
+      "review_comments" => [older_inline]
+    }
+
+    assert %{trigger: %{"command" => "status"}} =
+             WorkflowControl.derive([checkpoint], context, @authorized)
+  end
+
+  defp checkpoint_comment(id, state, extra) do
+    checkpoint =
+      Map.merge(
+        %{"state" => state, "phase" => "test", "summary" => "Checkpoint #{id}"},
+        extra
+      )
+
+    comment(id, "OWNER", WorkflowControl.render_comment(checkpoint))
+  end
+
+  defp comment(id, association, body) do
+    %{
+      "id" => id,
+      "author_association" => association,
+      "body" => body,
+      "user" => %{"login" => "user-#{id}"},
+      "created_at" => "2026-09-24T00:00:00Z"
+    }
+  end
+
+  defp review(id, login, association, state) do
+    %{
+      "id" => id,
+      "state" => state,
+      "author_association" => association,
+      "user" => %{"login" => login},
+      "body" => "Review #{id}",
+      "submitted_at" => "2026-09-24T00:00:00Z"
+    }
+  end
+end

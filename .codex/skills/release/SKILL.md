@@ -1,6 +1,6 @@
 ---
 name: release
-description: Cut a Symphony release by bumping the committed version, landing it, tagging the merged commit, and verifying the Burrito release workflow. Use when asked to release, tag, or retag Symphony.
+description: Cut a Symphony Plus release by bumping the committed version, landing it, tagging the merged commit, and verifying the Burrito release workflow. Use when asked to release, tag, or retag Symphony Plus.
 ---
 
 # Release
@@ -17,7 +17,7 @@ description: Cut a Symphony release by bumping the committed version, landing it
    annotated tag on that exact commit:
 
    ```sh
-   git tag -a vX.Y.Z <merged-commit> -m "Symphony vX.Y.Z"
+   git tag -a vX.Y.Z <merged-commit> -m "Symphony Plus vX.Y.Z"
    git push origin vX.Y.Z
    ```
 

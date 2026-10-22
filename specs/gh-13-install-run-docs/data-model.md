@@ -29,7 +29,7 @@ objects whose relationships must remain consistent.
 - `README.md` summarizes the generic sequence owned by `elixir/README.md`.
 - `elixir/AGENTS.md` links to both generic and GitHub onboarding owners.
 - `elixir/docs/agent-installation.md` owns end-to-end agent-operated GitHub onboarding.
-- `.symphony/README.md` specializes GitHub setup for this repository.
+- `.symphony-plus/README.md` specializes GitHub setup for this repository.
 - All surfaces inherit safety constraints from `SPEC.md` and the constitution.
 
 ## State Transitions

@@ -1,4 +1,4 @@
-# Data Model: Automatically Review Symphony Pull Requests
+# Data Model: Automatically Review Symphony Plus Pull Requests
 
 ## Originating Issue
 
@@ -13,7 +13,7 @@ Existing normalized issue and sole scheduler identity: stable `id`, GitHub `numb
 - `branch`: exact issue branch matching policy
 - `head_sha`: 40-character pushed commit SHA
 - `base_branch`: `main`
-- `labels`: includes `symphony` before dispatch
+- `labels`: includes `symphony-plus` before dispatch
 - `state`: open or closed
 - `merged`: boolean
 - `created_by_workflow`: established by the issue's durable checkpoint, not author or text
@@ -42,7 +42,7 @@ Checks are classified by the workflow as `passing`, `pending`, `pr_caused_failur
 
 ## Review Finding
 
-A workflow audit item with `severity`, reproducible `evidence`, `disposition` (corrected, non-actionable, deferred-for-authorization, or blocked), and targeted/full-gate `validation`. It needs no new Symphony persistence.
+A workflow audit item with `severity`, reproducible `evidence`, `disposition` (corrected, non-actionable, deferred-for-authorization, or blocked), and targeted/full-gate `validation`. It needs no new Symphony Plus persistence.
 
 ## State Transitions
 

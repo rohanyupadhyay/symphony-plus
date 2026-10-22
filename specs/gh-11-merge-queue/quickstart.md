@@ -9,8 +9,8 @@
 Run focused tests from `elixir/` as the scenarios are implemented, then run the full gate:
 
 ```bash
-mix test test/symphony_elixir/github_merge_queue_test.exs
-mix test test/symphony_elixir/github_workflow_control_test.exs test/symphony_elixir/github_adapter_test.exs
+mix test test/symphony_plus/github_merge_queue_test.exs
+mix test test/symphony_plus/github_workflow_control_test.exs test/symphony_plus/github_adapter_test.exs
 make all
 ```
 
@@ -65,7 +65,7 @@ Expected: provider-visible state reconstructs the same queue/candidate decision;
 
 During validation, close the PR, submit or dismiss a human change request, remove its eligibility label, change its head, or cancel it through workflow control.
 
-Expected: an active human change request causes no Symphony mutation and dismissal resumes automatically; other eligibility loss prevents merge and lets another eligible entry advance safely.
+Expected: an active human change request causes no Symphony Plus mutation and dismissal resumes automatically; other eligibility loss prevents merge and lets another eligible entry advance safely.
 
 ## Scenario 8: Transient provider/check failure
 
@@ -78,7 +78,7 @@ Expected: the entry is retried with bounded backoff or explicitly operator-block
 Validated on 2026-10-05 with deterministic ExUnit fixtures:
 
 - Scenarios 1–8: covered by `github_merge_queue_test.exs`, `github_merge_queue_state_test.exs`, `github_client_test.exs`, and `github_workflow_control_test.exs`.
-- Focused command: `mix test test/symphony_elixir/github_merge_queue_state_test.exs test/symphony_elixir/github_client_test.exs test/symphony_elixir/github_workflow_control_test.exs test/symphony_elixir/github_merge_queue_config_test.exs test/symphony_elixir/github_merge_queue_test.exs test/symphony_elixir/core_test.exs` — 83 tests, 0 failures before convergence remediation; subsequent focused recovery suite — 32 tests, 0 failures.
+- Focused command: `mix test test/symphony_plus/github_merge_queue_state_test.exs test/symphony_plus/github_client_test.exs test/symphony_plus/github_workflow_control_test.exs test/symphony_plus/github_merge_queue_config_test.exs test/symphony_plus/github_merge_queue_test.exs test/symphony_plus/core_test.exs` — 83 tests, 0 failures before convergence remediation; subsequent focused recovery suite — 32 tests, 0 failures.
 - Public-spec command: `mix specs.check` — passed.
 - Intentional omissions: no live GitHub repository mutation was performed; conditional update, checkpoint comment, status/review reads, and merge requests use deterministic client/backend fixtures so validation cannot merge a real pull request.
 - Full gate: recorded by task T038 after the final `make -C elixir all` run.

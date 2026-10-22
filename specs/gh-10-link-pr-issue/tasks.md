@@ -16,19 +16,19 @@
 
 ## Phase 1: User Story 1 - See the source issue from the pull request (Priority: P1) 🎯 MVP
 
-**Goal**: Require one same-repository, non-closing tracking reference in every created or updated Symphony PR body while preserving explicit issue-closure ownership.
+**Goal**: Require one same-repository, non-closing tracking reference in every created or updated Symphony Plus PR body while preserving explicit issue-closure ownership.
 
 **Independent Test**: Render or inspect the reusable GitHub Spec Kit workflow and confirm it requires exactly one `Tracks #{{ issue.id }}` line, forbids auto-closing keywords, preserves the repository PR template, and leaves issue closure to merged-PR handling.
 
 ### Tests for User Story 1
 
-- [X] T001 [US1] Add a focused failing workflow-contract test for the exact `Tracks #{{ issue.id }}` requirement, forbidden closing keywords, PR-template preservation, and separate merged-PR issue closure in `elixir/test/symphony_elixir/github_launcher_test.exs`
+- [X] T001 [US1] Add a focused failing workflow-contract test for the exact `Tracks #{{ issue.id }}` requirement, forbidden closing keywords, PR-template preservation, and separate merged-PR issue closure in `elixir/test/symphony_plus/github_launcher_test.exs`
 
 ### Implementation for User Story 1
 
 - [X] T002 [US1] Update PR create/update instructions to require exactly one same-repository `Tracks #{{ issue.id }}` line, prohibit auto-closing keywords, retain body validation, and preserve explicit merged-PR closure handling in `elixir/examples/github-speckit-WORKFLOW.md`
 - [X] T003 [P] [US1] Document the non-closing tracking reference, the forbidden closing relationship, and separate issue-closure responsibility in `elixir/docs/github-workflow-control.md`
-- [X] T004 [US1] Run the focused test from `specs/gh-10-link-pr-issue/quickstart.md` and confirm `elixir/test/symphony_elixir/github_launcher_test.exs` passes after T002
+- [X] T004 [US1] Run the focused test from `specs/gh-10-link-pr-issue/quickstart.md` and confirm `elixir/test/symphony_plus/github_launcher_test.exs` passes after T002
 
 **Checkpoint**: The reusable workflow makes the source issue directly reachable from the PR without assigning closure semantics to the relationship.
 
@@ -42,7 +42,7 @@
 
 ### Tests and Integration for User Story 2
 
-- [X] T005 [US2] Extend the workflow-contract assertions for create, update, retry, revision, and close-without-merge paths so they preserve one canonical reference and keep the issue open in `elixir/test/symphony_elixir/github_launcher_test.exs`
+- [X] T005 [US2] Extend the workflow-contract assertions for create, update, retry, revision, and close-without-merge paths so they preserve one canonical reference and keep the issue open in `elixir/test/symphony_plus/github_launcher_test.exs`
 - [X] T006 [US2] Validate a representative body copied from `.github/pull_request_template.md` with exactly one `Tracks #10` line using `elixir/lib/mix/tasks/pr_body.check.ex`, and record the result for implementation handoff
 - [X] T007 [US2] Run the disposable-repository create, revision, close-without-merge, and merge checks from `specs/gh-10-link-pr-issue/quickstart.md` to observe reciprocal GitHub presentation and non-closing semantics, or record the unavailable credential/repository prerequisite as a PR validation omission
 

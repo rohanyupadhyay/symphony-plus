@@ -1,6 +1,6 @@
 # Feature Specification: Install and Run Documentation
 
-**Feature Branch**: `symphony/gh-13-install-run-docs`
+**Feature Branch**: `symphony-plus/gh-13-install-run-docs`
 
 **Created**: 2026-10-12
 
@@ -59,7 +59,7 @@ As a maintainer, I can update one clearly identified canonical command sequence 
 - A reader already has the supported runtime installed; the documentation distinguishes required verification from repeatable dependency setup without implying destructive reinstallation.
 - A reader wants the generic local workflow while another wants GitHub issue orchestration; the two launch paths are labeled so they cannot reasonably be confused.
 - A command is copied from the repository root rather than the implementation directory; every command sequence states or performs the required directory change.
-- A target repository has not yet installed its repository-owned `.symphony/WORKFLOW.md`; the quick start points to onboarding instead of presenting a path that silently cannot work.
+- A target repository has not yet installed its repository-owned `.symphony-plus/WORKFLOW.md`; the quick start points to onboarding instead of presenting a path that silently cannot work.
 - Platform-specific prebuilt binaries and source installation coexist; the documentation makes clear which prerequisites apply to each path.
 
 ## Requirements *(mandatory)*
@@ -91,6 +91,6 @@ As a maintainer, I can update one clearly identified canonical command sequence 
 
 - Source installation is the primary quick-start path; prebuilt release binaries remain documented as an alternative in the Elixir README.
 - `mise` remains the supported toolchain manager, and the checked-in Elixir README defines the current canonical command spelling.
-- The root README, `elixir/README.md`, `elixir/AGENTS.md`, `.symphony/README.md`, and `elixir/docs/agent-installation.md` are the most likely human- and agent-facing surfaces for this issue.
+- The root README, `elixir/README.md`, `elixir/AGENTS.md`, `.symphony-plus/README.md`, and `elixir/docs/agent-installation.md` are the most likely human- and agent-facing surfaces for this issue.
 - The existing self-hosting guide already contains repository-specific launch commands; this work needs to verify its consistency rather than replace its operator-specific values.
 - No changes to `SPEC.md` are required because this feature improves discoverability without changing product behavior or contracts.

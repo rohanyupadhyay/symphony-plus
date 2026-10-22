@@ -2,7 +2,7 @@
 
 ## Decision 1: Use a plain non-closing issue reference in the PR body
 
-**Decision**: Require the exact line `Tracks #{{ issue.id }}` once in every Symphony-created or updated pull-request description.
+**Decision**: Require the exact line `Tracks #{{ issue.id }}` once in every Symphony Plus-created or updated pull-request description.
 
 **Rationale**: GitHub autolinks same-repository `#<number>` references and creates a reciprocal cross-reference without a closing keyword. This gives reviewers and issue participants bidirectional navigation while leaving issue closure under the durable workflow's explicit merged-PR handling.
 
@@ -22,7 +22,7 @@
 
 - Add a dedicated Elixir endpoint/tool for linked issues: rejected as unnecessary duplicated policy and because a formal linked-issue relationship has the unwanted closure semantics.
 - Change `github_api` to rewrite PR bodies: rejected because a generic REST proxy must not own repository-specific PR templates or issue policy.
-- Modify only this repository's `.symphony/WORKFLOW.md`: rejected because it is already correct and would not repair the shipped reusable template.
+- Modify only this repository's `.symphony-plus/WORKFLOW.md`: rejected because it is already correct and would not repair the shipped reusable template.
 
 ## Decision 3: Preserve one reference during updates
 
@@ -37,14 +37,14 @@
 
 ## Decision 4: Validate the shipped policy contract directly
 
-**Decision**: Extend the existing reusable-template test in `elixir/test/symphony_elixir/github_launcher_test.exs` to assert the rendered policy contains the exact `Tracks #{{ issue.id }}` rule, forbids auto-closing keywords, and assigns issue closure to merged-PR handling.
+**Decision**: Extend the existing reusable-template test in `elixir/test/symphony_plus/github_launcher_test.exs` to assert the rendered policy contains the exact `Tracks #{{ issue.id }}` rule, forbids auto-closing keywords, and assigns issue closure to merged-PR handling.
 
 **Rationale**: The defect is an omission in distributed prompt policy. A focused static contract test fails reproducibly before the prompt change and prevents future removal. Existing PR-body lint and the full Elixir gate provide complementary structure and repository-wide validation.
 
 **Alternatives considered**:
 
 - Live GitHub-only validation: rejected as the primary regression because it is credentialed, slow, and unsuitable for the mandatory local gate.
-- Unit-test GitHub rendering behavior itself: rejected because GitHub owns that behavior; Symphony needs to test its emitted policy and representative body.
+- Unit-test GitHub rendering behavior itself: rejected because GitHub owns that behavior; Symphony Plus needs to test its emitted policy and representative body.
 
 ## Sources
 

@@ -11,7 +11,7 @@ Start Symphony Plus from its external installation, passing this repository's wo
 ```bash
 ./scripts/run-github \
   --app-profile PROJECT_PROFILE \
-  /absolute/path/to/repository/.symphony/WORKFLOW.md \
+  /absolute/path/to/repository/.symphony-plus/WORKFLOW.md \
   --port 4000
 ```
 

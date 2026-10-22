@@ -5,7 +5,7 @@ Follow it in order. Treat every verification as a gate: do not continue after a 
 not replace missing operator input with an assumption.
 
 Symphony Plus itself is installed once outside target repositories. Each target repository owns
-its `.symphony/WORKFLOW.md`, `.symphony/README.md`, GitHub label, App installation access,
+its `.symphony-plus/WORKFLOW.md`, `.symphony-plus/README.md`, GitHub label, App installation access,
 workspace root, and project-specific commands. The official GitHub Spec Kit extension is not
 required and must not be installed as part of this runbook.
 
@@ -23,7 +23,7 @@ Never ask the operator to paste a PEM, PAT, installation token, or private-key c
 Never place those values in a repository, issue workspace, process argument, log, issue, or pull
 request. The local App profile is host configuration and must not be committed.
 
-Do not overwrite an existing Symphony workflow, operator guide, Spec Kit installation, workspace,
+Do not overwrite an existing Symphony Plus workflow, operator guide, Spec Kit installation, workspace,
 or profile. Inspect and reconcile it. Preserve unrelated changes, stop when a dirty tree makes the
 intended change ambiguous, and use the target repository's normal branch and review process.
 
@@ -36,7 +36,7 @@ or developer checkout as the workspace root.
 export TARGET_REPO="OWNER/REPOSITORY"
 export TARGET_REPO_DIR="/absolute/path/to/target-repository"
 export SYMPHONY_PLUS_DIR="/absolute/path/to/symphony-plus"
-export SYMPHONY_WORKSPACE_ROOT="/absolute/path/to/symphony-workspaces/PROJECT"
+export SYMPHONY_PLUS_WORKSPACE_ROOT="/absolute/path/to/symphony-plus-workspaces/PROJECT"
 export APP_PROFILE="project-name"
 ```
 
@@ -88,7 +88,7 @@ concurrent issues use explicit `specs/gh-<issue>-<slug>` directories.
 
 Treat the installed script variant as a host-runtime requirement, not only as repository metadata.
 Identify the variant actually referenced by the installed skills and verify its interpreter before
-starting Symphony:
+starting Symphony Plus:
 
 ```bash
 if rg -q '\.specify/scripts/powershell/' "$TARGET_REPO_DIR/.agents/skills"; then
@@ -150,21 +150,21 @@ mise exec -- mix build
 mise exec -- mix test
 ```
 
-Expected evidence: `bin/symphony` exists and the tests finish with zero failures. Dependency audit
+Expected evidence: `bin/symphony-plus` exists and the tests finish with zero failures. Dependency audit
 warnings must be reported separately; a successful build does not resolve them.
 
-## 4. Create the repository-owned Symphony directory
+## 4. Create the repository-owned Symphony Plus directory
 
 Use this repository convention:
 
 ```text
-.symphony/
+.symphony-plus/
 ├── README.md
 └── WORKFLOW.md
 ```
 
 `WORKFLOW.md` is executable configuration and the issue-agent prompt. `README.md` is the
-human-facing operator guide. Link `.symphony/README.md` from the target's root README so the hidden
+human-facing operator guide. Link `.symphony-plus/README.md` from the target's root README so the hidden
 directory remains discoverable. Do not install a new root-level `WORKFLOW.md`; that generic path
 does not identify which tool owns it.
 
@@ -172,28 +172,28 @@ For a new installation, create the directory and copy both reusable templates wi
 the templates in the Symphony Plus checkout:
 
 ```bash
-mkdir -p "$TARGET_REPO_DIR/.symphony"
+mkdir -p "$TARGET_REPO_DIR/.symphony-plus"
 cp "$SYMPHONY_PLUS_DIR/elixir/examples/github-speckit-WORKFLOW.md" \
-  "$TARGET_REPO_DIR/.symphony/WORKFLOW.md"
+  "$TARGET_REPO_DIR/.symphony-plus/WORKFLOW.md"
 cp "$SYMPHONY_PLUS_DIR/elixir/examples/github-speckit-README.md" \
-  "$TARGET_REPO_DIR/.symphony/README.md"
+  "$TARGET_REPO_DIR/.symphony-plus/README.md"
 ```
 
-If the target already has `.symphony/WORKFLOW.md` or `.symphony/README.md`, compare it with the
+If the target already has `.symphony-plus/WORKFLOW.md` or `.symphony-plus/README.md`, compare it with the
 corresponding template and preserve repository customizations. Do not replace either file
-wholesale. If an existing Symphony installation uses a root-level `WORKFLOW.md`, move that file to
-`.symphony/WORKFLOW.md`, move or create its operator guide as `.symphony/README.md`, and update all
+wholesale. If an existing Symphony Plus installation uses a root-level `WORKFLOW.md`, move that file to
+`.symphony-plus/WORKFLOW.md`, move or create its operator guide as `.symphony-plus/README.md`, and update all
 launch commands and documentation in the same change. Confirm no running process still uses the old
 path before deleting it.
 
 The target workflow must customize all of the following:
 
 - `tracker.provider.repo`: exact `TARGET_REPO` value;
-- `workspace.root`: exact dedicated `SYMPHONY_WORKSPACE_ROOT`;
+- `workspace.root`: exact dedicated `SYMPHONY_PLUS_WORKSPACE_ROOT`;
 - `hooks.after_create`: clone URL and deterministic dependency bootstrap;
 - concurrency and turn limits appropriate for the host;
 - project formatting, linting, typing, test, and build commands;
-- branch naming `symphony/gh-<issue>-<slug>`;
+- branch naming `symphony-plus/gh-<issue>-<slug>`;
 - feature directory naming `specs/gh-<issue>-<slug>`;
 - issue and pull-request wording appropriate for the repository; and
 - the repository's merge policy, while retaining human-only merge.
@@ -223,8 +223,8 @@ Review the resulting YAML front matter and prompt as code. Confirm no placeholde
 
 ```bash
 rg -n 'OWNER/REPOSITORY|/absolute/path|PROJECT|TODO|TBD' \
-  "$TARGET_REPO_DIR/.symphony/WORKFLOW.md" \
-  "$TARGET_REPO_DIR/.symphony/README.md"
+  "$TARGET_REPO_DIR/.symphony-plus/WORKFLOW.md" \
+  "$TARGET_REPO_DIR/.symphony-plus/README.md"
 git -C "$TARGET_REPO_DIR" diff --check
 ```
 
@@ -238,13 +238,13 @@ until those files are merged into the target's default branch.
 Create or reconcile the one start label:
 
 ```bash
-gh label create symphony \
+gh label create symphony-plus \
   --repo "$TARGET_REPO" \
-  --description "Ready for autonomous Symphony execution" \
+  --description "Ready for autonomous Symphony Plus execution" \
   --color 1D76DB \
   --force
 
-gh label list --repo "$TARGET_REPO" --search symphony
+gh label list --repo "$TARGET_REPO" --search symphony-plus
 ```
 
 The label is the start switch. Do not add it to existing issues during installation. Removing it
@@ -262,7 +262,7 @@ If no profile exists, give the operator this command to run in their own termina
 
 ```bash
 cd "$SYMPHONY_PLUS_DIR/elixir"
-./bin/symphony github-app setup "$TARGET_REPO" \
+./bin/symphony-plus github-app setup "$TARGET_REPO" \
   --profile "$APP_PROFILE" \
   --name "UNIQUE PROJECT Symphony Plus"
 ```
@@ -294,7 +294,7 @@ After the operator reports completion, verify access:
 
 ```bash
 cd "$SYMPHONY_PLUS_DIR/elixir"
-./bin/symphony github-app verify "$TARGET_REPO" --profile "$APP_PROFILE"
+./bin/symphony-plus github-app verify "$TARGET_REPO" --profile "$APP_PROFILE"
 ```
 
 Expected evidence: `Verified <app-slug>[bot] for OWNER/REPOSITORY.` Stop on any permission,
@@ -304,7 +304,7 @@ explicitly chooses legacy mode.
 ## 7. Start and recover Symphony Plus
 
 Before replacing an existing process, record its workflow, port, PID, and current issue state.
-Stop it cleanly and confirm the port is free. Never run two Symphony processes against the same
+Stop it cleanly and confirm the port is free. Never run two Symphony Plus processes against the same
 repository workflow and workspace root.
 
 Start App mode from the Symphony Plus checkout:
@@ -313,7 +313,7 @@ Start App mode from the Symphony Plus checkout:
 cd "$SYMPHONY_PLUS_DIR/elixir"
 ./scripts/run-github \
   --app-profile "$APP_PROFILE" \
-  "$TARGET_REPO_DIR/.symphony/WORKFLOW.md" \
+  "$TARGET_REPO_DIR/.symphony-plus/WORKFLOW.md" \
   --port 4000
 ```
 
@@ -325,7 +325,7 @@ Expected evidence:
 - every previously waiting issue is reconstructed from its latest authorized checkpoint without an
   immediate continuation turn.
 
-For an existing human-authored checkpoint, preserve it. The next Symphony-authored marker should
+For an existing human-authored checkpoint, preserve it. The next Symphony Plus-authored marker should
 come from the exact configured `<app-slug>[bot]` identity.
 
 ## 8. Run a disposable end-to-end smoke test
@@ -340,25 +340,25 @@ SMOKE_URL=$(gh issue create \
   --body "Exercise the installed Spec Kit workflow through specification approval only. Do not implement production behavior. This issue will be cancelled after checkpoint and restart-recovery verification.")
 SMOKE_NUMBER=${SMOKE_URL##*/}
 
-gh issue edit "$SMOKE_NUMBER" --repo "$TARGET_REPO" --add-label symphony
+gh issue edit "$SMOKE_NUMBER" --repo "$TARGET_REPO" --add-label symphony-plus
 ```
 
 Record `SMOKE_NUMBER`. Poll the issue and dashboard without posting general comments. The first
 successful pause must satisfy all of these conditions:
 
-- a dedicated workspace exists below `SYMPHONY_WORKSPACE_ROOT`;
-- the branch is `symphony/gh-<SMOKE_NUMBER>-<slug>`;
+- a dedicated workspace exists below `SYMPHONY_PLUS_WORKSPACE_ROOT`;
+- the branch is `symphony-plus/gh-<SMOKE_NUMBER>-<slug>`;
 - the feature directory is `specs/gh-<SMOKE_NUMBER>-<slug>`;
 - the branch exists on GitHub at the checkpoint SHA;
 - the issue comment is authored by the exact configured App bot;
 - the marker state is `awaiting_approval`, phase `specify`, gate `spec`; and
 - the agent is no longer running while it waits.
 
-Post `/symphony status` as an authorized human and confirm that the bot reports status and restores
+Post `/symphony-plus status` as an authorized human and confirm that the bot reports status and restores
 the same checkpoint. Stop and restart Symphony Plus with the same command, then confirm the same
 checkpoint is reconstructed without a duplicate agent run.
 
-Finally post `/symphony cancel` as an authorized human. Confirm the bot removes the `symphony`
+Finally post `/symphony-plus cancel` as an authorized human. Confirm the bot removes the `symphony-plus`
 label and reports cancellation. Wait for the cancellation turn to finish, then close the issue.
 Because the cancelled issue no longer has the dispatch label, ordinary active polling will not see
 its later closed state. Stop and restart Symphony Plus with the same launch command; startup

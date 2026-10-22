@@ -1,4 +1,4 @@
-defmodule SymphonyElixir.GitHubFixtures do
+defmodule SymphonyPlus.GitHubFixtures do
   @moduledoc false
 
   @spec pull_request(keyword()) :: map()
@@ -12,7 +12,7 @@ defmodule SymphonyElixir.GitHubFixtures do
       "mergeable" => Keyword.get(overrides, :mergeable, true),
       "head" => %{"sha" => sha, "ref" => "topic", "repo" => %{"full_name" => "octo/repo", "fork" => false}},
       "base" => %{"sha" => String.duplicate("b", 40), "ref" => "main", "repo" => %{"full_name" => "octo/repo"}},
-      "labels" => [%{"name" => "symphony"}]
+      "labels" => [%{"name" => "symphony-plus"}]
     }
   end
 
