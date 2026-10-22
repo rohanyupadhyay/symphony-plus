@@ -12,7 +12,7 @@
 ## Queue Entry
 
 - `pull_request_number`: positive same-repository PR number
-- `originating_issue_number`: Symphony issue number when managed by the durable workflow
+- `originating_issue_number`: Symphony Plus issue number when managed by the durable workflow
 - `head_sha`: exact 40-character head admitted to the queue
 - `target_branch`: base ref
 - `admitted_at`: provider event timestamp

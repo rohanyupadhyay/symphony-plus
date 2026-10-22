@@ -1,6 +1,6 @@
 # Feature Specification: Quota-Aware Harness Resume
 
-**Feature Branch**: `symphony/gh-8-quota-renewal-resume`
+**Feature Branch**: `symphony-plus/gh-8-quota-renewal-resume`
 
 **Created**: 2026-09-30
 
@@ -13,13 +13,13 @@
 ### Session 2026-09-30
 
 - Q: Which delivery breadth should this issue require? → A: Implement Codex end-to-end behind a harness-neutral quota/resume contract; defer Claude and GitHub Copilot adapters.
-- Q: If an included harness cannot resume its prior native conversation, what should Symphony do? → A: Block for operator action and preserve the workspace and durable checkpoint.
+- Q: If an included harness cannot resume its prior native conversation, what should Symphony Plus do? → A: Block for operator action and preserve the workspace and durable checkpoint.
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Pause Work at Quota Exhaustion (Priority: P1)
 
-As an operator, I want Symphony to recognize a coding harness quota exhaustion as a recoverable waiting condition so that active work is preserved instead of repeatedly failing, consuming retry capacity, or being restarted from the beginning.
+As an operator, I want Symphony Plus to recognize a coding harness quota exhaustion as a recoverable waiting condition so that active work is preserved instead of repeatedly failing, consuming retry capacity, or being restarted from the beginning.
 
 **Why this priority**: Correctly entering a safe waiting state is the minimum viable protection against lost work and wasteful retry loops.
 
@@ -27,9 +27,9 @@ As an operator, I want Symphony to recognize a coding harness quota exhaustion a
 
 **Acceptance Scenarios**:
 
-1. **Given** an active task whose harness reports that quota is exhausted with a renewal time, **When** Symphony processes the report, **Then** the task is moved to a quota-paused state until that time and its resumable state is preserved.
-2. **Given** a quota-paused task, **When** ordinary polling and reconciliation repeat before renewal, **Then** Symphony does not launch duplicate work or increment failure retry attempts.
-3. **Given** several active tasks using the same exhausted quota pool, **When** exhaustion is recognized, **Then** Symphony prevents further dispatch against that pool while leaving unrelated harnesses and quota pools eligible.
+1. **Given** an active task whose harness reports that quota is exhausted with a renewal time, **When** Symphony Plus processes the report, **Then** the task is moved to a quota-paused state until that time and its resumable state is preserved.
+2. **Given** a quota-paused task, **When** ordinary polling and reconciliation repeat before renewal, **Then** Symphony Plus does not launch duplicate work or increment failure retry attempts.
+3. **Given** several active tasks using the same exhausted quota pool, **When** exhaustion is recognized, **Then** Symphony Plus prevents further dispatch against that pool while leaving unrelated harnesses and quota pools eligible.
 
 ---
 
@@ -39,14 +39,14 @@ As an operator, I want quota-paused work to resume after renewal with the prior 
 
 **Why this priority**: The feature delivers its main user value only if preserved work can make forward progress after renewal.
 
-**Independent Test**: Allow a simulated renewal deadline to pass, make quota available, and confirm that Symphony starts exactly one continuation using the preserved workspace and harness conversation identity, without resending the original task as a fresh run.
+**Independent Test**: Allow a simulated renewal deadline to pass, make quota available, and confirm that Symphony Plus starts exactly one continuation using the preserved workspace and harness conversation identity, without resending the original task as a fresh run.
 
 **Acceptance Scenarios**:
 
-1. **Given** a quota-paused task with a resumable harness conversation, **When** its renewal time arrives and capacity is available, **Then** Symphony resumes that conversation in the same issue workspace with continuation guidance.
-2. **Given** a quota-paused task whose first post-renewal attempt still reports exhaustion, **When** Symphony processes that report, **Then** it safely returns the task to quota-paused state using the latest valid renewal information without duplicating execution.
+1. **Given** a quota-paused task with a resumable harness conversation, **When** its renewal time arrives and capacity is available, **Then** Symphony Plus resumes that conversation in the same issue workspace with continuation guidance.
+2. **Given** a quota-paused task whose first post-renewal attempt still reports exhaustion, **When** Symphony Plus processes that report, **Then** it safely returns the task to quota-paused state using the latest valid renewal information without duplicating execution.
 3. **Given** multiple quota-paused tasks become eligible together, **When** quota renews, **Then** normal global and per-state concurrency rules bound their resumption.
-4. **Given** a quota-paused task whose preserved native conversation cannot be resumed, **When** Symphony validates the continuation before dispatch, **Then** it blocks for operator action while preserving the issue workspace and durable workflow checkpoint and does not start a fresh conversation.
+4. **Given** a quota-paused task whose preserved native conversation cannot be resumed, **When** Symphony Plus validates the continuation before dispatch, **Then** it blocks for operator action while preserving the issue workspace and durable workflow checkpoint and does not start a fresh conversation.
 
 ---
 
@@ -61,8 +61,8 @@ As an operator, I want quota-wait status and recovery decisions to be visible so
 **Acceptance Scenarios**:
 
 1. **Given** a quota-paused task, **When** an operator views system status, **Then** the status distinguishes quota waiting from ordinary failure retries and shows the affected harness, renewal timing if known, and preserved continuation availability.
-2. **Given** Symphony restarts while a task is quota-paused, **When** startup recovery completes, **Then** the task remains paused or becomes eligible according to the durable renewal state and current tracker eligibility.
-3. **Given** a task becomes terminal, canceled, or unroutable while quota-paused, **When** reconciliation observes the change, **Then** Symphony releases its quota wait and performs the same workspace retention or cleanup policy that applies outside quota waiting.
+2. **Given** Symphony Plus restarts while a task is quota-paused, **When** startup recovery completes, **Then** the task remains paused or becomes eligible according to the durable renewal state and current tracker eligibility.
+3. **Given** a task becomes terminal, canceled, or unroutable while quota-paused, **When** reconciliation observes the change, **Then** Symphony Plus releases its quota wait and performs the same workspace retention or cleanup policy that applies outside quota waiting.
 
 ### Edge Cases
 
@@ -80,22 +80,22 @@ As an operator, I want quota-wait status and recovery decisions to be visible so
 
 ### Functional Requirements
 
-- **FR-001**: Symphony MUST classify a harness-reported quota exhaustion separately from ordinary worker failure, provider transport failure, authentication failure, operator-input blocking, and normal continuation.
+- **FR-001**: Symphony Plus MUST classify a harness-reported quota exhaustion separately from ordinary worker failure, provider transport failure, authentication failure, operator-input blocking, and normal continuation.
 - **FR-002**: A recognized quota exhaustion MUST identify the harness and a stable quota-pool scope sufficient to prevent premature dispatch of other work that would consume the same exhausted allowance.
-- **FR-003**: Symphony MUST stop active execution for an exhausted quota pool without deleting the affected issue workspace or durable continuation state.
+- **FR-003**: Symphony Plus MUST stop active execution for an exhausted quota pool without deleting the affected issue workspace or durable continuation state.
 - **FR-004**: A quota-paused task MUST NOT occupy an active-agent concurrency slot and MUST NOT use the ordinary exponential failure-retry counter while it waits.
-- **FR-005**: Symphony MUST durably retain, at minimum, the issue identity, harness identity, quota-pool identity, wait status, renewal timing or unknown-renewal status, preserved workspace identity, continuation identity when available, and last safe transition outcome.
+- **FR-005**: Symphony Plus MUST durably retain, at minimum, the issue identity, harness identity, quota-pool identity, wait status, renewal timing or unknown-renewal status, preserved workspace identity, continuation identity when available, and last safe transition outcome.
 - **FR-006**: Durable quota-wait state MUST survive service restart and MUST be reconciled with current tracker eligibility before any resumed dispatch.
-- **FR-007**: When a trustworthy renewal time is available, Symphony MUST avoid resuming the affected quota pool before that time and MUST make eligible work dispatchable after that time subject to normal concurrency and routing rules.
-- **FR-008**: When no trustworthy renewal time is available, Symphony MUST use a bounded, operator-visible recheck policy and MUST avoid a tight retry loop.
+- **FR-007**: When a trustworthy renewal time is available, Symphony Plus MUST avoid resuming the affected quota pool before that time and MUST make eligible work dispatchable after that time subject to normal concurrency and routing rules.
+- **FR-008**: When no trustworthy renewal time is available, Symphony Plus MUST use a bounded, operator-visible recheck policy and MUST avoid a tight retry loop.
 - **FR-009**: Resume dispatch MUST be idempotent across repeated polls, duplicate exhaustion signals, restart recovery, and simultaneous eligibility changes.
 - **FR-010**: A resumed task MUST reuse its preserved issue workspace and, when the harness supports it, its prior native conversation identity; continuation guidance MUST identify remaining work rather than present the task as a new issue.
-- **FR-011**: If a post-renewal resume still encounters quota exhaustion, Symphony MUST update the durable wait state from the latest valid signal and return to waiting without duplicating work.
+- **FR-011**: If a post-renewal resume still encounters quota exhaustion, Symphony Plus MUST update the durable wait state from the latest valid signal and return to waiting without duplicating work.
 - **FR-012**: Quota-paused work MUST continue to obey cancellation, terminal cleanup, required-label, dispatchability, and dynamic concurrency rules.
 - **FR-013**: Status and structured logs MUST expose quota-wait entry, reason category, harness, quota-pool scope, renewal availability, recovery decision, and outcome with applicable issue and session identifiers, while excluding credentials and unnecessary provider payloads.
 - **FR-014**: Configuration that governs quota rechecks or recovery MUST flow through the existing service configuration contract and apply to future scheduling decisions after dynamic reload.
 - **FR-015**: The initial delivery MUST implement Codex quota exhaustion and native-context resume end-to-end behind a harness-neutral quota/resume contract; Claude and GitHub Copilot adapters are deferred to future work.
-- **FR-016**: When Codex cannot resume the preserved native conversation, Symphony MUST block for operator action, preserve the issue workspace and durable workflow checkpoint, expose the blocking reason, and MUST NOT start a fresh or reconstructed conversation automatically.
+- **FR-016**: When Codex cannot resume the preserved native conversation, Symphony Plus MUST block for operator action, preserve the issue workspace and durable workflow checkpoint, expose the blocking reason, and MUST NOT start a fresh or reconstructed conversation automatically.
 - **FR-017**: The specification, operator documentation, and implementation documentation MUST define the Codex quota signal mapping, scope semantics, renewal/recheck behavior, persistence guarantees, and operator-blocking recovery policy; the harness-neutral contract MUST document the obligations future adapters must satisfy.
 
 ### Key Entities
@@ -124,7 +124,7 @@ As an operator, I want quota-wait status and recovery decisions to be visible so
 - Quota state is shared at the narrowest stable scope reported by the harness; unrelated harnesses and distinct quota pools continue operating.
 - Existing per-issue workspace safety, tracker reconciliation, and terminal cleanup rules remain authoritative.
 - Durable state must not contain harness credentials or raw provider responses.
-- A task may remain active in its tracker while Symphony internally marks it quota-paused.
+- A task may remain active in its tracker while Symphony Plus internally marks it quota-paused.
 - Native conversation continuation is required for automatic post-renewal progress; durable workspace and workflow artifacts support operator recovery but are not a substitute for native conversation resume.
 
 ## Out of Scope

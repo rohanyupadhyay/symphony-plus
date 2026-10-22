@@ -1,4 +1,4 @@
-defmodule SymphonyElixir.TestSupport do
+defmodule SymphonyPlus.TestSupport do
   @workflow_prompt "You are an agent for this repository."
 
   defmacro __using__(_opts) do
@@ -6,42 +6,42 @@ defmodule SymphonyElixir.TestSupport do
       use ExUnit.Case
       import ExUnit.CaptureLog
 
-      alias SymphonyElixir.AgentRunner
-      alias SymphonyElixir.CLI
-      alias SymphonyElixir.Codex.AppServer
-      alias SymphonyElixir.Config
-      alias SymphonyElixir.HttpServer
-      alias SymphonyElixir.Linear.Client
-      alias SymphonyElixir.Orchestrator
-      alias SymphonyElixir.PromptBuilder
-      alias SymphonyElixir.StatusDashboard
-      alias SymphonyElixir.Tracker
-      alias SymphonyElixir.Tracker.Issue
-      alias SymphonyElixir.Workflow
-      alias SymphonyElixir.WorkflowStore
-      alias SymphonyElixir.Workspace
+      alias SymphonyPlus.AgentRunner
+      alias SymphonyPlus.CLI
+      alias SymphonyPlus.Codex.AppServer
+      alias SymphonyPlus.Config
+      alias SymphonyPlus.HttpServer
+      alias SymphonyPlus.Linear.Client
+      alias SymphonyPlus.Orchestrator
+      alias SymphonyPlus.PromptBuilder
+      alias SymphonyPlus.StatusDashboard
+      alias SymphonyPlus.Tracker
+      alias SymphonyPlus.Tracker.Issue
+      alias SymphonyPlus.Workflow
+      alias SymphonyPlus.WorkflowStore
+      alias SymphonyPlus.Workspace
 
-      import SymphonyElixir.TestSupport,
+      import SymphonyPlus.TestSupport,
         only: [write_workflow_file!: 1, write_workflow_file!: 2, restore_env: 2, stop_default_http_server: 0]
 
       setup do
         workflow_root =
           Path.join(
             System.tmp_dir!(),
-            "symphony-elixir-workflow-#{System.unique_integer([:positive])}"
+            "symphony-plus-elixir-workflow-#{System.unique_integer([:positive])}"
           )
 
         File.mkdir_p!(workflow_root)
         workflow_file = Path.join(workflow_root, "WORKFLOW.md")
         write_workflow_file!(workflow_file)
         Workflow.set_workflow_file_path(workflow_file)
-        if Process.whereis(SymphonyElixir.WorkflowStore), do: SymphonyElixir.WorkflowStore.force_reload()
+        if Process.whereis(SymphonyPlus.WorkflowStore), do: SymphonyPlus.WorkflowStore.force_reload()
         stop_default_http_server()
 
         on_exit(fn ->
-          Application.delete_env(:symphony_elixir, :workflow_file_path)
-          Application.delete_env(:symphony_elixir, :server_port_override)
-          Application.delete_env(:symphony_elixir, :memory_tracker_issues)
+          Application.delete_env(:symphony_plus, :workflow_file_path)
+          Application.delete_env(:symphony_plus, :server_port_override)
+          Application.delete_env(:symphony_plus, :memory_tracker_issues)
           File.rm_rf(workflow_root)
         end)
 
@@ -54,9 +54,9 @@ defmodule SymphonyElixir.TestSupport do
     workflow = workflow_content(overrides)
     File.write!(path, workflow)
 
-    if Process.whereis(SymphonyElixir.WorkflowStore) do
+    if Process.whereis(SymphonyPlus.WorkflowStore) do
       try do
-        SymphonyElixir.WorkflowStore.force_reload()
+        SymphonyPlus.WorkflowStore.force_reload()
       catch
         :exit, _reason -> :ok
       end
@@ -69,12 +69,12 @@ defmodule SymphonyElixir.TestSupport do
   def restore_env(key, value), do: System.put_env(key, value)
 
   def stop_default_http_server do
-    case Enum.find(Supervisor.which_children(SymphonyElixir.Supervisor), fn
-           {SymphonyElixir.HttpServer, _pid, _type, _modules} -> true
+    case Enum.find(Supervisor.which_children(SymphonyPlus.Supervisor), fn
+           {SymphonyPlus.HttpServer, _pid, _type, _modules} -> true
            _child -> false
          end) do
-      {SymphonyElixir.HttpServer, pid, _type, _modules} when is_pid(pid) ->
-        :ok = Supervisor.terminate_child(SymphonyElixir.Supervisor, SymphonyElixir.HttpServer)
+      {SymphonyPlus.HttpServer, pid, _type, _modules} when is_pid(pid) ->
+        :ok = Supervisor.terminate_child(SymphonyPlus.Supervisor, SymphonyPlus.HttpServer)
 
         if Process.alive?(pid) do
           Process.exit(pid, :normal)
@@ -100,7 +100,7 @@ defmodule SymphonyElixir.TestSupport do
           tracker_active_states: ["Todo", "In Progress"],
           tracker_terminal_states: ["Closed", "Cancelled", "Canceled", "Duplicate", "Done"],
           poll_interval_ms: 30_000,
-          workspace_root: Path.join(System.tmp_dir!(), "symphony_workspaces"),
+          workspace_root: Path.join(System.tmp_dir!(), "symphony-plus-workspaces"),
           worker_ssh_hosts: [],
           worker_max_concurrent_agents_per_host: nil,
           max_concurrent_agents: 10,

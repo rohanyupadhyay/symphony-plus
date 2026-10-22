@@ -1,4 +1,4 @@
-# Specification Quality Checklist: Automatically Review Symphony Pull Requests
+# Specification Quality Checklist: Automatically Review Symphony Plus Pull Requests
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-10-03

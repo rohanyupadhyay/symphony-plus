@@ -24,7 +24,7 @@
 ## Focused GitHub Guides
 
 - `elixir/docs/agent-installation.md` remains the complete onboarding authority.
-- `.symphony/README.md` remains this repository's concrete self-hosting authority.
+- `.symphony-plus/README.md` remains this repository's concrete self-hosting authority.
 - Both preserve host-side credentials, source-checkout startup, repository-owned workflow paths, and dedicated issue workspaces.
 
 ## Global Consistency Rules

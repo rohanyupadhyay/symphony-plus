@@ -1,24 +1,24 @@
-# Implementation Plan: Automatically Review Symphony Pull Requests
+# Implementation Plan: Automatically Review Symphony Plus Pull Requests
 
-**Branch**: `symphony/gh-15-auto-review-pr` | **Date**: 2026-10-03 | **Spec**: [spec.md](spec.md)
+**Branch**: `symphony-plus/gh-15-auto-review-pr` | **Date**: 2026-10-03 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `specs/gh-15-auto-review-pr/spec.md`
 
 ## Summary
 
-Extend GitHub workflow control with a durable, immediately dispatchable `review_pending` checkpoint. The originating issue remains the sole scheduler and workspace identity: after Symphony creates and labels its pull request, it records the pull request number and pushed branch/head in the checkpoint; the next successful poll resumes the same issue workspace for an automatic review-and-repair pass. Completion replaces that checkpoint with the existing `awaiting_review` handoff. GitHub-visible checkpoint state makes the transition restart-safe, while durable dispatch consumption prevents duplicate automatic dispatch.
+Extend GitHub workflow control with a durable, immediately dispatchable `review_pending` checkpoint. The originating issue remains the sole scheduler and workspace identity: after Symphony Plus creates and labels its pull request, it records the pull request number and pushed branch/head in the checkpoint; the next successful poll resumes the same issue workspace for an automatic review-and-repair pass. Completion replaces that checkpoint with the existing `awaiting_review` handoff. GitHub-visible checkpoint state makes the transition restart-safe, while durable dispatch consumption prevents duplicate automatic dispatch.
 
 ## Technical Context
 
 **Language/Version**: Elixir 1.19 on OTP 28
 
-**Primary Dependencies**: OTP/GenServer, Req-based GitHub client, Jason, existing Symphony tracker and Codex app-server abstractions
+**Primary Dependencies**: OTP/GenServer, Req-based GitHub client, Jason, existing Symphony Plus tracker and Codex app-server abstractions
 
-**Storage**: GitHub issue comments and pull request labels/check/review state; no Symphony database
+**Storage**: GitHub issue comments and pull request labels/check/review state; no Symphony Plus database
 
 **Testing**: ExUnit focused GitHub adapter/workflow-control/agent-tool/orchestrator tests; `make -C elixir all`
 
-**Target Platform**: Long-running Linux/macOS Symphony service using GitHub Issues and GitHub App or PAT authentication
+**Target Platform**: Long-running Linux/macOS Symphony Plus service using GitHub Issues and GitHub App or PAT authentication
 
 **Project Type**: Elixir/OTP service and CLI
 
@@ -42,7 +42,7 @@ Extend GitHub workflow control with a durable, immediately dispatchable `review_
 
 ## Architecture and Lifecycle
 
-1. The implementation phase creates or updates the one managed pull request, applies the `symphony` label idempotently, and records a `review_pending` checkpoint on the originating issue only after the branch head is pushed.
+1. The implementation phase creates or updates the one managed pull request, applies the `symphony-plus` label idempotently, and records a `review_pending` checkpoint on the originating issue only after the branch head is pushed.
 2. `WorkflowControl` validates and derives `review_pending`. A newly recorded checkpoint with no consumed dispatch cursor is dispatchable without a human comment.
 3. The GitHub adapter enriches the originating issue with the managed pull request, conversations, reviews, inline comments, check runs/statuses, and merge state needed by the automatic pass.
 4. The orchestrator applies its existing issue-level claim/running rules, so only the originating issue's worker can mutate the branch.
@@ -74,11 +74,11 @@ elixir/
 ├── README.md
 ├── docs/github-workflow-control.md
 ├── examples/github-speckit-WORKFLOW.md
-├── lib/symphony_elixir/github/
+├── lib/symphony_plus/github/
 │   ├── agent_tool.ex
 │   ├── client.ex
 │   └── workflow_control.ex
-└── test/symphony_elixir/
+└── test/symphony_plus/
     ├── github_adapter_test.exs
     ├── github_launcher_test.exs
     └── github_workflow_control_test.exs

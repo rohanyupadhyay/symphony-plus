@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://symphony.local/contracts/quota-wait-state.schema.json",
+  "$id": "https://symphony-plus.local/contracts/quota-wait-state.schema.json",
   "title": "Quota Wait State",
   "type": "object",
   "additionalProperties": false,

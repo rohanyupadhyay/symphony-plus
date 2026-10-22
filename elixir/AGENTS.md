@@ -1,4 +1,4 @@
-# Symphony Elixir
+# Symphony Plus Elixir
 
 This directory contains the Elixir agent orchestration service that polls Linear, creates per-issue workspaces, and runs Codex in app-server mode.
 
@@ -18,28 +18,28 @@ mise install
 mise exec -- mix setup
 mise exec -- mix build
 make all
-mise exec -- ./bin/symphony "$PWD/WORKFLOW.md" --port 4000
+mise exec -- ./bin/symphony-plus "$PWD/WORKFLOW.md" --port 4000
 ```
 
 The final command is the generic local launch path. The canonical source-install and generic-run
 details live in [`README.md`](README.md).
 
-For GitHub issue orchestration, do not use the generic launcher or start Symphony from an issue
+For GitHub issue orchestration, do not use the generic launcher or start Symphony Plus from an issue
 workspace. Follow the [AI-agent installation runbook](docs/agent-installation.md), keep App
 credentials in the host-side profile, and start the service from the source checkout with
 `scripts/run-github`. Repository work then runs only in dedicated issue workspaces. This
-repository's concrete operator command is documented in [`.symphony/README.md`](../.symphony/README.md).
+repository's concrete operator command is documented in [`.symphony-plus/README.md`](../.symphony-plus/README.md).
 
 
 ## Codebase-Specific Conventions
 
-- Runtime config is loaded from `WORKFLOW.md` front matter via `SymphonyElixir.Workflow` and `SymphonyElixir.Config`.
+- Runtime config is loaded from `WORKFLOW.md` front matter via `SymphonyPlus.Workflow` and `SymphonyPlus.Config`.
 - Keep the implementation aligned with [`../SPEC.md`](../SPEC.md) where practical.
   - The implementation may be a superset of the spec.
   - The implementation must not conflict with the spec.
   - If implementation changes meaningfully alter the intended behavior, update the spec in the same
     change where practical so the spec stays current.
-- Prefer adding config access through `SymphonyElixir.Config` instead of ad-hoc env reads.
+- Prefer adding config access through `SymphonyPlus.Config` instead of ad-hoc env reads.
 - Workspace safety is critical:
   - Never run Codex turn cwd in source repo.
   - Workspaces must stay under configured workspace root.
@@ -72,7 +72,7 @@ make all
 - Evaluate proposed directions instead of agreeing reflexively; surface simpler designs and material
   trade-offs early.
 - Keep changes narrowly scoped; avoid unrelated refactors.
-- Follow existing module/style patterns in `lib/symphony_elixir/*`.
+- Follow existing module/style patterns in `lib/symphony_plus/*`.
 
 Validation command:
 

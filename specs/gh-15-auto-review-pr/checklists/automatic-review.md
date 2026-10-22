@@ -1,4 +1,4 @@
-# Automatic PR Review Requirements Checklist: Automatically Review Symphony Pull Requests
+# Automatic PR Review Requirements Checklist: Automatically Review Symphony Plus Pull Requests
 
 **Purpose**: Apply formal implementation-gate scrutiny to the completeness, clarity, consistency, measurability, and traceability of automatic PR review requirements.
 **Created**: 2026-10-03
@@ -18,7 +18,7 @@
 
 ## Requirement Clarity
 
-- [ ] CHK006 Is “created by Symphony” unambiguously tied to the durable originating-issue relationship rather than author identity or text? [Clarity, Spec §Assumptions, §FR-016]
+- [ ] CHK006 Is “created by Symphony Plus” unambiguously tied to the durable originating-issue relationship rather than author identity or text? [Clarity, Spec §Assumptions, §FR-016]
 - [ ] CHK007 Is “next successful scheduling opportunity” sufficiently bounded by configured polling behavior and distinguished from an immediate webhook guarantee? [Clarity, Spec §SC-002]
 - [ ] CHK008 Is “complete pull request diff” scoped to the checkpoint head so stale revisions and stale checks cannot satisfy review requirements? [Clarity, Spec §FR-006, §SC-004]
 - [ ] CHK009 Are “actionable,” “authorized scope,” and “unrelated changes” defined sufficiently for consistent repair decisions? [Ambiguity, Spec §FR-008, §FR-009]

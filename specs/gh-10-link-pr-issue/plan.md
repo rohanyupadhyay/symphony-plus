@@ -1,6 +1,6 @@
 # Implementation Plan: Link Pull Requests to Source Issues
 
-**Branch**: `symphony/gh-10-link-pr-issue` | **Date**: 2026-10-03 | **Spec**: [spec.md](spec.md)
+**Branch**: `symphony-plus/gh-10-link-pr-issue` | **Date**: 2026-10-03 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `specs/gh-10-link-pr-issue/spec.md`
 
@@ -16,7 +16,7 @@ shipped workflow template. No Elixir runtime API or persisted state is needed.
 
 **Language/Version**: Elixir 1.19 on OTP 28 for the focused regression test; Liquid/Markdown/YAML for workflow policy
 
-**Primary Dependencies**: Existing `SymphonyElixir.Workflow` loader, Solid/Liquid prompt rendering, ExUnit, GitHub issue and pull-request presentation
+**Primary Dependencies**: Existing `SymphonyPlus.Workflow` loader, Solid/Liquid prompt rendering, ExUnit, GitHub issue and pull-request presentation
 
 **Storage**: N/A; the relationship is represented once in the GitHub pull-request description
 
@@ -69,11 +69,11 @@ elixir/
 ├── docs/
 │   └── github-workflow-control.md
 └── test/
-    └── symphony_elixir/
+    └── symphony_plus/
         └── github_launcher_test.exs
 ```
 
-**Structure Decision**: Extend the existing reusable workflow prompt and its focused workflow-control guide, with a regression assertion in the existing template test module. The self-hosting `.symphony/WORKFLOW.md` already demonstrates the intended wording and does not need a second implementation path.
+**Structure Decision**: Extend the existing reusable workflow prompt and its focused workflow-control guide, with a regression assertion in the existing template test module. The self-hosting `.symphony-plus/WORKFLOW.md` already demonstrates the intended wording and does not need a second implementation path.
 
 ## Complexity Tracking
 

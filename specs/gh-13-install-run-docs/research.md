@@ -8,19 +8,19 @@
 
 ## Decision 2: Supported source command sequence
 
-- **Decision**: Use `git clone`, `cd symphony-plus/elixir`, `mise trust`, `mise install`, `mise exec -- mix setup`, `mise exec -- mix build`, and `mise exec -- ./bin/symphony <workflow-path>`.
+- **Decision**: Use `git clone`, `cd symphony-plus/elixir`, `mise trust`, `mise install`, `mise exec -- mix setup`, `mise exec -- mix build`, and `mise exec -- ./bin/symphony-plus <workflow-path>`.
 - **Rationale**: This matches current documentation, the checked-in toolchain, and Mix build flow. An explicit workflow argument avoids current-directory ambiguity.
 - **Alternatives considered**: Raw `mix` outside `mise` (does not guarantee supported versions); only prebuilt releases (does not cover source installation); omit the workflow argument (weakens clarity).
 
 ## Decision 3: Separate generic and GitHub modes
 
-- **Decision**: Present `bin/symphony` as generic local/custom-workflow execution and route GitHub orchestration to `scripts/run-github`, the agent runbook, and self-hosting guide.
+- **Decision**: Present `bin/symphony-plus` as generic local/custom-workflow execution and route GitHub orchestration to `scripts/run-github`, the agent runbook, and self-hosting guide.
 - **Rationale**: GitHub mode requires an operator-owned App profile, repository-owned workflow, dedicated workspace root, and host-side credential handling.
 - **Alternatives considered**: Put GitHub startup in the basic quick start (implies missing setup); show both modes as equivalent (obscures safety boundaries).
 
 ## Decision 4: Documentation ownership
 
-- **Decision**: Root README owns discovery; `elixir/README.md` owns generic detail; `elixir/AGENTS.md` owns agent development commands; the agent runbook owns target-repository onboarding; `.symphony/README.md` owns this repository's operator procedure.
+- **Decision**: Root README owns discovery; `elixir/README.md` owns generic detail; `elixir/AGENTS.md` owns agent development commands; the agent runbook owns target-repository onboarding; `.symphony-plus/README.md` owns this repository's operator procedure.
 - **Rationale**: These distinct audiences already exist. Explicit ownership reduces drift.
 - **Alternatives considered**: Duplicate everything everywhere (drift risk); create another guide (adds an unnecessary owner and navigation hop).
 

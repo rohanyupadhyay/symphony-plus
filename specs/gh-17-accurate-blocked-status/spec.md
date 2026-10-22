@@ -1,6 +1,6 @@
 # Feature Specification: Accurate Blocked Session Status
 
-**Feature Branch**: `symphony/gh-17-accurate-blocked-status`
+**Feature Branch**: `symphony-plus/gh-17-accurate-blocked-status`
 
 **Created**: 2026-10-12
 

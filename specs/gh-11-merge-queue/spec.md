@@ -1,6 +1,6 @@
 # Feature Specification: Safely Queue Parallel Pull Requests
 
-**Feature Branch**: `symphony/gh-11-merge-queue`
+**Feature Branch**: `symphony-plus/gh-11-merge-queue`
 
 **Created**: 2026-10-05
 
@@ -12,7 +12,7 @@
 
 ### User Story 1 - Safely merge automatically reviewed pull requests in sequence (Priority: P1)
 
-As a maintainer, I want successfully auto-reviewed Symphony-managed pull requests to enter a merge queue without human approval so multiple changes can be developed and reviewed in parallel without being merged against stale assumptions.
+As a maintainer, I want successfully auto-reviewed Symphony Plus-managed pull requests to enter a merge queue without human approval so multiple changes can be developed and reviewed in parallel without being merged against stale assumptions.
 
 **Why this priority**: Sequential integration and validation against the actual merge target are the core safety guarantees of the feature.
 
@@ -88,7 +88,7 @@ As a contributor with dependent changes, I want pull requests to declare their d
 ### Functional Requirements
 
 - **FR-001**: The system MUST allow multiple pull requests to remain open and undergo review concurrently.
-- **FR-002**: Successfully auto-reviewed and otherwise eligible Symphony-managed pull requests MUST enter a durable merge queue without human approval instead of merging immediately.
+- **FR-002**: Successfully auto-reviewed and otherwise eligible Symphony Plus-managed pull requests MUST enter a durable merge queue without human approval instead of merging immediately.
 - **FR-003**: The merge queue MUST expose a deterministic order and MUST integrate no more than one queue-head pull request at a time for a repository and target branch.
 - **FR-004**: Before a queued pull request is merged, the system MUST validate it against the latest target-branch state, including all pull requests merged ahead of it.
 - **FR-005**: A merge MUST occur only when the exact candidate validated against the current target-branch state still has no active human change request and satisfies status checks and repository merge policy at merge time.
@@ -106,7 +106,7 @@ As a contributor with dependent changes, I want pull requests to declare their d
 - **FR-017**: Queue state and recovery MUST be reconstructable from durable provider-visible state without depending on an in-memory-only ordering record.
 - **FR-018**: The system MUST distinguish deterministic pull-request incompatibility from transient provider or validation failure; transient failures MUST be retried or blocked explicitly without falsely requiring an author update.
 - **FR-019**: Operators and pull request authors MUST be able to observe queue position or state, current blocker, latest validation outcome, and required recovery action without exposing credentials or unnecessary provider payloads.
-- **FR-020**: Cancellation, pull request closure, human change-request creation or dismissal, eligibility-label removal, target-branch change, and merge completion MUST reconcile safely with queued or in-progress work. An active human change request MUST suspend all Symphony mutations and dismissal MUST resume processing automatically.
+- **FR-020**: Cancellation, pull request closure, human change-request creation or dismissal, eligibility-label removal, target-branch change, and merge completion MUST reconcile safely with queued or in-progress work. An active human change request MUST suspend all Symphony Plus mutations and dismissal MUST resume processing automatically.
 - **FR-021**: The normative product contract and applicable operator documentation MUST describe serialized integration, current-target revalidation, non-continuous branch updates, dependency ordering, recovery, and human/repository-policy boundaries.
 
 ### Key Entities
@@ -133,7 +133,7 @@ As a contributor with dependent changes, I want pull requests to declare their d
 ## Assumptions
 
 - The initial scope manages pull requests within one repository and serializes independently for each target branch; cross-repository dependencies are invalid.
-- Existing repository checks and merge rules remain authoritative; Symphony does not require human approval, while an active human change request remains a hard suspension signal.
+- Existing repository checks and merge rules remain authoritative; Symphony Plus does not require human approval, while an active human change request remains a hard suspension signal.
 - Queue ordering among otherwise independent entries is first eligible, first queued, with stable tie-breaking; declared dependencies override that order.
 - A pull request update creates a new head revision whose checks and trusted automatic review must be evaluated again.
 - The provider offers durable pull request metadata, comments, labels, checks, and merge-state evidence sufficient to reconstruct queue eligibility; the internal representation is deferred to planning.

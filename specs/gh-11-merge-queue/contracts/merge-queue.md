@@ -6,7 +6,7 @@ The queue is enabled only for configured GitHub repositories. Exactly one superv
 
 ## Admission
 
-An open same-repository pull request created by Symphony from an issue is admitted when trusted automatic review succeeds, no active human change request exists, the current head's required checks and labels satisfy repository workflow eligibility, and its workflow records a versioned queue checkpoint. Human approval is not required. The checkpoint contains PR number, head SHA, target branch, stable automatic-review admission evidence, and normalized prerequisite PR numbers.
+An open same-repository pull request created by Symphony Plus from an issue is admitted when trusted automatic review succeeds, no active human change request exists, the current head's required checks and labels satisfy repository workflow eligibility, and its workflow records a versioned queue checkpoint. Human approval is not required. The checkpoint contains PR number, head SHA, target branch, stable automatic-review admission evidence, and normalized prerequisite PR numbers.
 
 Admission is idempotent. Repeated polls of the same generation create one entry. A changed head invalidates prior validation and requires checks and trusted automatic review for the new generation before readmission.
 
@@ -48,4 +48,4 @@ Operators and authors can inspect queue state/position, dependency hold, active 
 
 ## Configuration and safety
 
-Configuration is loaded through `SymphonyElixir.Config`, validates repository and polling/retry settings, and supports safe disable/reload. All GitHub calls use the existing host-side authenticated client. No queue action runs Codex outside an issue workspace, weakens branch protection, or bypasses required check/merge policy. Trusted automatic review is the admission authority; human approval is not required.
+Configuration is loaded through `SymphonyPlus.Config`, validates repository and polling/retry settings, and supports safe disable/reload. All GitHub calls use the existing host-side authenticated client. No queue action runs Codex outside an issue workspace, weakens branch protection, or bypasses required check/merge policy. Trusted automatic review is the admission authority; human approval is not required.

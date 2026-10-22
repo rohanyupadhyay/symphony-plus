@@ -1,7 +1,7 @@
 # GitHub workflow control
 
 GitHub workflow control is an optional layer for workflows that need durable questions, approval
-gates, and pull-request review loops. GitHub issues are the human interface; Symphony's dashboard
+gates, and pull-request review loops. GitHub issues are the human interface; Symphony Plus's dashboard
 continues to show runtime execution and logs.
 
 To onboard a Spec Kit repository with an AI coding agent, follow the
@@ -27,7 +27,7 @@ tracker:
         - OWNER
         - MEMBER
         - COLLABORATOR
-  required_labels: [symphony]
+  required_labels: [symphony-plus]
   active_states: [open]
   terminal_states: [closed]
 ```
@@ -37,21 +37,21 @@ and `COLLABORATOR`; comments from all other human associations are ignored for c
 The configured App's exact `Bot` identity may author checkpoint markers, but it can never answer a
 question or approve its own work. Existing authorized human-authored markers remain valid.
 
-Build Symphony and run the guided App setup. GitHub opens a prefilled private-App registration page
+Build Symphony Plus and run the guided App setup. GitHub opens a prefilled private-App registration page
 requesting Contents, Issues, Pull requests, and Workflows write access, with webhooks disabled.
 After registering the App, generate and download a private key, install the App on the target
 repository, and enter the App and installation IDs when prompted:
 
 ```bash
-./bin/symphony github-app setup owner/repository --profile default
-./bin/symphony github-app verify owner/repository --profile default
-./scripts/run-github --app-profile default /absolute/path/to/repository/.symphony/WORKFLOW.md --port 4000
+./bin/symphony-plus github-app setup owner/repository --profile default
+./bin/symphony-plus github-app verify owner/repository --profile default
+./scripts/run-github --app-profile default /absolute/path/to/repository/.symphony-plus/WORKFLOW.md --port 4000
 ```
 
 For repository-local GitHub/Spec Kit workflows, Symphony Plus recommends this visible contract:
 
 ```text
-.symphony/
+.symphony-plus/
 ├── README.md
 └── WORKFLOW.md
 ```
@@ -70,8 +70,8 @@ verify a new profile name, switch the launcher to it, and then revoke the old ke
 repository in the same owner account, update the App installation's repository selection and run
 `verify` for that repository; use another profile when GitHub assigns another installation ID.
 
-The launcher exports only the App ID, installation ID, and private-key path to the Symphony host.
-Symphony generates short-lived installation tokens, refreshes them before expiry, and removes App
+The launcher exports only the App ID, installation ID, and private-key path to the Symphony Plus host.
+Symphony Plus generates short-lived installation tokens, refreshes them before expiry, and removes App
 and PAT environment variables from Codex. App comments, labels, PRs, and pushes appear as the
 operator-chosen `<app-slug>[bot]` identity. No shared Symphony Plus App or hosted token service
 exists.
@@ -81,16 +81,16 @@ without `--app-profile`:
 
 ```bash
 gh auth login
-./scripts/run-github /absolute/path/to/repository/.symphony/WORKFLOW.md --port 4000
+./scripts/run-github /absolute/path/to/repository/.symphony-plus/WORKFLOW.md --port 4000
 ```
 
 The reusable Spec Kit workflow template uses `danger-full-access` for its Codex thread and turns.
 This is required because Codex's `workspace-write` sandbox intentionally makes `.git` read-only,
 while this workflow must create branches, commit artifacts, and push them. Keep `workspace.root`
-pointed at a dedicated Symphony workspace tree; never point it at a developer checkout. The setting
-applies to Symphony's issue agents, not to unrelated Codex sessions.
+pointed at a dedicated Symphony Plus workspace tree; never point it at a developer checkout. The setting
+applies to Symphony Plus's issue agents, not to unrelated Codex sessions.
 
-With App authentication, Symphony configures each local issue workspace's commit author to the App
+With App authentication, Symphony Plus configures each local issue workspace's commit author to the App
 bot and disables inherited Git credential helpers. Agents commit locally and call
 `github_git_push`; the host verifies the issue workspace, branch, head SHA, clean tree, and remote
 before pushing. App-authenticated pushes intentionally reject SSH workers in this first release.
@@ -109,7 +109,7 @@ the host validates that PR identity and head, adds the configured required label
 only then records the checkpoint. The next successful poll enriches the issue with the PR,
 conversation, inline comments, formal reviews, and all current-head check runs/statuses, then
 dispatches the originating issue workspace without another human command. A latest human
-`CHANGES_REQUESTED` review suppresses dispatch and every Symphony mutation until that review is
+`CHANGES_REQUESTED` review suppresses dispatch and every Symphony Plus mutation until that review is
 dismissed, after which processing resumes automatically. A successful trusted automatic review
 admits the exact managed head to the merge queue without human approval. Forks, cross-repository
 heads, removed labels, closed/merged PRs, and incomplete current-head review context do not dispatch.
@@ -127,13 +127,13 @@ whether `clarify`, `checklist`, or `analyze` ran. The reusable template contains
 Supported commands are:
 
 ```text
-/symphony approve spec
-/symphony approve plan
-/symphony approve implementation
-/symphony revise [spec|plan|implementation] <instructions>
-/symphony retry
-/symphony status
-/symphony cancel
+/symphony-plus approve spec
+/symphony-plus approve plan
+/symphony-plus approve implementation
+/symphony-plus revise [spec|plan|implementation] <instructions>
+/symphony-plus retry
+/symphony-plus status
+/symphony-plus cancel
 ```
 
 A direct authorized comment resumes only an `awaiting_input` checkpoint. Spec Kit approval commands
@@ -144,7 +144,7 @@ an explicit lifecycle trigger. `awaiting_review` remains readable for older chec
 emitted by the autonomous managed-PR workflow.
 
 Removing the required label makes the issue ineligible immediately. Closing the issue makes it
-terminal. The workflow prompt remains responsible for applying `/symphony cancel` by removing the
+terminal. The workflow prompt remains responsible for applying `/symphony-plus cancel` by removing the
 label, and for closing the issue after a merged PR.
 
 ## Pull request tracking
@@ -163,7 +163,7 @@ or cancel decision.
 ## Recovery and API usage
 
 The latest authorized hidden marker is reconstructed from GitHub comments on every relevant poll,
-so restarts need no Symphony database. One issue keeps its existing workspace across phases.
+so restarts need no Symphony Plus database. One issue keeps its existing workspace across phases.
 
 Only issues carrying all configured required labels are enriched. A waiting issue requires its
 issue-comment pages to be read each poll. PR endpoints are queried for `review_pending` and
