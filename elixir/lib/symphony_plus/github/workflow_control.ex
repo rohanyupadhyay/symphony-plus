@@ -332,13 +332,16 @@ defmodule SymphonyPlus.GitHub.WorkflowControl do
       "blocked" ->
         blocked_trigger(checkpoint, checkpoint_comment, later_comments, review_context, required_labels)
 
-      "review_pending" ->
+      "merge_blocked" ->
+        blocked_trigger(checkpoint, checkpoint_comment, later_comments, review_context, required_labels)
+
+      state when state in ["review_pending", "merge_update_required"] ->
         automatic_review_trigger(checkpoint, checkpoint_comment, review_context, required_labels)
 
       "awaiting_review" ->
         review_trigger(checkpoint, later_comments, review_context, authorized)
 
-      state when state in ["merge_queued", "merge_validating", "merge_update_required", "merge_blocked", "merge_merged"] ->
+      state when state in ["merge_queued", "merge_validating", "merge_merged"] ->
         nil
     end
   end
@@ -357,8 +360,13 @@ defmodule SymphonyPlus.GitHub.WorkflowControl do
   defp automatic_review_trigger(checkpoint, checkpoint_comment, context, required_labels) do
     pull_request = Map.get(context, "pull_request", %{})
 
-    if valid_automatic_review?(checkpoint, pull_request, context, required_labels) do
-      Map.take(checkpoint, ~w(pr_number branch head_sha))
+    review_checkpoint =
+      checkpoint
+      |> Map.put_new("branch", get_in(pull_request, ["head", "ref"]))
+      |> Map.put("head_sha", get_in(pull_request, ["head", "sha"]))
+
+    if valid_automatic_review?(review_checkpoint, pull_request, context, required_labels) do
+      Map.take(review_checkpoint, ~w(pr_number branch head_sha))
       |> Map.put("kind", "automatic_review")
       |> Map.put("admission_sequence", event_id(checkpoint_comment))
     end
@@ -384,7 +392,8 @@ defmodule SymphonyPlus.GitHub.WorkflowControl do
     do: pull_request["state"] == "open" and pull_request["merged"] != true
 
   defp matching_review_head?(checkpoint, pull_request, context) do
-    get_in(pull_request, ["head", "ref"]) == checkpoint["branch"] and
+    present?(checkpoint["branch"]) and present?(checkpoint["head_sha"]) and
+      get_in(pull_request, ["head", "ref"]) == checkpoint["branch"] and
       get_in(pull_request, ["head", "sha"]) == checkpoint["head_sha"] and
       get_in(context, ["checks", "head_sha"]) == checkpoint["head_sha"]
   end
@@ -457,7 +466,7 @@ defmodule SymphonyPlus.GitHub.WorkflowControl do
   defp valid_command_for_checkpoint?(%{"command" => command}, checkpoint)
        when command in @commands do
     case command do
-      "retry" -> checkpoint["state"] == "blocked"
+      "retry" -> checkpoint["state"] in ["blocked", "merge_blocked"]
       _ -> true
     end
   end

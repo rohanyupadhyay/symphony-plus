@@ -26,8 +26,8 @@ defmodule SymphonyPlus.GitHub.WorkflowControlTest do
              checkpoint |> Map.delete("branch") |> WorkflowControl.valid_checkpoint()
   end
 
-  test "terminal queue outcomes remain durable and do not dispatch issue work" do
-    for state <- ["merge_update_required", "merge_blocked", "merge_merged"] do
+  test "blocked and merged queue outcomes remain durable without automatic dispatch" do
+    for state <- ["merge_blocked", "merge_merged"] do
       checkpoint = %{
         "state" => state,
         "phase" => "merge_queue",
@@ -329,6 +329,37 @@ defmodule SymphonyPlus.GitHub.WorkflowControlTest do
              WorkflowControl.derive([checkpoint], dismissed, @authorized)
   end
 
+  test "changed managed heads and queue repair outcomes resume review without a command" do
+    old_sha = String.duplicate("a", 40)
+    current_sha = String.duplicate("b", 40)
+
+    context = %{
+      "pull_request" => %{
+        "number" => 7,
+        "state" => "open",
+        "merged" => false,
+        "mergeable" => false,
+        "labels" => [%{"name" => "symphony-plus"}],
+        "head" => %{"ref" => "topic", "sha" => current_sha, "repo" => %{"full_name" => "octo/repo"}},
+        "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+      },
+      "checks" => %{"head_sha" => current_sha}
+    }
+
+    checkpoints = [
+      checkpoint_comment(80, "review_pending", %{"phase" => "review", "pr_number" => 7, "branch" => "topic", "head_sha" => old_sha}),
+      checkpoint_comment(80, "merge_update_required", %{"phase" => "merge_queue", "pr_number" => 7, "head_sha" => old_sha})
+    ]
+
+    for checkpoint <- checkpoints do
+      assert %{dispatchable: true, trigger: %{"kind" => "automatic_review", "head_sha" => ^current_sha, "branch" => "topic"}} =
+               WorkflowControl.derive([checkpoint], context, @authorized)
+
+      held = Map.put(context, "reviews", [review(101, "alice", "MEMBER", "CHANGES_REQUESTED")])
+      refute WorkflowControl.derive([checkpoint], held, @authorized).dispatchable
+    end
+  end
+
   test "autonomous merge needs no approval but rejects an active human change request" do
     assert WorkflowControl.autonomous_merge_allowed?([])
     assert WorkflowControl.autonomous_merge_allowed?([review(1, "alice", "MEMBER", "APPROVED")])
@@ -348,7 +379,7 @@ defmodule SymphonyPlus.GitHub.WorkflowControlTest do
            ])
   end
 
-  test "review pending suppresses unsafe, terminal, unlabeled, or stale managed pull requests" do
+  test "review pending suppresses unsafe PRs and stale check context" do
     sha = String.duplicate("a", 40)
 
     checkpoint =
@@ -606,6 +637,38 @@ defmodule SymphonyPlus.GitHub.WorkflowControlTest do
     }
 
     assert %{trigger: %{"kind" => "automatic_review", "admission_sequence" => 80}} =
+             WorkflowControl.derive([checkpoint, retry], context, @authorized, nil, ["symphony-plus"])
+  end
+
+  test "retrying a queue block reviews the branch head GitHub updated" do
+    old_sha = String.duplicate("a", 40)
+    current_sha = String.duplicate("b", 40)
+
+    checkpoint =
+      checkpoint_comment(80, "merge_blocked", %{
+        "phase" => "merge_queue",
+        "pr_number" => 7,
+        "head_sha" => old_sha
+      })
+
+    retry = comment(81, "OWNER", "/symphony-plus retry")
+
+    assert %{trigger: %{"command" => "retry"}} =
+             WorkflowControl.derive([checkpoint, retry], %{}, @authorized, nil, ["symphony-plus"])
+
+    context = %{
+      "pull_request" => %{
+        "number" => 7,
+        "state" => "open",
+        "merged" => false,
+        "labels" => [%{"name" => "symphony-plus"}],
+        "head" => %{"ref" => "topic", "sha" => current_sha, "repo" => %{"full_name" => "octo/repo"}},
+        "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+      },
+      "checks" => %{"head_sha" => current_sha}
+    }
+
+    assert %{trigger: %{"kind" => "automatic_review", "head_sha" => ^current_sha, "admission_sequence" => 80}} =
              WorkflowControl.derive([checkpoint, retry], context, @authorized, nil, ["symphony-plus"])
   end
 

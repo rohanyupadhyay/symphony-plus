@@ -566,74 +566,79 @@ defmodule SymphonyPlus.GitHub.AdapterTest do
     assert_receive {:workflow_request, "/repos/octo/repo/pulls/7/reviews", %{"page" => 1}}
   end
 
-  test "review pending enriches current-head checks before automatic dispatch" do
-    sha = String.duplicate("a", 40)
+  test "review handoffs enrich the current head after the branch advances" do
+    sha = String.duplicate("b", 40)
 
-    marker =
-      WorkflowControl.render_comment(%{
-        "state" => "review_pending",
-        "phase" => "review",
-        "summary" => "Review PR #7.",
-        "pr_number" => 7,
-        "branch" => "topic",
-        "head_sha" => sha
-      })
+    for state <- ["review_pending", "merge_update_required"] do
+      checkpoint =
+        %{
+          "state" => state,
+          "phase" => if(state == "review_pending", do: "review", else: "merge_queue"),
+          "summary" => "Review PR #7.",
+          "pr_number" => 7,
+          "branch" => "topic",
+          "head_sha" => String.duplicate("a", 40)
+        }
 
-    request_fun = fn "GET", path, _params, nil, _settings ->
-      body =
-        case path do
-          "/repos/octo/repo/issues/42/comments" ->
-            [raw_comment(10, "OWNER", marker)]
+      checkpoint = if state == "merge_update_required", do: Map.delete(checkpoint, "branch"), else: checkpoint
+      marker = WorkflowControl.render_comment(checkpoint)
 
-          "/repos/octo/repo/pulls/7" ->
-            %{
-              "number" => 7,
-              "state" => "open",
-              "merged" => false,
-              "labels" => [%{"name" => "symphony-plus"}],
-              "head" => %{
-                "ref" => "topic",
-                "sha" => sha,
-                "repo" => %{"full_name" => "octo/repo", "fork" => false}
-              },
-              "base" => %{"repo" => %{"full_name" => "octo/repo"}}
-            }
+      request_fun = fn "GET", path, _params, nil, _settings ->
+        body =
+          case path do
+            "/repos/octo/repo/issues/42/comments" ->
+              [raw_comment(10, "OWNER", marker)]
 
-          "/repos/octo/repo/issues/7/comments" ->
-            []
+            "/repos/octo/repo/pulls/7" ->
+              %{
+                "number" => 7,
+                "state" => "open",
+                "merged" => false,
+                "labels" => [%{"name" => "symphony-plus"}],
+                "head" => %{
+                  "ref" => "topic",
+                  "sha" => sha,
+                  "repo" => %{"full_name" => "octo/repo", "fork" => false}
+                },
+                "base" => %{"repo" => %{"full_name" => "octo/repo"}}
+              }
 
-          "/repos/octo/repo/pulls/7/comments" ->
-            []
+            "/repos/octo/repo/issues/7/comments" ->
+              []
 
-          "/repos/octo/repo/pulls/7/reviews" ->
-            []
+            "/repos/octo/repo/pulls/7/comments" ->
+              []
 
-          "/repos/octo/repo/commits/" <> rest ->
-            if String.ends_with?(rest, "/check-runs"),
-              do: %{"check_runs" => [%{"id" => 1, "status" => "completed", "conclusion" => "failure", "head_sha" => sha}]},
-              else: %{"sha" => sha, "statuses" => [%{"id" => 2, "state" => "pending"}]}
-        end
+            "/repos/octo/repo/pulls/7/reviews" ->
+              []
 
-      {:ok, %{status: 200, body: body}}
+            "/repos/octo/repo/commits/" <> rest ->
+              if String.ends_with?(rest, "/check-runs"),
+                do: %{"check_runs" => [%{"id" => 1, "status" => "completed", "conclusion" => "failure", "head_sha" => sha}]},
+                else: %{"sha" => sha, "statuses" => [%{"id" => 2, "state" => "pending"}]}
+          end
+
+        {:ok, %{status: 200, body: body}}
+      end
+
+      issue = GitHubClient.normalize_issue_for_test(raw_issue(42), "octo/repo")
+      assert {:ok, enriched} = GitHubClient.enrich_issue_for_test(issue, workflow_tracker_settings(), request_fun)
+      assert enriched.native_ref["workflow_control"]["trigger"]["kind"] == "automatic_review"
+      assert get_in(enriched.native_ref, ["workflow_control", "trigger", "head_sha"]) == sha
     end
-
-    issue = GitHubClient.normalize_issue_for_test(raw_issue(42), "octo/repo")
-    assert {:ok, enriched} = GitHubClient.enrich_issue_for_test(issue, workflow_tracker_settings(), request_fun)
-    assert enriched.native_ref["workflow_control"]["trigger"]["kind"] == "automatic_review"
-    assert get_in(enriched.native_ref, ["workflow_control", "checkpoint", "head_sha"]) == sha
   end
 
-  test "blocked queue retry enriches PR context and restarts automatic review" do
-    sha = String.duplicate("a", 40)
+  test "merge-blocked queue retry enriches the updated PR head for automatic review" do
+    old_sha = String.duplicate("a", 40)
+    sha = String.duplicate("b", 40)
 
     marker =
       WorkflowControl.render_comment(%{
-        "state" => "blocked",
+        "state" => "merge_blocked",
         "phase" => "merge_queue",
         "summary" => "Queue admission failed.",
         "pr_number" => 7,
-        "branch" => "topic",
-        "head_sha" => sha
+        "head_sha" => old_sha
       })
 
     request_fun = fn "GET", path, _params, nil, _settings ->

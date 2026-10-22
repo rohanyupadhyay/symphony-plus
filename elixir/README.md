@@ -1,5 +1,9 @@
 # Symphony Plus Elixir
 
+Terminal, JSON, and LiveView observability use one runtime-status projection. Recoverable quota
+pauses appear as quota-waiting, while input/approval pauses and failed native quota resumes appear
+as blocked with concise diagnostic context.
+
 This directory contains the current Elixir/OTP implementation of Symphony Plus, based on
 [`SPEC.md`](../SPEC.md) at the repository root.
 
@@ -63,14 +67,17 @@ fresh thread as an automatic fallback. See [Quota waits and native resume](docs/
 
 ## Prerequisites
 
-We recommend using [mise](https://mise.jdx.dev/) to manage Elixir/Erlang versions.
+Source installation requires Git, the Codex CLI, and
+[mise](https://mise.jdx.dev/) to install the repository's supported Elixir/Erlang versions.
+Run these commands from the `elixir/` directory of a Symphony Plus source checkout unless a
+command explicitly changes directory.
 
 ```bash
 mise install
 mise exec -- elixir --version
 ```
 
-## Run
+## Install and run from source
 
 ```bash
 git clone https://github.com/rohanyupadhyay/symphony-plus
@@ -81,6 +88,16 @@ mise exec -- mix setup
 mise exec -- mix build
 mise exec -- ./bin/symphony-plus ./WORKFLOW.md
 ```
+
+`mix build` generates `bin/symphony-plus`. The final command is the generic local execution mode: it
+uses the checked-in workflow at an explicit absolute path and exposes the dashboard at
+`http://localhost:4000`. Replace the workflow argument with another explicit path when operating a
+different repository-owned workflow.
+
+Do not use this generic command as an incomplete substitute for GitHub issue orchestration.
+GitHub mode requires an operator-owned App profile and the credential-scrubbing
+`scripts/run-github` launcher described under the [GitHub Issues adapter](#github-issues-adapter)
+and the [AI-agent installation runbook](docs/agent-installation.md).
 
 ## Burrito releases
 
@@ -284,6 +301,8 @@ codex:
   with complete current-head review/check context. Successful automatic review admits the managed
   PR to the merge queue without human approval; a human change request suspends all mutations until
   dismissal, then processing resumes automatically.
+  New commits on the managed branch trigger review of the current head. Merge conflicts and
+  PR-caused check failures automatically return to the issue agent for repair and review.
   See [the workflow-control guide](docs/github-workflow-control.md)
   and the [reusable Spec Kit template](examples/github-speckit-WORKFLOW.md).
 

@@ -146,7 +146,7 @@ defmodule SymphonyPlusWeb.DashboardLive do
                     <td><.issue_identifier identifier={entry.issue_identifier} url={entry.issue_url} /></td>
                     <td><span class={state_badge_class(entry.status)}><%= entry.status %></span></td>
                     <td class="mono"><%= entry.harness %> / <%= entry.pool_key %></td>
-                    <td class="mono"><%= entry.renewal_at || entry.next_recheck_at || "unknown" %></td>
+                    <td class="mono"><%= entry.renewal_at || entry.next_recheck_at || entry.timing_cue %></td>
                     <td><%= if entry.native_context_available, do: "available", else: "unavailable" %></td>
                     <td><%= entry.last_outcome %></td>
                   </tr>
@@ -322,7 +322,7 @@ defmodule SymphonyPlusWeb.DashboardLive do
                         </span>
                       </div>
                     </td>
-                    <td><%= entry.error || "n/a" %></td>
+                    <td><%= entry.reason || entry.error %></td>
                   </tr>
                 </tbody>
               </table>

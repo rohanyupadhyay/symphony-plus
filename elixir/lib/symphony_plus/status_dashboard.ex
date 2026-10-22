@@ -6,7 +6,7 @@ defmodule SymphonyPlus.StatusDashboard do
   use GenServer
   require Logger
 
-  alias SymphonyPlus.{Config, HttpServer}
+  alias SymphonyPlus.{Config, HttpServer, RuntimeStatus}
   alias SymphonyPlus.Orchestrator
   alias SymphonyPlusWeb.ObservabilityPubSub
 
@@ -315,6 +315,7 @@ defmodule SymphonyPlus.StatusDashboard do
            %{
              running: running,
              retrying: retrying,
+             blocked: Map.get(snapshot, :blocked, []),
              quota_waiting: Map.get(snapshot, :quota_waiting, []),
              codex_totals: codex_totals,
              rate_limits: Map.get(snapshot, :rate_limits),
@@ -333,7 +334,10 @@ defmodule SymphonyPlus.StatusDashboard do
 
   defp format_snapshot_content(snapshot_data, tps, terminal_columns_override \\ nil) do
     case snapshot_data do
-      {:ok, %{running: running, retrying: retrying, codex_totals: codex_totals} = snapshot} ->
+      {:ok, %{running: _, retrying: _, codex_totals: codex_totals} = snapshot} ->
+        snapshot = RuntimeStatus.project(snapshot)
+        running = snapshot.running
+        retrying = snapshot.retrying
         rate_limits = Map.get(snapshot, :rate_limits)
         project_link_lines = format_project_link_lines()
         project_refresh_line = format_project_refresh_line(Map.get(snapshot, :polling))
@@ -348,6 +352,7 @@ defmodule SymphonyPlus.StatusDashboard do
         running_to_backoff_spacer = if(running == [], do: [], else: ["│"])
         backoff_rows = format_retry_rows(retrying)
         quota_rows = format_quota_rows(Map.get(snapshot, :quota_waiting, []))
+        blocked_rows = format_blocked_rows(Map.get(snapshot, :blocked, []))
 
         ([
            colorize("╭─ SYMPHONY PLUS STATUS", @ansi_bold),
@@ -376,6 +381,8 @@ defmodule SymphonyPlus.StatusDashboard do
            running_to_backoff_spacer ++
            [colorize("├─ Backoff queue", @ansi_bold), "│"] ++
            backoff_rows ++
+           [colorize("├─ Blocked", @ansi_bold), "│"] ++
+           blocked_rows ++
            [colorize("├─ Quota waits", @ansi_bold), "│"] ++
            quota_rows ++
            [closing_border()])
@@ -565,6 +572,7 @@ defmodule SymphonyPlus.StatusDashboard do
            %{
              running: running,
              retrying: retrying,
+             blocked: Map.get(snapshot, :blocked, []),
              quota_waiting: Map.get(snapshot, :quota_waiting, []),
              codex_totals: codex_totals,
              rate_limits: Map.get(snapshot, :rate_limits),
@@ -590,6 +598,18 @@ defmodule SymphonyPlus.StatusDashboard do
       |> Enum.sort_by(& &1.identifier)
       |> Enum.map(&format_running_summary(&1, running_event_width))
     end
+  end
+
+  defp format_blocked_rows([]), do: ["│  " <> colorize("No blocked issues", @ansi_gray), "│"]
+
+  defp format_blocked_rows(blocked) do
+    blocked
+    |> Enum.sort_by(&to_string(Map.get(&1, :identifier) || Map.get(&1, :issue_id)))
+    |> Enum.map(fn entry ->
+      identifier = Map.get(entry, :identifier) || Map.get(entry, :issue_id) || "unknown"
+      reason = Map.get(entry, :reason) || Map.get(entry, :error) || "Operator action required"
+      "│  " <> colorize(to_string(identifier), @ansi_cyan) <> " " <> colorize(reason, @ansi_red)
+    end)
   end
 
   # credo:disable-for-next-line

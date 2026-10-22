@@ -3,7 +3,7 @@ defmodule SymphonyPlusWeb.Presenter do
   Shared projections for the observability API and dashboard.
   """
 
-  alias SymphonyPlus.{Config, Orchestrator, StatusDashboard, Workspace}
+  alias SymphonyPlus.{Config, Orchestrator, RuntimeStatus, StatusDashboard, Workspace}
 
   @spec state_payload(GenServer.name(), timeout()) :: map()
   def state_payload(orchestrator, snapshot_timeout_ms) do
@@ -11,13 +11,15 @@ defmodule SymphonyPlusWeb.Presenter do
 
     case Orchestrator.snapshot(orchestrator, snapshot_timeout_ms) do
       %{} = snapshot ->
+        snapshot = RuntimeStatus.project(snapshot)
+
         %{
           generated_at: generated_at,
           counts: %{
-            running: length(snapshot.running),
-            retrying: length(snapshot.retrying),
-            blocked: length(Map.get(snapshot, :blocked, [])),
-            quota_waiting: length(Map.get(snapshot, :quota_waiting, []))
+            running: snapshot.counts.running,
+            retrying: snapshot.counts.retrying,
+            blocked: snapshot.counts.blocked,
+            quota_waiting: snapshot.counts.quota_waiting
           },
           running: Enum.map(snapshot.running, &running_entry_payload/1),
           retrying: Enum.map(snapshot.retrying, &retry_entry_payload/1),
@@ -39,6 +41,7 @@ defmodule SymphonyPlusWeb.Presenter do
   def issue_payload(issue_identifier, orchestrator, snapshot_timeout_ms) when is_binary(issue_identifier) do
     case Orchestrator.snapshot(orchestrator, snapshot_timeout_ms) do
       %{} = snapshot ->
+        snapshot = RuntimeStatus.project(snapshot)
         running = Enum.find(snapshot.running, &(&1.identifier == issue_identifier))
         retry = Enum.find(snapshot.retrying, &(&1.identifier == issue_identifier))
         blocked = Enum.find(Map.get(snapshot, :blocked, []), &(&1.identifier == issue_identifier))
@@ -101,10 +104,10 @@ defmodule SymphonyPlusWeb.Presenter do
   defp retry_attempt(nil), do: 0
   defp retry_attempt(retry), do: retry.attempt || 0
 
-  defp issue_status(running, _retry, _blocked, _quota_wait) when not is_nil(running), do: "running"
-  defp issue_status(nil, retry, _blocked, _quota_wait) when not is_nil(retry), do: "retrying"
-  defp issue_status(nil, nil, blocked, _quota_wait) when not is_nil(blocked), do: "blocked"
-  defp issue_status(nil, nil, nil, quota_wait), do: Atom.to_string(quota_wait.status)
+  defp issue_status(_running, _retry, blocked, _quota_wait) when not is_nil(blocked), do: "blocked"
+  defp issue_status(_running, _retry, nil, quota_wait) when not is_nil(quota_wait), do: "quota_waiting"
+  defp issue_status(_running, retry, nil, nil) when not is_nil(retry), do: "retrying"
+  defp issue_status(running, nil, nil, nil) when not is_nil(running), do: "running"
 
   defp running_entry_payload(entry) do
     %{
@@ -146,15 +149,17 @@ defmodule SymphonyPlusWeb.Presenter do
       issue_id: entry.issue_id,
       issue_identifier: entry.identifier,
       issue_url: Map.get(entry, :issue_url),
-      state: entry.state,
-      error: entry.error,
+      state: Map.get(entry, :state),
+      error: Map.get(entry, :error),
+      reason: Map.get(entry, :reason, Map.get(entry, :error)),
+      quota_context: Map.get(entry, :quota_context),
       worker_host: Map.get(entry, :worker_host),
       workspace_path: Map.get(entry, :workspace_path),
-      session_id: entry.session_id,
-      blocked_at: iso8601(entry.blocked_at),
-      last_event: entry.last_codex_event,
-      last_message: summarize_message(entry.last_codex_message),
-      last_event_at: iso8601(entry.last_codex_timestamp)
+      session_id: Map.get(entry, :session_id),
+      blocked_at: iso8601(Map.get(entry, :blocked_at) || Map.get(entry, :updated_at)),
+      last_event: Map.get(entry, :last_codex_event),
+      last_message: summarize_message(Map.get(entry, :last_codex_message)),
+      last_event_at: iso8601(Map.get(entry, :last_codex_timestamp))
     }
   end
 
@@ -172,7 +177,8 @@ defmodule SymphonyPlusWeb.Presenter do
       workspace_path: entry.workspace_path,
       worker_host: entry.worker_host,
       last_outcome: entry.last_outcome,
-      updated_at: iso8601(entry.updated_at)
+      updated_at: iso8601(entry.updated_at),
+      timing_cue: Map.get(entry, :timing_cue)
     }
   end
 
@@ -209,13 +215,15 @@ defmodule SymphonyPlusWeb.Presenter do
     %{
       worker_host: Map.get(blocked, :worker_host),
       workspace_path: Map.get(blocked, :workspace_path),
-      session_id: blocked.session_id,
-      state: blocked.state,
-      error: blocked.error,
-      blocked_at: iso8601(blocked.blocked_at),
-      last_event: blocked.last_codex_event,
-      last_message: summarize_message(blocked.last_codex_message),
-      last_event_at: iso8601(blocked.last_codex_timestamp)
+      session_id: Map.get(blocked, :session_id),
+      state: Map.get(blocked, :state),
+      error: Map.get(blocked, :error),
+      reason: Map.get(blocked, :reason),
+      quota_context: Map.get(blocked, :quota_context),
+      blocked_at: iso8601(Map.get(blocked, :blocked_at) || Map.get(blocked, :updated_at)),
+      last_event: Map.get(blocked, :last_codex_event),
+      last_message: summarize_message(Map.get(blocked, :last_codex_message)),
+      last_event_at: iso8601(Map.get(blocked, :last_codex_timestamp))
     }
   end
 
@@ -239,9 +247,9 @@ defmodule SymphonyPlusWeb.Presenter do
   defp recent_events_payload(entry) do
     [
       %{
-        at: iso8601(entry.last_codex_timestamp),
-        event: entry.last_codex_event,
-        message: summarize_message(entry.last_codex_message)
+        at: iso8601(Map.get(entry, :last_codex_timestamp)),
+        event: Map.get(entry, :last_codex_event),
+        message: summarize_message(Map.get(entry, :last_codex_message))
       }
     ]
     |> Enum.reject(&is_nil(&1.at))

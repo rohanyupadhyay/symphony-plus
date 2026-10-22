@@ -8,6 +8,28 @@ This directory contains the Elixir agent orchestration service that polls Linear
 - Install deps: `mix setup`.
 - Main quality gate: `make all` (format check, lint, coverage, dialyzer).
 
+## Install, validate, and run
+
+Run development commands from the `elixir/` directory in the Symphony Plus source checkout:
+
+```bash
+mise trust
+mise install
+mise exec -- mix setup
+mise exec -- mix build
+make all
+mise exec -- ./bin/symphony-plus "$PWD/WORKFLOW.md" --port 4000
+```
+
+The final command is the generic local launch path. The canonical source-install and generic-run
+details live in [`README.md`](README.md).
+
+For GitHub issue orchestration, do not use the generic launcher or start Symphony Plus from an issue
+workspace. Follow the [AI-agent installation runbook](docs/agent-installation.md), keep App
+credentials in the host-side profile, and start the service from the source checkout with
+`scripts/run-github`. Repository work then runs only in dedicated issue workspaces. This
+repository's concrete operator command is documented in [`.symphony-plus/README.md`](../.symphony-plus/README.md).
+
 
 ## Codebase-Specific Conventions
 

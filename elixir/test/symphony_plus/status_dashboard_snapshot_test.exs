@@ -102,24 +102,28 @@ defmodule SymphonyPlus.StatusDashboardSnapshotTest do
          ],
          retrying: [
            retry_entry(%{
+             issue_id: "issue-450",
              identifier: "MT-450",
              attempt: 4,
              due_in_ms: 1_250,
              error: "rate limit exhausted"
            }),
            retry_entry(%{
+             issue_id: "issue-451",
              identifier: "MT-451",
              attempt: 2,
              due_in_ms: 3_900,
              error: "retrying after API timeout with jitter"
            }),
            retry_entry(%{
+             issue_id: "issue-452",
              identifier: "MT-452",
              attempt: 6,
              due_in_ms: 8_100,
              error: "worker crashed\nrestarting cleanly"
            }),
            retry_entry(%{
+             issue_id: "issue-453",
              identifier: "MT-453",
              attempt: 1,
              due_in_ms: 11_000,
@@ -164,6 +168,49 @@ defmodule SymphonyPlus.StatusDashboardSnapshotTest do
 
     assert backoff_line =~ "error=error with newline"
     refute backoff_line =~ "\\n"
+  end
+
+  test "overlapping runtime records render only the highest-precedence blocked row" do
+    shared = %{issue_id: "issue-overlap", identifier: "MT-OVERLAP"}
+
+    snapshot_data =
+      {:ok,
+       %{
+         running: [
+           Map.merge(shared, %{
+             state: "running",
+             session_id: "thread-overlap",
+             codex_app_server_pid: "4242",
+             codex_total_tokens: 0,
+             runtime_seconds: 1,
+             turn_count: 1,
+             last_codex_event: :notification,
+             last_codex_message: turn_started_message()
+           })
+         ],
+         retrying: [Map.merge(shared, %{attempt: 2, due_in_ms: 1_000, error: "retry"})],
+         quota_waiting: [
+           Map.merge(shared, %{
+             status: :waiting,
+             harness: :codex,
+             pool_key: "default",
+             renewal_at: nil,
+             next_recheck_at: nil,
+             native_context_available: true,
+             last_outcome: "waiting",
+             updated_at: DateTime.utc_now()
+           })
+         ],
+         blocked: [Map.merge(shared, %{reason: "operator approval required"})],
+         codex_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0},
+         rate_limits: nil
+       }}
+
+    rendered = render_snapshot(snapshot_data, 0.0)
+
+    assert rendered =~ "Blocked"
+    assert Snapshot.strip_ansi(rendered) =~ "MT-OVERLAP operator approval required"
+    assert length(Regex.scan(~r/MT-OVERLAP/, rendered)) == 1
   end
 
   test "snapshot fixture: unlimited credits variant" do

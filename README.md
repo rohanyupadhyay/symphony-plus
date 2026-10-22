@@ -1,5 +1,9 @@
 # Symphony Plus
 
+The operations dashboard reports mutually exclusive running, retrying, quota-waiting, and blocked
+runtime states. “Quota-waiting” means automatic renewal or recheck remains possible; “blocked”
+means operator action is required. Counts and rows use the same classification.
+
 Symphony Plus extends [OpenAI Symphony](https://github.com/openai/symphony) with optional, durable
 GitHub comment-driven workflow control and support for orchestrating repository-local Spec Kit
 phases. It retains Symphony Plus's isolated, autonomous implementation model so teams can manage work
@@ -16,6 +20,32 @@ no longer be resumed, Symphony Plus blocks for operator action instead of silent
 
 > [!WARNING]
 > Symphony Plus is a low-key engineering preview for testing in trusted environments.
+
+## Quick start from source
+
+Prerequisites: [Git](https://git-scm.com/), [mise](https://mise.jdx.dev/), and the
+[Codex CLI](https://github.com/openai/codex). From the directory where you want the checkout:
+
+```bash
+git clone https://github.com/rohanyupadhyay/symphony-plus.git
+cd symphony-plus/elixir
+mise trust
+mise install
+mise exec -- mix setup
+mise exec -- mix build
+mise exec -- ./bin/symphony-plus "$PWD/WORKFLOW.md" --port 4000
+```
+
+The final command is the generic local launch path: it starts Symphony Plus from the source
+checkout with an explicit workflow path and exposes the dashboard at `http://localhost:4000`.
+See the [Elixir implementation guide](elixir/README.md) for the canonical source-install and
+generic-run details.
+
+GitHub issue orchestration uses a private GitHub App and the credential-scrubbing
+`elixir/scripts/run-github` launcher instead of the generic command above. Follow the
+[AI-agent installation runbook](elixir/docs/agent-installation.md) for complete onboarding, or the
+[self-hosting operator guide](.symphony-plus/README.md) for this repository's concrete launch command.
+App credentials stay on the host, while issue work runs only in dedicated issue workspaces.
 
 ## Running Symphony Plus
 

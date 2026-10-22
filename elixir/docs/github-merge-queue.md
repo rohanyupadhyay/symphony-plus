@@ -27,7 +27,8 @@ merge only if all evidence remains fresh and includes the candidate SHA as the e
 ## Outcomes and recovery
 
 - A merge conflict or deterministic check failure records `merge_update_required`, lets
-  independent successors advance, and waits for a newly auto-reviewed head generation.
+  independent successors advance, and automatically dispatches the originating issue for repair
+  and review. A repaired head receives a fresh review before queue admission; no human retry is needed.
 - Rate limits, timeouts, and check infrastructure failures retain the entry and retry with bounded
   exponential backoff. Unknown mergeability or ambiguous merge responses produce an operator hold.
 - Closure, label removal, or cancellation makes the generation ineligible. A human change request

@@ -86,6 +86,20 @@ defmodule SymphonyPlus.GitHub.MergeQueueTest do
     assert :ok = Backend.admission_preflight(%{eligible: true, head_sha: @sha_b}, queued)
   end
 
+  test "branch update waits for GitHub to publish the new pull request head" do
+    {:ok, counter} = Agent.start_link(fn -> 0 end)
+
+    fetch = fn ->
+      call = Agent.get_and_update(counter, fn value -> {value, value + 1} end)
+      {:ok, %{"head" => %{"sha" => if(call == 0, do: @sha_a, else: @sha_b)}}}
+    end
+
+    assert {:ok, @sha_b} = Backend.await_updated_head(@sha_a, fetch, 2)
+
+    assert {:error, :branch_update_pending} =
+             Backend.await_updated_head(@sha_a, fn -> {:ok, %{"head" => %{"sha" => @sha_a}}} end, 1)
+  end
+
   test "merged queue entry closes its issue before recording completion" do
     queued = %{entry(2, @sha_b, 1) | originating_issue: 13}
 

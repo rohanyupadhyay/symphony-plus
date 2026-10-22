@@ -225,7 +225,9 @@ Inspect the complete diff, conversation, formal reviews, inline comments, merge 
 current-head checks. If any human review remains `CHANGES_REQUESTED`, make no mutation,
 post no checkpoint, and end the turn; the host suppresses further automatic review, branch updates,
 and merge work until that review is dismissed, then resumes automatically. Otherwise reproduce and
-fix in-scope automatic-review findings, distinguish PR-caused failures from external blockers, run
+fix in-scope automatic-review findings. If the PR conflicts with its target branch, merge the latest
+target into the issue branch and resolve the conflicts while preserving both changes. A changed
+head or merge conflict is repair work, not a reason to wait for human input. Distinguish PR-caused failures from external blockers, run
 targeted tests and `make -C elixir all`, push through `github_git_push`, and update the same PR.
 Record findings, corrections, check status, validation, and omissions.
 
@@ -234,7 +236,8 @@ the new exact head and end the turn so that revision receives its own complete a
 After a successful no-mutation automatic review with no findings remaining, re-read the pull request
 to obtain its exact current head, head branch, base branch, repository, and any explicitly declared
 same-repository prerequisite PR numbers. The current head MUST equal the `automatic_review`
-trigger's `head_sha`. Call `github_workflow_checkpoint` with
+trigger's `head_sha`. If it advanced during review, record a fresh `review_pending` checkpoint for
+the current head and end the turn. Call `github_workflow_checkpoint` with
 `state: merge_queued`, `phase: merge_queue`, the PR number, branch, exact head SHA, repository,
 target branch, and normalized `dependencies` (or `[]`). Human approval is neither requested nor
 required. The host supplies the queue order from the review trigger. End the turn after the durable

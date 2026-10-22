@@ -39,6 +39,11 @@ If the native thread is missing, mismatched, or unavailable, the record becomes
 operator must restore access to the original thread or explicitly revise/cancel the workflow;
 automatic reconstructed continuation is intentionally unsupported.
 
+Status surfaces classify `operator_blocked` as **blocked**, not as a recoverable quota wait, while
+retaining safe harness, pool, continuation-availability, timing, and outcome fields for diagnosis.
+Recoverable records use **quota-waiting** and expose `Renewal time unavailable` when neither a
+renewal nor recheck time is known.
+
 ## Operations
 
 Terminal, HTTP, and LiveView status surfaces report quota status, pool, renewal or recheck time,

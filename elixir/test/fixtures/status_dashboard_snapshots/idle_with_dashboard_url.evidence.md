@@ -17,6 +17,10 @@
 ├─ Backoff queue
 │
 │  No queued retries
+├─ Blocked
+│
+│  No blocked issues
+│
 ├─ Quota waits
 │
 │  No quota waits

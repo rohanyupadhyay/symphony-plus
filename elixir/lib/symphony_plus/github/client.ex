@@ -683,15 +683,16 @@ defmodule SymphonyPlus.GitHub.Client do
   end
 
   defp maybe_fetch_review_context(%{checkpoint: %{"state" => state, "pr_number" => pr_number}}, settings, request_fun)
-       when state in ["review_pending", "awaiting_review"] do
+       when state in ["review_pending", "awaiting_review", "merge_update_required"] do
     fetch_review_context(pr_number, settings, request_fun)
   end
 
   defp maybe_fetch_review_context(
-         %{checkpoint: %{"state" => "blocked", "phase" => "merge_queue", "pr_number" => pr_number}, trigger: %{"command" => "retry"}},
+         %{checkpoint: %{"state" => state, "phase" => "merge_queue", "pr_number" => pr_number}, trigger: %{"command" => "retry"}},
          settings,
          request_fun
-       ) do
+       )
+       when state in ["blocked", "merge_blocked"] do
     fetch_review_context(pr_number, settings, request_fun)
   end
 
