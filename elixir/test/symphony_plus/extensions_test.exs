@@ -141,6 +141,13 @@ defmodule SymphonyPlus.ExtensionsTest do
     assert {:ok, _pid} = Supervisor.restart_child(SymphonyPlus.Supervisor, WorkflowStore)
   end
 
+  test "workflow current uses the calling project's explicit context" do
+    workflow = %{config: %{}, prompt: "Project prompt", prompt_template: "Project prompt"}
+    :ok = Config.install_project_context(%{workflow: workflow, settings: nil, workflow_path: "/tmp/WORKFLOW.md"})
+
+    assert {:ok, ^workflow} = Workflow.current()
+  end
+
   test "workflow store init stops on missing workflow file" do
     missing_path = Path.join(Path.dirname(Workflow.workflow_file_path()), "MISSING_WORKFLOW.md")
     Workflow.set_workflow_file_path(missing_path)

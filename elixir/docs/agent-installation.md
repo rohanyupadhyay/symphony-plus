@@ -127,8 +127,10 @@ the local-skill verification above afterward.
 
 ## 3. Install or update Symphony Plus once
 
-Keep Symphony Plus outside target repositories. One installation may operate multiple repositories
-with separate processes, workflow files, ports, profiles, and workspace roots.
+Keep Symphony Plus outside target repositories. Start one installation once and register each
+repository-owned workflow through its dashboard or `projects add` CLI command. The service uses one
+port and an ignored installation-local registry while retaining separate workflow policy and
+workspace roots for every project.
 
 If `SYMPHONY_PLUS_DIR` does not exist:
 

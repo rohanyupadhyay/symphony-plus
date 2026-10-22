@@ -35,12 +35,15 @@ defmodule SymphonyPlus.Workflow do
 
   @spec current() :: {:ok, loaded_workflow()} | {:error, term()}
   def current do
-    case Process.whereis(WorkflowStore) do
-      pid when is_pid(pid) ->
-        WorkflowStore.current()
+    case SymphonyPlus.Config.current_workflow() do
+      {:ok, workflow} ->
+        {:ok, workflow}
 
-      _ ->
-        load()
+      :none ->
+        case Process.whereis(WorkflowStore) do
+          pid when is_pid(pid) -> WorkflowStore.current()
+          _ -> load()
+        end
     end
   end
 
