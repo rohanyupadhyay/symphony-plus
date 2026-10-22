@@ -68,7 +68,10 @@ exact structure and fill every field; use `none` or `not run` instead of omittin
   - implement: <completed | not run | skipped: reason; run count; outcome>
   - converge: <completed | not run | skipped: reason; run count; outcome>
 - Current checkpoint: <waiting state, phase, and approval gate when applicable>
-- Questions asked: <count by specify, clarify, and checklist; explain every zero>
+- Questions asked this run: <count by specify, clarify, and checklist; explain every zero>
+- Questions asked total: <cumulative distinct questions by specify, clarify, and checklist>
+- Checklist choices: <focus, depth, audience, and the source of each choice; or not run>
+- Answers retained: <resolved question, selected value, and authorized comment reference; or none>
 - Assumptions adopted: <material defaults inferred without an answer, or none>
 - Analyze cycles: <count, findings, and remediations, or not run>
 - Convergence cycles: <count and tasks appended, or not run>
@@ -81,6 +84,17 @@ as `completed`, `not run`, or `skipped: <reason>`, including its cumulative run 
 rather than collapsing phases into broad labels such as “planning” or “implementation.” If a phase
 asks zero questions, record `zero questions` and the concrete reason. Include the same report in `awaiting_input`, `blocked`,
 `awaiting_approval`, `review_pending`, `merge_queued`, `/symphony status`, and final merged-PR comments.
+
+Reconstruct question totals and resolved answers from authorized comments, artifacts, and prior
+checkpoints on every resume. A retry, status request, or repeated rendering adds no new question
+and never resets the issue total. Retain the selected values and their sources until an authorized
+revision changes them; do not replace an explicit answer with a newly inferred default.
+
+For `awaiting_input`, put the complete question batch only in the checkpoint's `prompt` field.
+The host renders that prompt before the phase report. Keep the summary to the report, decisions,
+and evidence; publish the checkpoint once rather than also posting the questions with `github_api`.
+Use descriptive option names such as `block` and `reconstruct`, mark the recommendation, and
+make example replies select the recommended values. Explain how each choice changes the result.
 
 Advance exactly one state machine:
 
@@ -131,14 +145,26 @@ Advance exactly one state machine:
 When a Spec Kit skill needs input, do not invoke an in-process input request. Post an
 `awaiting_input` checkpoint and end the turn. `specify` may ask one batch of up to three questions.
 `clarify` asks one at a time, up to five, but may ask zero when its structured scan finds no
-material ambiguity; report that outcome and its reason. Before `checklist`, determine whether
-authorized issue input already specifies checklist focus, depth, and audience. If any dimension is
-missing, `checklist` must ask one initial batch of up to three questions covering the missing
-dimensions; GitHub checkpoints make interaction possible, so do not silently apply its fallback
-defaults. It may ask one follow-up batch of up to two only when necessary. If all three dimensions
-were explicit, report zero questions and cite the controlling issue input. Treat `/symphony
-approve implementation` as permission to proceed past intentionally unchecked reviewer-owned
-checklists.
+material ambiguity; report that outcome and its reason.
+
+Before `checklist`, resolve checklist focus, depth, and audience from explicit authorized input
+and previously recorded choices first. For missing choices, use these repository defaults:
+
+- Focus: the two highest-risk requirement areas in the issue and approved specification/plan.
+- Depth: standard review; use lightweight coverage for low-risk documentation changes or formal
+  coverage for high-risk lifecycle, concurrency, or data-preservation changes, with a recorded reason.
+- Audience: PR reviewer.
+
+Pass the resolved choices explicitly to `speckit-checklist`, which skips intent questions already
+answered by its arguments. Record each choice and its source in the phase report and continue
+without an input checkpoint solely to configure this internal review artifact.
+
+Ask only when unresolved ambiguity materially affects feature scope, observable behavior,
+acceptance criteria, compatibility, data preservation, or policy. Route such questions to the
+owning specify/clarify phase and retain its question limits and approval gates. Missing checklist
+preferences alone are not such an ambiguity. Report zero questions when defaults or retained
+answers suffice, including the reason. Treat `/symphony approve implementation` as permission to
+proceed past intentionally unchecked reviewer-owned checklists.
 
 Use `blocked` only with a concrete recovery prompt. `/symphony status` reports current artifacts
 and validation and then restores the same checkpoint. `/symphony cancel` removes the `symphony`

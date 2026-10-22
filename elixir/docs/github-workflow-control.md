@@ -118,11 +118,25 @@ and matching check context. A `merge_update_required` queue outcome also resumes
 and repair without a command, including resolving target-branch conflicts and PR-caused check failures.
 
 For Spec Kit workflows, each readable checkpoint summary is also the operator's audit trail. It
-must name every phase actually invoked, the current checkpoint and next phase, question counts and
-zero-question reasons, material assumptions, analyze and convergence cycle counts, validation, and
-omissions. Phases must be reported separately; a broad label such as “planning” must not hide
+must name every phase actually invoked, the current checkpoint and next phase, question counts for
+this run and the issue total, zero-question reasons, retained answers, checklist choices and their
+sources, material assumptions, analyze and convergence cycle counts, validation, and omissions.
+Question totals count distinct questions; retries and status reports do not reset them. Resolved
+answers retain their authorized comment references until an authorized revision changes them.
+Phases must be reported separately; a broad label such as “planning” must not hide
 whether `clarify`, `checklist`, or `analyze` ran. The reusable template contains the canonical
 `Spec Kit progress` format.
+
+The workflow supplies checklist focus, depth, and audience explicitly: infer the highest-risk
+requirements, use standard depth adjusted to the change's risk, and address PR reviewers. Explicit
+authorized choices take precedence over defaults and persist across retries. Missing checklist
+preferences alone do not require input; questions resolve consequential uncertainty about scope,
+behavior, acceptance criteria, compatibility, data preservation, or policy.
+
+For `awaiting_input`, the host renders the checkpoint's `prompt` before its audit summary. Put the
+question batch only in `prompt`, use descriptive option names and examples matching the recommended
+choices, and post the checkpoint once. The summary records decisions and evidence without repeating
+the prompt. Specification, plan, and implementation approval gates still apply.
 
 Supported commands are:
 
