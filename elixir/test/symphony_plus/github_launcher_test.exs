@@ -146,7 +146,10 @@ defmodule SymphonyPlus.GitHubLauncherTest do
     for field <- [
           "Phases",
           "Current checkpoint",
-          "Questions asked",
+          "Questions asked this run",
+          "Questions asked total",
+          "Checklist choices",
+          "Answers retained",
           "Assumptions adopted",
           "Analyze cycles",
           "Convergence cycles",
@@ -158,7 +161,7 @@ defmodule SymphonyPlus.GitHubLauncherTest do
 
     assert normalized =~ "zero questions"
     assert normalized =~ "checklist focus, depth, and audience"
-    assert normalized =~ "must ask one initial batch"
+    refute normalized =~ "must ask one initial batch"
     assert normalized =~ "Never omit a phase from the ledger"
     assert normalized =~ "including its cumulative run count and outcome"
 

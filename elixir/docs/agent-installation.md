@@ -205,10 +205,14 @@ Retain these security and lifecycle requirements:
 - `danger-full-access` only inside the dedicated issue workspace tree;
 - host-side `github_git_push`, never direct `git push` by the issue agent;
 - spec, plan, and implementation approval checkpoints;
-- structured checkpoint summaries that name every Spec Kit phase, question count, adopted
-  assumption, remediation/convergence cycle, validation result, and next phase;
-- an initial checklist focus/depth/audience question batch when authorized issue input does not
-  already define those dimensions;
+- structured checkpoint summaries that name every Spec Kit phase, question counts for the current
+  run and issue total, retained answers, checklist choices and their sources, adopted assumptions,
+  remediation/convergence cycles, validation results, and next phase;
+- checklist defaults: infer the highest-risk requirements, use standard depth adjusted to risk,
+  and address PR reviewers; pass these choices explicitly to the checklist skill, preserving
+  authorized overrides across retries;
+- input checkpoints only for consequential requirements or policy ambiguity, with questions in
+  the prompt before the phase report and no duplicate question comment;
 - bounded analyze and implement/converge remediation loops;
 - review feedback routing back to the owning Spec Kit phase;
 - no `speckit-taskstoissues`;

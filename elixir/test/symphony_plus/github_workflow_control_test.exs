@@ -175,6 +175,25 @@ defmodule SymphonyPlus.GitHub.WorkflowControlTest do
            }) == ["OWNER", ""]
   end
 
+  test "input checkpoints put the question before the audit report and retain durable state" do
+    checkpoint = %{
+      "state" => "awaiting_input",
+      "phase" => "specify",
+      "prompt" => "If native resume is unavailable, choose `block` (recommended) or `reconstruct`.",
+      "summary" => "### Spec Kit progress\n- Questions asked this run: specify 1\n- Questions asked total: specify 1"
+    }
+
+    body = WorkflowControl.render_comment(checkpoint)
+    [question, report, marker] = String.split(body, "\n\n")
+
+    assert question == checkpoint["prompt"]
+    assert report == checkpoint["summary"]
+    assert marker =~ "<!-- symphony-plus-control:v1:"
+    assert length(:binary.matches(body, checkpoint["prompt"])) == 1
+    assert {:ok, decoded} = WorkflowControl.decode_checkpoint(body)
+    assert decoded == Map.put(checkpoint, "version", 1)
+  end
+
   test "renders and decodes a versioned checkpoint without exposing marker data as prose" do
     checkpoint = %{
       "state" => "awaiting_approval",

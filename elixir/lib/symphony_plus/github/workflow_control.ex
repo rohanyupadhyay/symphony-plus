@@ -70,11 +70,14 @@ defmodule SymphonyPlus.GitHub.WorkflowControl do
     normalized = Map.put(checkpoint, "version", 1)
     marker = normalized |> Jason.encode!() |> Base.url_encode64(padding: false)
 
-    [
+    sections = [
       Map.get(normalized, "summary", "Symphony Plus is waiting."),
-      checkpoint_guidance(normalized),
-      "<!-- symphony-plus-control:v1:#{marker} -->"
+      checkpoint_guidance(normalized)
     ]
+
+    sections = if normalized["state"] == "awaiting_input", do: Enum.reverse(sections), else: sections
+
+    (sections ++ ["<!-- symphony-plus-control:v1:#{marker} -->"])
     |> Enum.reject(&(&1 in [nil, ""]))
     |> Enum.join("\n\n")
   end
