@@ -8,6 +8,12 @@
 
 **Input**: User description: "Start Symphony Plus once for all configured repositories, allow startup with no repositories, add repositories from the UI or CLI by selecting a workflow file, and persist the local repository list in an uncommitted cache location."
 
+## Clarifications
+
+### Session 2026-10-22
+
+- Q: When a registered project's workflow file is missing or invalid at startup, how should Symphony Plus preserve that registration? → A: Retain and retry: keep the registration, mark only that project unavailable with an actionable reason, and automatically activate it after the workflow becomes valid again.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Run One Service for All Projects (Priority: P1)
@@ -72,6 +78,7 @@ As an operator, I want registered projects to survive service restarts without c
 1. **Given** one or more registered projects, **When** the service restarts, **Then** it restores the same registrations before beginning normal project operation.
 2. **Given** a project registration change, **When** persistence succeeds, **Then** no tracked repository file is modified.
 3. **Given** registry persistence cannot be completed, **When** an add or remove operation is attempted, **Then** the operation fails without exposing a partially updated durable registry and the operator receives an actionable error.
+4. **Given** a registered project's workflow file is missing or invalid at startup, **When** the service restores the registry, **Then** it retains the registration, marks only that project unavailable with an actionable reason, and automatically activates it after the workflow becomes valid again.
 
 ### Edge Cases
 
@@ -110,6 +117,7 @@ As an operator, I want registered projects to survive service restarts without c
 - **FR-018**: Project operations and diagnostics MUST avoid exposing workflow contents, credentials, private keys, or other secrets.
 - **FR-019**: Existing operators who provide a workflow path at startup MUST receive a documented migration path into the project registry rather than silently creating divergent service modes.
 - **FR-020**: Removing or disabling all projects MUST return the running service to the same healthy empty state as a fresh installation.
+- **FR-021**: If a registered workflow file is missing or invalid at startup, the service MUST retain the registration, mark only that project unavailable with an actionable reason, and automatically activate it after the workflow becomes valid again without requiring re-registration or restart.
 
 ### Key Entities
 
