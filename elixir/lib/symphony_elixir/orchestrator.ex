@@ -7,7 +7,7 @@ defmodule SymphonyElixir.Orchestrator do
   require Logger
   import Bitwise, only: [<<<: 2]
 
-  alias SymphonyElixir.{AgentRunner, Config, QuotaWaitStore, StatusDashboard, Tracker, Workspace}
+  alias SymphonyElixir.{AgentRunner, Config, QuotaWaitStore, RuntimeStatus, StatusDashboard, Tracker, Workspace}
   alias SymphonyElixir.Harness.Quota.{ContinuationReference, QuotaSignal}
   alias SymphonyElixir.Tracker.Issue
 
@@ -1836,20 +1836,22 @@ defmodule SymphonyElixir.Orchestrator do
         }
       end)
 
-    {:reply,
-     %{
-       running: running,
-       retrying: retrying,
-       blocked: blocked,
-       quota_waiting: quota_waiting,
-       codex_totals: state.codex_totals,
-       rate_limits: Map.get(state, :codex_rate_limits),
-       polling: %{
-         checking?: state.poll_check_in_progress == true,
-         next_poll_in_ms: next_poll_in_ms(state.next_poll_due_at_ms, now_ms),
-         poll_interval_ms: state.poll_interval_ms
-       }
-     }, state}
+    snapshot =
+      RuntimeStatus.project(%{
+        running: running,
+        retrying: retrying,
+        blocked: blocked,
+        quota_waiting: quota_waiting,
+        codex_totals: state.codex_totals,
+        rate_limits: Map.get(state, :codex_rate_limits),
+        polling: %{
+          checking?: state.poll_check_in_progress == true,
+          next_poll_in_ms: next_poll_in_ms(state.next_poll_due_at_ms, now_ms),
+          poll_interval_ms: state.poll_interval_ms
+        }
+      })
+
+    {:reply, snapshot, state}
   end
 
   def handle_call(:request_refresh, _from, state) do
