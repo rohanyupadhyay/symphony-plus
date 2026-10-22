@@ -15,7 +15,7 @@ tracker:
         - MEMBER
         - COLLABORATOR
   required_labels:
-    - symphony
+    - symphony-plus
   active_states:
     - open
   terminal_states:
@@ -149,7 +149,7 @@ Interpret only the normalized trigger in `issue.native_ref.workflow_control`:
 - `retry` verifies that the blocker is resolved and retries the blocked phase.
 - `status` posts one concise comment with the phase, branch, artifacts, latest validation, and
   blocker, then recreates the same checkpoint.
-- `cancel` posts a cancellation comment and removes the `symphony` label with `github_api`.
+- `cancel` posts a cancellation comment and removes the `symphony-plus` label with `github_api`.
 - A merged PR posts final validation and closes the issue.
 - A PR closed without merge asks whether to revise, replace, or cancel and checkpoints
   `awaiting_input`.
@@ -218,7 +218,7 @@ against `main` using the repository template and `Tracks #{{ issue.id }}` rather
 auto-closing keyword. Add validation results, dependency advisory output, and omissions to the PR
 body. Post a concise issue comment with the PR URL, then checkpoint `review_pending`, phase
 `review`, with its `pr_number`, the issue branch, and the exact pushed `head_sha`; the host validates
-managed same-repository provenance and applies the `symphony` label before recording the checkpoint.
+managed same-repository provenance and applies the configured label before recording the checkpoint.
 
 An `automatic_review` trigger starts one review-and-repair cycle in this same issue workspace.
 Inspect the complete diff, conversation, formal reviews, inline comments, merge state, and
@@ -236,8 +236,8 @@ to obtain its exact current head, head branch, base branch, repository, and any 
 same-repository prerequisite PR numbers. The current head MUST equal the `automatic_review`
 trigger's `head_sha`. Call `github_workflow_checkpoint` with
 `state: merge_queued`, `phase: merge_queue`, the PR number, branch, exact head SHA, repository,
-target branch, the `automatic_review` trigger's `admission_sequence`, and normalized `dependencies`
-(or `[]`). Human approval is neither requested nor required. End the turn after the durable
+target branch, and normalized `dependencies` (or `[]`). Human approval is neither requested nor
+required. The host supplies the queue order from the review trigger. End the turn after the durable
 checkpoint is recorded; the host-owned queue will revalidate repository policy and the exact
 candidate before merging. Use `blocked` with an exact recovery action only when required non-review
 evidence or an external dependency prevents completion.

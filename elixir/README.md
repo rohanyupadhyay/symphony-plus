@@ -67,14 +67,17 @@ fresh thread as an automatic fallback. See [Quota waits and native resume](docs/
 
 ## Prerequisites
 
-We recommend using [mise](https://mise.jdx.dev/) to manage Elixir/Erlang versions.
+Source installation requires Git, the Codex CLI, and
+[mise](https://mise.jdx.dev/) to install the repository's supported Elixir/Erlang versions.
+Run these commands from the `elixir/` directory of a Symphony Plus source checkout unless a
+command explicitly changes directory.
 
 ```bash
 mise install
 mise exec -- elixir --version
 ```
 
-## Run
+## Install and run from source
 
 ```bash
 git clone https://github.com/rohanyupadhyay/symphony-plus
@@ -83,8 +86,18 @@ mise trust
 mise install
 mise exec -- mix setup
 mise exec -- mix build
-mise exec -- ./bin/symphony ./WORKFLOW.md
+mise exec -- ./bin/symphony "$PWD/WORKFLOW.md" --port 4000
 ```
+
+`mix build` generates `bin/symphony`. The final command is the generic local execution mode: it
+uses the checked-in workflow at an explicit absolute path and exposes the dashboard at
+`http://localhost:4000`. Replace the workflow argument with another explicit path when operating a
+different repository-owned workflow.
+
+Do not use this generic command as an incomplete substitute for GitHub issue orchestration.
+GitHub mode requires an operator-owned App profile and the credential-scrubbing
+`scripts/run-github` launcher described under the [GitHub Issues adapter](#github-issues-adapter)
+and the [AI-agent installation runbook](docs/agent-installation.md).
 
 ## Burrito releases
 
