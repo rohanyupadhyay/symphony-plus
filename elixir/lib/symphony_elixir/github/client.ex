@@ -683,7 +683,7 @@ defmodule SymphonyElixir.GitHub.Client do
   end
 
   defp maybe_fetch_review_context(%{checkpoint: %{"state" => state, "pr_number" => pr_number}}, settings, request_fun)
-       when state in ["review_pending", "awaiting_review"] do
+       when state in ["review_pending", "awaiting_review", "merge_update_required"] do
     fetch_review_context(pr_number, settings, request_fun)
   end
 

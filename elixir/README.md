@@ -297,6 +297,8 @@ codex:
   with complete current-head review/check context. Successful automatic review admits the managed
   PR to the merge queue without human approval; a human change request suspends all mutations until
   dismissal, then processing resumes automatically.
+  New commits on the managed branch trigger review of the current head. Merge conflicts and
+  PR-caused check failures automatically return to the issue agent for repair and review.
   See [the workflow-control guide](docs/github-workflow-control.md)
   and the [reusable Spec Kit template](examples/github-speckit-WORKFLOW.md).
 

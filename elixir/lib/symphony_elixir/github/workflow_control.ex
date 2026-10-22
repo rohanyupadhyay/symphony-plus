@@ -335,13 +335,13 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
       "merge_blocked" ->
         blocked_trigger(checkpoint, checkpoint_comment, later_comments, review_context, required_labels)
 
-      "review_pending" ->
+      state when state in ["review_pending", "merge_update_required"] ->
         automatic_review_trigger(checkpoint, checkpoint_comment, review_context, required_labels)
 
       "awaiting_review" ->
         review_trigger(checkpoint, later_comments, review_context, authorized)
 
-      state when state in ["merge_queued", "merge_validating", "merge_update_required", "merge_merged"] ->
+      state when state in ["merge_queued", "merge_validating", "merge_merged"] ->
         nil
     end
   end
@@ -351,28 +351,22 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
 
     if checkpoint["phase"] == "merge_queue" and command != nil and command["command"] == "retry" and
          Map.has_key?(review_context, "pull_request") do
-      review_checkpoint = retry_review_checkpoint(checkpoint, review_context)
-      automatic_review_trigger(review_checkpoint, checkpoint_comment, review_context, required_labels)
+      automatic_review_trigger(checkpoint, checkpoint_comment, review_context, required_labels)
     else
       command
     end
   end
 
-  defp retry_review_checkpoint(%{"state" => "merge_blocked"} = checkpoint, context) do
-    pull_request = context["pull_request"]
-
-    checkpoint
-    |> Map.put("branch", get_in(pull_request, ["head", "ref"]))
-    |> Map.put("head_sha", get_in(pull_request, ["head", "sha"]))
-  end
-
-  defp retry_review_checkpoint(checkpoint, _context), do: checkpoint
-
   defp automatic_review_trigger(checkpoint, checkpoint_comment, context, required_labels) do
     pull_request = Map.get(context, "pull_request", %{})
 
-    if valid_automatic_review?(checkpoint, pull_request, context, required_labels) do
-      Map.take(checkpoint, ~w(pr_number branch head_sha))
+    review_checkpoint =
+      checkpoint
+      |> Map.put_new("branch", get_in(pull_request, ["head", "ref"]))
+      |> Map.put("head_sha", get_in(pull_request, ["head", "sha"]))
+
+    if valid_automatic_review?(review_checkpoint, pull_request, context, required_labels) do
+      Map.take(review_checkpoint, ~w(pr_number branch head_sha))
       |> Map.put("kind", "automatic_review")
       |> Map.put("admission_sequence", event_id(checkpoint_comment))
     end
@@ -398,7 +392,8 @@ defmodule SymphonyElixir.GitHub.WorkflowControl do
     do: pull_request["state"] == "open" and pull_request["merged"] != true
 
   defp matching_review_head?(checkpoint, pull_request, context) do
-    get_in(pull_request, ["head", "ref"]) == checkpoint["branch"] and
+    present?(checkpoint["branch"]) and present?(checkpoint["head_sha"]) and
+      get_in(pull_request, ["head", "ref"]) == checkpoint["branch"] and
       get_in(pull_request, ["head", "sha"]) == checkpoint["head_sha"] and
       get_in(context, ["checks", "head_sha"]) == checkpoint["head_sha"]
   end
