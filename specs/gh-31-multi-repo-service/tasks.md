@@ -18,9 +18,9 @@
 
 **Purpose**: Establish installation-local storage configuration and reusable test fixtures.
 
-- [ ] T001 Add configurable project data-root accessors and registry-path defaults under ignored `elixir/tmp/symphony-plus/` per FR-004 and FR-019 in `elixir/lib/symphony_plus/config.ex` and `elixir/lib/symphony_plus/config/schema.ex`
-- [ ] T002 [P] Add isolated workflow, registry, and multi-project fixture helpers without secret-bearing content in `elixir/test/support/test_support.exs` and `elixir/test/fixtures/`
-- [ ] T003 [P] Add a regression assertion that the default registry location remains ignored and no machine-local registry is tracked in `elixir/test/symphony_plus/extensions_test.exs`
+- [X] T001 Add configurable project data-root accessors and registry-path defaults under ignored `elixir/tmp/symphony-plus/` per FR-004 and FR-019 in `elixir/lib/symphony_plus/config.ex` and `elixir/lib/symphony_plus/config/schema.ex`
+- [X] T002 [P] Add isolated workflow, registry, and multi-project fixture helpers without secret-bearing content in `elixir/test/support/test_support.exs` and `elixir/test/fixtures/`
+- [X] T003 [P] Add a regression assertion that the default registry location remains ignored and no machine-local registry is tracked in `elixir/test/symphony_plus/extensions_test.exs`
 
 ---
 
@@ -30,13 +30,13 @@
 
 **⚠️ CRITICAL**: No user-story implementation begins until this phase passes focused tests.
 
-- [ ] T004 Write failing registry tests for versioned minimal records (`id` unique, `workflow_path` canonical absolute and unique, no workflow content/credentials), malformed/unknown envelopes, atomic interrupted writes, and idempotent concurrent mutations per FR-003–FR-005 and FR-014–FR-015 in `elixir/test/symphony_plus/project_registry_test.exs`
-- [ ] T005 Implement the sole-authority `SymphonyPlus.ProjectRegistry` GenServer with versioned JSON loading, canonical identity, atomic same-directory temp-file sync/rename, serialized idempotent add/remove, and public `@spec`s in `elixir/lib/symphony_plus/project_registry.ex`
-- [ ] T006 [P] Write failing runtime-supervision tests for states `unavailable | starting | active | stopping`, pairwise workspace-root validation, bounded non-secret reasons, and child failure isolation per FR-006–FR-007, FR-016, and FR-018 in `elixir/test/symphony_plus/project_runtime_test.exs`
-- [ ] T007 Implement `SymphonyPlus.ProjectRuntimeSupervisor` and `SymphonyPlus.ProjectRuntime`, passing project identity and loaded workflow/config explicitly and retaining unavailable registrations for retry in `elixir/lib/symphony_plus/project_runtime_supervisor.ex` and `elixir/lib/symphony_plus/project_runtime.ex`
-- [ ] T008 Refactor workflow loading and typed configuration to accept explicit project context instead of a mutable global workflow path while preserving `SymphonyPlus.Config` as the configuration boundary in `elixir/lib/symphony_plus/workflow_store.ex`, `elixir/lib/symphony_plus/workflow.ex`, and `elixir/lib/symphony_plus/config.ex`
-- [ ] T009 Update OTP application startup so `ProjectRegistry` and `ProjectRuntimeSupervisor` own registration/runtime lifecycle before status and HTTP children in `elixir/lib/symphony_plus.ex`
-- [ ] T010 Run focused foundational tests `mix test test/symphony_plus/project_registry_test.exs test/symphony_plus/project_runtime_test.exs test/symphony_plus/workspace_and_config_test.exs` from `elixir/` and retain the passing evidence in the implementation handoff
+- [X] T004 Write failing registry tests for versioned minimal records (`id` unique, `workflow_path` canonical absolute and unique, no workflow content/credentials), malformed/unknown envelopes, atomic interrupted writes, and idempotent concurrent mutations per FR-003–FR-005 and FR-014–FR-015 in `elixir/test/symphony_plus/project_registry_test.exs`
+- [X] T005 Implement the sole-authority `SymphonyPlus.ProjectRegistry` GenServer with versioned JSON loading, canonical identity, atomic same-directory temp-file sync/rename, serialized idempotent add/remove, and public `@spec`s in `elixir/lib/symphony_plus/project_registry.ex`
+- [X] T006 [P] Write failing runtime-supervision tests for states `unavailable | starting | active | stopping`, pairwise workspace-root validation, bounded non-secret reasons, and child failure isolation per FR-006–FR-007, FR-016, and FR-018 in `elixir/test/symphony_plus/project_runtime_test.exs`
+- [X] T007 Implement `SymphonyPlus.ProjectRuntimeSupervisor` and `SymphonyPlus.ProjectRuntime`, passing project identity and loaded workflow/config explicitly and retaining unavailable registrations for retry in `elixir/lib/symphony_plus/project_runtime_supervisor.ex` and `elixir/lib/symphony_plus/project_runtime.ex`
+- [X] T008 Refactor workflow loading and typed configuration to accept explicit project context instead of a mutable global workflow path while preserving `SymphonyPlus.Config` as the configuration boundary in `elixir/lib/symphony_plus/workflow_store.ex`, `elixir/lib/symphony_plus/workflow.ex`, and `elixir/lib/symphony_plus/config.ex`
+- [X] T009 Update OTP application startup so `ProjectRegistry` and `ProjectRuntimeSupervisor` own registration/runtime lifecycle before status and HTTP children in `elixir/lib/symphony_plus.ex`
+- [X] T010 Run focused foundational tests `mix test test/symphony_plus/project_registry_test.exs test/symphony_plus/project_runtime_test.exs test/symphony_plus/workspace_and_config_test.exs` from `elixir/` and retain the passing evidence in the implementation handoff
 
 **Checkpoint**: Durable registry mutations and isolated runtime children are ready for story work.
 
@@ -50,16 +50,16 @@
 
 ### Tests for User Story 1
 
-- [ ] T011 [P] [US1] Write failing real-OTP tests for two active project orchestrators, aggregate concurrency, failure isolation, project-scoped reload/retry state, and workspace separation per FR-002, FR-006–FR-007, FR-016, and SC-003 in `elixir/test/symphony_plus/project_runtime_test.exs`
-- [ ] T012 [P] [US1] Write failing projection tests requiring `project_id` on every issue/failure row and consistent aggregate counts across runtime status, API, and dashboard per FR-017 in `elixir/test/symphony_plus/orchestrator_status_test.exs` and `elixir/test/symphony_plus/runtime_status_test.exs`
+- [X] T011 [P] [US1] Write failing real-OTP tests for two active project orchestrators, aggregate concurrency, failure isolation, project-scoped reload/retry state, and workspace separation per FR-002, FR-006–FR-007, FR-016, and SC-003 in `elixir/test/symphony_plus/project_runtime_test.exs`
+- [X] T012 [P] [US1] Write failing projection tests requiring `project_id` on every issue/failure row and consistent aggregate counts across runtime status, API, and dashboard per FR-017 in `elixir/test/symphony_plus/orchestrator_status_test.exs` and `elixir/test/symphony_plus/runtime_status_test.exs`
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] Parameterize orchestrator, tracker, retry/quota/checkpoint, workspace, and agent-runner ownership by explicit project runtime context without weakening per-issue isolation in `elixir/lib/symphony_plus/orchestrator.ex`, `elixir/lib/symphony_plus/agent_runtime_supervisor.ex`, and `elixir/lib/symphony_plus/agent_runner.ex`
-- [ ] T014 [US1] Aggregate project snapshots into one authoritative service projection with project-attributed issues, failures, and counts in `elixir/lib/symphony_plus/runtime_status.ex` and `elixir/lib/symphony_plus/status_dashboard.ex`
-- [ ] T015 [US1] Adapt API/dashboard presenters and PubSub updates to consume aggregate project snapshots without consulting a singleton orchestrator in `elixir/lib/symphony_plus_web/presenter.ex`, `elixir/lib/symphony_plus_web/controllers/observability_api_controller.ex`, and `elixir/lib/symphony_plus_web/observability_pubsub.ex`
-- [ ] T016 [US1] Add stable secret-safe project lifecycle and failure logs carrying `project_id` while retaining issue/session identifiers in `elixir/lib/symphony_plus/project_registry.ex`, `elixir/lib/symphony_plus/project_runtime.ex`, and `elixir/lib/symphony_plus/orchestrator.ex`
-- [ ] T017 [US1] Run targeted multi-project lifecycle and status tests in `elixir/test/symphony_plus/project_runtime_test.exs`, `elixir/test/symphony_plus/orchestrator_status_test.exs`, and `elixir/test/symphony_plus/runtime_status_test.exs`
+- [X] T013 [US1] Parameterize orchestrator, tracker, retry/quota/checkpoint, workspace, and agent-runner ownership by explicit project runtime context without weakening per-issue isolation in `elixir/lib/symphony_plus/orchestrator.ex`, `elixir/lib/symphony_plus/agent_runtime_supervisor.ex`, and `elixir/lib/symphony_plus/agent_runner.ex`
+- [X] T014 [US1] Aggregate project snapshots into one authoritative service projection with project-attributed issues, failures, and counts in `elixir/lib/symphony_plus/runtime_status.ex` and `elixir/lib/symphony_plus/status_dashboard.ex`
+- [X] T015 [US1] Adapt API/dashboard presenters and PubSub updates to consume aggregate project snapshots without consulting a singleton orchestrator in `elixir/lib/symphony_plus_web/presenter.ex`, `elixir/lib/symphony_plus_web/controllers/observability_api_controller.ex`, and `elixir/lib/symphony_plus_web/observability_pubsub.ex`
+- [X] T016 [US1] Add stable secret-safe project lifecycle and failure logs carrying `project_id` while retaining issue/session identifiers in `elixir/lib/symphony_plus/project_registry.ex`, `elixir/lib/symphony_plus/project_runtime.ex`, and `elixir/lib/symphony_plus/orchestrator.ex`
+- [X] T017 [US1] Run targeted multi-project lifecycle and status tests in `elixir/test/symphony_plus/project_runtime_test.exs`, `elixir/test/symphony_plus/orchestrator_status_test.exs`, and `elixir/test/symphony_plus/runtime_status_test.exs`
 
 **Checkpoint**: The MVP operates multiple projects through one service and one status surface.
 
@@ -73,14 +73,14 @@
 
 ### Tests for User Story 2
 
-- [ ] T018 [P] [US2] Write failing startup tests for zero registrations, no orchestrator dispatch, sub-10-second readiness contract, and last-project removal returning to the same state per FR-001, FR-020, and SC-001 in `elixir/test/symphony_plus/core_test.exs` and `elixir/test/symphony_plus/project_runtime_test.exs`
-- [ ] T019 [P] [US2] Write failing LiveView/API tests for the healthy empty state and add-project affordance per FR-008 in `elixir/test/symphony_plus/live_e2e_test.exs`
+- [X] T018 [P] [US2] Write failing startup tests for zero registrations, no orchestrator dispatch, sub-10-second readiness contract, and last-project removal returning to the same state per FR-001, FR-020, and SC-001 in `elixir/test/symphony_plus/core_test.exs` and `elixir/test/symphony_plus/project_runtime_test.exs`
+- [X] T019 [P] [US2] Write failing LiveView/API tests for the healthy empty state and add-project affordance per FR-008 in `elixir/test/symphony_plus/live_e2e_test.exs`
 
 ### Implementation for User Story 2
 
-- [ ] T020 [US2] Remove the boot-time workflow requirement and keep the service healthy with zero runtime children in `elixir/lib/symphony_plus.ex` and `elixir/lib/symphony_plus/cli.ex`
-- [ ] T021 [US2] Render consistent zero-project state and onboarding guidance in terminal, JSON, and LiveView projections in `elixir/lib/symphony_plus/status_dashboard.ex`, `elixir/lib/symphony_plus_web/presenter.ex`, and `elixir/lib/symphony_plus_web/live/dashboard_live.ex`
-- [ ] T022 [US2] Run targeted empty-startup and empty-dashboard tests in `elixir/test/symphony_plus/core_test.exs`, `elixir/test/symphony_plus/project_runtime_test.exs`, and `elixir/test/symphony_plus/live_e2e_test.exs`
+- [X] T020 [US2] Remove the boot-time workflow requirement and keep the service healthy with zero runtime children in `elixir/lib/symphony_plus.ex` and `elixir/lib/symphony_plus/cli.ex`
+- [X] T021 [US2] Render consistent zero-project state and onboarding guidance in terminal, JSON, and LiveView projections in `elixir/lib/symphony_plus/status_dashboard.ex`, `elixir/lib/symphony_plus_web/presenter.ex`, and `elixir/lib/symphony_plus_web/live/dashboard_live.ex`
+- [X] T022 [US2] Run targeted empty-startup and empty-dashboard tests in `elixir/test/symphony_plus/core_test.exs`, `elixir/test/symphony_plus/project_runtime_test.exs`, and `elixir/test/symphony_plus/live_e2e_test.exs`
 
 **Checkpoint**: Fresh and post-removal empty installations are healthy and configurable.
 
@@ -94,17 +94,17 @@
 
 ### Tests for User Story 3
 
-- [ ] T023 [P] [US3] Write failing CLI contract tests for `projects list|add|remove`, table/JSON output, local-service-only mutations, exit semantics, duplicate add, busy removal, and legacy positional migration per FR-009–FR-013 and FR-019 in `elixir/test/symphony_plus/cli_test.exs`
-- [ ] T024 [P] [US3] Write failing local management API tests for project endpoints, stable result/error codes, CSRF browser behavior, and secret-safe errors per `contracts/dashboard-api.md` in `elixir/test/symphony_plus/project_management_api_test.exs`
-- [ ] T025 [P] [US3] Write failing LiveView tests for explicit workflow-path submission, registered-project listing, project state, duplicate feedback, removal refusal, and PubSub refresh per FR-008 and FR-011–FR-013 in `elixir/test/symphony_plus/live_e2e_test.exs`
+- [X] T023 [P] [US3] Write failing CLI contract tests for `projects list|add|remove`, table/JSON output, local-service-only mutations, exit semantics, duplicate add, busy removal, and legacy positional migration per FR-009–FR-013 and FR-019 in `elixir/test/symphony_plus/cli_test.exs`
+- [X] T024 [P] [US3] Write failing local management API tests for project endpoints, stable result/error codes, CSRF browser behavior, and secret-safe errors per `contracts/dashboard-api.md` in `elixir/test/symphony_plus/project_management_api_test.exs`
+- [X] T025 [P] [US3] Write failing LiveView tests for explicit workflow-path submission, registered-project listing, project state, duplicate feedback, removal refusal, and PubSub refresh per FR-008 and FR-011–FR-013 in `elixir/test/symphony_plus/live_e2e_test.exs`
 
 ### Implementation for User Story 3
 
-- [ ] T026 [US3] Implement CLI parsing and local HTTP client behavior for `projects list|add|remove`, `--data-root`, `--service-url`, `--format`, and legacy workflow migration in `elixir/lib/symphony_plus/cli.ex`
-- [ ] T027 [US3] Add `POST /api/v1/projects` and `DELETE /api/v1/projects/:project_id` routes with stable contract responses and one registry mutation path in `elixir/lib/symphony_plus_web/router.ex` and `elixir/lib/symphony_plus_web/controllers/observability_api_controller.ex`
-- [ ] T028 [US3] Implement the Projects LiveView section, explicit local workflow-path add form, idle-only removal, actionable results, and project transition refreshes in `elixir/lib/symphony_plus_web/live/dashboard_live.ex` and `elixir/lib/symphony_plus_web/presenter.ex`
-- [ ] T029 [US3] Enforce canonical workflow validation, workspace-root collision rejection, active/retrying/quota-waiting/blocked removal refusal, and non-destructive idle removal in `elixir/lib/symphony_plus/project_registry.ex` and `elixir/lib/symphony_plus/project_runtime.ex`
-- [ ] T030 [US3] Run targeted CLI, API, LiveView, registry concurrency, and removal tests in `elixir/test/symphony_plus/cli_test.exs`, `elixir/test/symphony_plus/project_management_api_test.exs`, `elixir/test/symphony_plus/live_e2e_test.exs`, and `elixir/test/symphony_plus/project_registry_test.exs`
+- [X] T026 [US3] Implement CLI parsing and local HTTP client behavior for `projects list|add|remove`, `--data-root`, `--service-url`, `--format`, and legacy workflow migration in `elixir/lib/symphony_plus/cli.ex`
+- [X] T027 [US3] Add `POST /api/v1/projects` and `DELETE /api/v1/projects/:project_id` routes with stable contract responses and one registry mutation path in `elixir/lib/symphony_plus_web/router.ex` and `elixir/lib/symphony_plus_web/controllers/observability_api_controller.ex`
+- [X] T028 [US3] Implement the Projects LiveView section, explicit local workflow-path add form, idle-only removal, actionable results, and project transition refreshes in `elixir/lib/symphony_plus_web/live/dashboard_live.ex` and `elixir/lib/symphony_plus_web/presenter.ex`
+- [X] T029 [US3] Enforce canonical workflow validation, workspace-root collision rejection, active/retrying/quota-waiting/blocked removal refusal, and non-destructive idle removal in `elixir/lib/symphony_plus/project_registry.ex` and `elixir/lib/symphony_plus/project_runtime.ex`
+- [X] T030 [US3] Run targeted CLI, API, LiveView, registry concurrency, and removal tests in `elixir/test/symphony_plus/cli_test.exs`, `elixir/test/symphony_plus/project_management_api_test.exs`, `elixir/test/symphony_plus/live_e2e_test.exs`, and `elixir/test/symphony_plus/project_registry_test.exs`
 
 **Checkpoint**: Both operator interfaces manage one authoritative live registry with identical semantics.
 
@@ -118,15 +118,15 @@
 
 ### Tests for User Story 4
 
-- [ ] T031 [P] [US4] Write failing restart/recovery tests for 100% valid restoration, retained invalid registrations, polling-cadence revalidation, automatic activation after repair, and transition-only logging per FR-006, FR-021, and SC-004 in `elixir/test/symphony_plus/project_runtime_test.exs`
-- [ ] T032 [P] [US4] Write failing persistence fault tests for missing/empty/unreadable/malformed/unknown-version registry files, unwritable directories, interrupted temp files, and unchanged last-good state per FR-015 and SC-006 in `elixir/test/symphony_plus/project_registry_test.exs`
-- [ ] T033 [P] [US4] Write failing secret/data-minimization tests proving registry, CLI, API, dashboard, and logs exclude workflow content, credentials, private keys, and raw exceptions per FR-005, FR-018, and SC-007 in `elixir/test/symphony_plus/project_registry_test.exs` and `elixir/test/symphony_plus/documentation_contract_test.exs`
+- [X] T031 [P] [US4] Write failing restart/recovery tests for 100% valid restoration, retained invalid registrations, polling-cadence revalidation, automatic activation after repair, and transition-only logging per FR-006, FR-021, and SC-004 in `elixir/test/symphony_plus/project_runtime_test.exs`
+- [X] T032 [P] [US4] Write failing persistence fault tests for missing/empty/unreadable/malformed/unknown-version registry files, unwritable directories, interrupted temp files, and unchanged last-good state per FR-015 and SC-006 in `elixir/test/symphony_plus/project_registry_test.exs`
+- [X] T033 [P] [US4] Write failing secret/data-minimization tests proving registry, CLI, API, dashboard, and logs exclude workflow content, credentials, private keys, and raw exceptions per FR-005, FR-018, and SC-007 in `elixir/test/symphony_plus/project_registry_test.exs` and `elixir/test/symphony_plus/documentation_contract_test.exs`
 
 ### Implementation for User Story 4
 
-- [ ] T034 [US4] Complete startup restoration and periodic unavailable-project validation so repaired workflows activate without re-registration or restart in `elixir/lib/symphony_plus/project_registry.ex` and `elixir/lib/symphony_plus/project_runtime.ex`
-- [ ] T035 [US4] Harden last-good registry retention and bounded safe diagnostics for malformed, unreadable, unsupported, and interrupted persistence states in `elixir/lib/symphony_plus/project_registry.ex`
-- [ ] T036 [US4] Run targeted persistence, restart, recovery, and secret-safety tests in `elixir/test/symphony_plus/project_registry_test.exs`, `elixir/test/symphony_plus/project_runtime_test.exs`, and `elixir/test/symphony_plus/documentation_contract_test.exs`
+- [X] T034 [US4] Complete startup restoration and periodic unavailable-project validation so repaired workflows activate without re-registration or restart in `elixir/lib/symphony_plus/project_registry.ex` and `elixir/lib/symphony_plus/project_runtime.ex`
+- [X] T035 [US4] Harden last-good registry retention and bounded safe diagnostics for malformed, unreadable, unsupported, and interrupted persistence states in `elixir/lib/symphony_plus/project_registry.ex`
+- [X] T036 [US4] Run targeted persistence, restart, recovery, and secret-safety tests in `elixir/test/symphony_plus/project_registry_test.exs`, `elixir/test/symphony_plus/project_runtime_test.exs`, and `elixir/test/symphony_plus/documentation_contract_test.exs`
 
 **Checkpoint**: Installation-local configuration survives restart and temporary project failures without corruption or disclosure.
 
@@ -136,12 +136,12 @@
 
 **Purpose**: Align normative/operator documentation, exercise complete migrations and lifecycle scenarios, and pass all repository gates.
 
-- [ ] T037 [P] Update the normative service model and multi-project lifecycle behavior required by Constitution I in `SPEC.md`
-- [ ] T038 [P] Document zero-project startup, data-root/registry location, legacy positional migration, project commands, dashboard management, recovery, and safety boundaries in `README.md`, `elixir/README.md`, and `elixir/docs/agent-installation.md`
-- [ ] T039 [P] Update stable project lifecycle event names and required project context in `elixir/docs/logging.md`
-- [ ] T040 Execute every scenario in `specs/gh-31-multi-repo-service/quickstart.md`, including two-project operation, duplicate mutation, restart, invalid-workflow recovery, unwritable storage, busy removal, and final empty state
-- [ ] T041 Review all public functions added under `elixir/lib/` for adjacent `@spec`s and run formatter, focused tests, and `git diff --check`
-- [ ] T042 Run the full constitution gate with `make -C elixir all` and record formatting, public-spec, Credo, coverage, and Dialyzer evidence
+- [X] T037 [P] Update the normative service model and multi-project lifecycle behavior required by Constitution I in `SPEC.md`
+- [X] T038 [P] Document zero-project startup, data-root/registry location, legacy positional migration, project commands, dashboard management, recovery, and safety boundaries in `README.md`, `elixir/README.md`, and `elixir/docs/agent-installation.md`
+- [X] T039 [P] Update stable project lifecycle event names and required project context in `elixir/docs/logging.md`
+- [X] T040 Execute every scenario in `specs/gh-31-multi-repo-service/quickstart.md`, including two-project operation, duplicate mutation, restart, invalid-workflow recovery, unwritable storage, busy removal, and final empty state
+- [X] T041 Review all public functions added under `elixir/lib/` for adjacent `@spec`s and run formatter, focused tests, and `git diff --check`
+- [X] T042 Run the full constitution gate with `make -C elixir all` and record formatting, public-spec, Credo, coverage, and Dialyzer evidence
 
 ---
 

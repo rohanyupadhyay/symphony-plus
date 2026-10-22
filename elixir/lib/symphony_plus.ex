@@ -35,15 +35,26 @@ defmodule SymphonyPlus.Application do
   def start_runtime do
     :ok = SymphonyPlus.LogFile.configure()
 
-    children = [
+    configured_workflow = Application.get_env(:symphony_plus, :workflow_file_path)
+    workflow_available? = is_binary(configured_workflow) and File.regular?(configured_workflow)
+
+    service_children = [
       {Phoenix.PubSub, name: SymphonyPlus.PubSub},
       SymphonyPlus.GitHub.AuthCache,
-      SymphonyPlus.WorkflowStore,
-      SymphonyPlus.GitHub.MergeQueue,
-      SymphonyPlus.AgentRuntimeSupervisor,
-      SymphonyPlus.HttpServer,
-      SymphonyPlus.StatusDashboard
+      SymphonyPlus.ProjectRuntimeSupervisor,
+      SymphonyPlus.ProjectRegistry,
+      {SymphonyPlus.HttpServer, port: Application.get_env(:symphony_plus, :server_port_override), host: "127.0.0.1"},
+      {SymphonyPlus.StatusDashboard, enabled: false, refresh_ms: 1_000, render_interval_ms: 16}
     ]
+
+    legacy_children =
+      if workflow_available? do
+        [SymphonyPlus.GitHub.MergeQueue, SymphonyPlus.WorkflowStore, SymphonyPlus.AgentRuntimeSupervisor]
+      else
+        []
+      end
+
+    children = service_children ++ legacy_children
 
     Supervisor.start_link(
       children,

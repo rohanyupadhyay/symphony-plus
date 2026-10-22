@@ -6,6 +6,20 @@ defmodule SymphonyPlus.Config do
   alias SymphonyPlus.{Config.Schema, Tracker}
   alias SymphonyPlus.{Workflow, WorkflowStore}
 
+  @doc "Returns the installation-local directory used for mutable service data."
+  @spec data_root() :: Path.t()
+  def data_root do
+    Application.get_env(
+      :symphony_plus,
+      :data_root,
+      Path.expand("tmp/symphony-plus", File.cwd!())
+    )
+  end
+
+  @doc "Returns the durable project registry path."
+  @spec project_registry_path() :: Path.t()
+  def project_registry_path, do: Path.join(data_root(), "projects.json")
+
   @default_prompt_template """
   You are working on an issue from the configured tracker.
 

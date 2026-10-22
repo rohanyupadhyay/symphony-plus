@@ -18,9 +18,11 @@ defmodule SymphonyPlus.HttpServer do
 
   @spec start_link(keyword()) :: GenServer.on_start() | :ignore
   def start_link(opts \\ []) do
-    case Keyword.get(opts, :port, Config.server_port()) do
+    port = if Keyword.has_key?(opts, :port), do: Keyword.get(opts, :port), else: Config.server_port()
+
+    case port do
       port when is_integer(port) and port >= 0 ->
-        host = Keyword.get(opts, :host, Config.settings!().server.host)
+        host = if Keyword.has_key?(opts, :host), do: Keyword.get(opts, :host), else: Config.settings!().server.host
         orchestrator = Keyword.get(opts, :orchestrator, Orchestrator)
         snapshot_timeout_ms = Keyword.get(opts, :snapshot_timeout_ms, 15_000)
 

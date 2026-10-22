@@ -7,7 +7,7 @@ defmodule SymphonyPlus.CLI do
   alias SymphonyPlus.LogFile
 
   @acknowledgement_switch :i_understand_that_this_will_be_running_without_the_usual_guardrails
-  @switches [{@acknowledgement_switch, :boolean}, logs_root: :string, port: :integer]
+  @switches [{@acknowledgement_switch, :boolean}, logs_root: :string, data_root: :string, port: :integer]
 
   @type ensure_started_result :: {:ok, [atom()]} | {:error, term()}
   @type deps :: %{
@@ -53,18 +53,56 @@ defmodule SymphonyPlus.CLI do
     end
   end
 
+  def evaluate(["projects", "list" | args], _deps) do
+    case OptionParser.parse(args, strict: [data_root: :string, format: :string]) do
+      {opts, [], []} ->
+        if root = opts[:data_root], do: Application.put_env(:symphony_plus, :data_root, Path.expand(root))
+        projects = if Process.whereis(SymphonyPlus.ProjectRegistry), do: SymphonyPlus.ProjectRegistry.list(), else: []
+        IO.puts(if opts[:format] == "json", do: Jason.encode!(projects), else: format_projects(projects))
+        :command_ok
+
+      _ ->
+        {:error, usage_message()}
+    end
+  end
+
+  def evaluate(["projects", "add", workflow_path | args], _deps) do
+    with {opts, [], []} <- OptionParser.parse(args, strict: [service_url: :string]),
+         {:ok, response} <-
+           Req.post(projects_url(opts), json: %{workflow_path: Path.expand(workflow_path)}),
+         true <- response.status in 200..299 do
+      IO.puts(Jason.encode!(response.body))
+      :command_ok
+    else
+      _ -> {:error, "Project add failed; ensure the local Symphony Plus service is running"}
+    end
+  end
+
+  def evaluate(["projects", "remove", project_id | args], _deps) do
+    with {opts, [], []} <- OptionParser.parse(args, strict: [service_url: :string]),
+         {:ok, response} <- Req.delete(projects_url(opts) <> "/" <> URI.encode(project_id)),
+         true <- response.status in 200..299 do
+      IO.puts(Jason.encode!(response.body))
+      :command_ok
+    else
+      _ -> {:error, "Project removal failed; ensure the project is idle and the local service is running"}
+    end
+  end
+
   def evaluate(args, deps) do
     case OptionParser.parse(args, strict: @switches) do
       {opts, [], []} ->
         with :ok <- require_guardrails_acknowledgement(opts),
              :ok <- maybe_set_logs_root(opts, deps),
+             :ok <- maybe_set_data_root(opts),
              :ok <- maybe_set_server_port(opts, deps) do
-          run(Path.expand("WORKFLOW.md"), deps)
+          start_service(deps)
         end
 
       {opts, [workflow_path], []} ->
         with :ok <- require_guardrails_acknowledgement(opts),
              :ok <- maybe_set_logs_root(opts, deps),
+             :ok <- maybe_set_data_root(opts),
              :ok <- maybe_set_server_port(opts, deps) do
           run(workflow_path, deps)
         end
@@ -93,9 +131,16 @@ defmodule SymphonyPlus.CLI do
     end
   end
 
+  defp start_service(deps) do
+    case deps.ensure_all_started.() do
+      {:ok, _started_apps} -> :ok
+      {:error, reason} -> {:error, "Failed to start Symphony Plus: #{inspect(reason)}"}
+    end
+  end
+
   @spec usage_message() :: String.t()
   defp usage_message do
-    "Usage: symphony-plus [--logs-root <path>] [--port <port>] [path-to-WORKFLOW.md]"
+    "Usage: symphony-plus [--logs-root <path>] [--data-root <path>] [--port <port>] [path-to-WORKFLOW.md] | projects list"
   end
 
   @spec runtime_deps() :: deps()
@@ -128,6 +173,23 @@ defmodule SymphonyPlus.CLI do
           :ok = deps.set_logs_root.(Path.expand(logs_root))
         end
     end
+  end
+
+  defp maybe_set_data_root(opts) do
+    case Keyword.get(opts, :data_root) do
+      nil -> :ok
+      root when is_binary(root) and root != "" -> Application.put_env(:symphony_plus, :data_root, Path.expand(root))
+      _ -> {:error, usage_message()}
+    end
+  end
+
+  defp format_projects([]), do: "No projects registered."
+  defp format_projects(projects), do: Enum.map_join(projects, "\n", &"#{&1.id}\t#{&1.workflow_path}")
+
+  defp projects_url(opts) do
+    Keyword.get(opts, :service_url, "http://127.0.0.1:4000")
+    |> String.trim_trailing("/")
+    |> Kernel.<>("/api/v1/projects")
   end
 
   defp require_guardrails_acknowledgement(opts) do

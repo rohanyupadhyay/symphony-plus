@@ -30,9 +30,12 @@ defmodule SymphonyPlusWeb.Router do
 
   scope "/", SymphonyPlusWeb do
     get("/api/v1/state", ObservabilityApiController, :state)
+    post("/api/v1/projects", ObservabilityApiController, :add_project)
+    delete("/api/v1/projects/:project_id", ObservabilityApiController, :remove_project)
 
     match(:*, "/", ObservabilityApiController, :method_not_allowed)
     match(:*, "/api/v1/state", ObservabilityApiController, :method_not_allowed)
+    match(:*, "/api/v1/projects", ObservabilityApiController, :method_not_allowed)
     post("/api/v1/refresh", ObservabilityApiController, :refresh)
     match(:*, "/api/v1/refresh", ObservabilityApiController, :method_not_allowed)
     get("/api/v1/:issue_identifier", ObservabilityApiController, :issue)

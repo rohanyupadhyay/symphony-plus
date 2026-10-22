@@ -99,11 +99,17 @@ defmodule SymphonyPlus.StatusDashboard do
     refresh_ms_override = keyword_override(opts, :refresh_ms)
     enabled_override = keyword_override(opts, :enabled)
     render_interval_ms_override = keyword_override(opts, :render_interval_ms)
-    observability = Config.settings!().observability
+
+    observability =
+      if refresh_ms_override && render_interval_ms_override && !is_nil(enabled_override),
+        do: nil,
+        else: Config.settings!().observability
+
     refresh_ms = refresh_ms_override || observability.refresh_ms
     render_interval_ms = render_interval_ms_override || observability.render_interval_ms
     render_fun = Keyword.get(opts, :render_fun, &render_to_terminal/1)
-    enabled = resolve_override(enabled_override, observability.dashboard_enabled and dashboard_enabled?())
+    configured_enabled = if observability, do: observability.dashboard_enabled and dashboard_enabled?(), else: false
+    enabled = resolve_override(enabled_override, configured_enabled)
     schedule_tick(refresh_ms, enabled)
 
     {:ok,

@@ -38,6 +38,23 @@ defmodule SymphonyPlusWeb.DashboardLive do
   end
 
   @impl true
+  def handle_event("add_project", %{"project" => %{"workflow_path" => path}}, socket) do
+    message =
+      case SymphonyPlus.ProjectRegistry.add(path) do
+        {:ok, _registration, :created} -> "Project added"
+        {:ok, _registration, :existing} -> "Project already registered"
+        {:error, _reason} -> "Workflow is missing or invalid"
+      end
+
+    {:noreply, socket |> put_flash(:info, message) |> assign(:payload, load_payload())}
+  end
+
+  def handle_event("remove_project", %{"id" => id}, socket) do
+    :ok = SymphonyPlus.ProjectRegistry.remove(id)
+    {:noreply, socket |> put_flash(:info, "Project removed") |> assign(:payload, load_payload())}
+  end
+
+  @impl true
   def render(assigns) do
     ~H"""
     <section class="dashboard-shell">
@@ -78,6 +95,30 @@ defmodule SymphonyPlusWeb.DashboardLive do
           </p>
         </section>
       <% else %>
+        <section class="section-card">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Projects</h2>
+              <p class="section-copy">Repository-owned workflows managed by this service.</p>
+            </div>
+          </div>
+          <form phx-submit="add_project">
+            <input name="project[workflow_path]" type="text" placeholder="/absolute/path/to/WORKFLOW.md" />
+            <button type="submit">Add project</button>
+          </form>
+          <%= if Map.get(@payload, :projects, []) == [] do %>
+            <p class="empty-state">No projects registered. Add a workflow file to begin.</p>
+          <% else %>
+            <div :for={project <- Map.get(@payload, :projects, [])}>
+              <strong><%= project.id %></strong>
+              <span><%= project.state %></span>
+              <code><%= project.workflow_path %></code>
+              <span :if={project.failure_reason}><%= project.failure_reason %></span>
+              <button phx-click="remove_project" phx-value-id={project.id}>Remove</button>
+            </div>
+          <% end %>
+        </section>
+
         <section class="metric-grid">
           <article class="metric-card">
             <p class="metric-label">Running</p>

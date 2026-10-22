@@ -1,5 +1,9 @@
 # Symphony Plus
 
+One Symphony Plus service can keep an installation-local registry of repository-owned workflows.
+It may start with no projects; projects can then be added or removed from the dashboard or CLI
+without assigning a separate service port to every repository.
+
 The operations dashboard reports mutually exclusive running, retrying, quota-waiting, and blocked
 runtime states. “Quota-waiting” means automatic renewal or recheck remains possible; “blocked”
 means operator action is required. Counts and rows use the same classification.

@@ -8,6 +8,29 @@ defmodule SymphonyPlusWeb.ObservabilityApiController do
   alias Plug.Conn
   alias SymphonyPlusWeb.{Endpoint, Presenter}
 
+  @spec add_project(Conn.t(), map()) :: Conn.t()
+  def add_project(conn, %{"workflow_path" => workflow_path}) do
+    case SymphonyPlus.ProjectRegistry.add(workflow_path) do
+      {:ok, registration, :created} -> conn |> put_status(201) |> json(%{result: "created", project: registration})
+      {:ok, registration, :existing} -> json(conn, %{result: "already_registered", project: registration})
+      {:error, _reason} -> error_response(conn, 422, "invalid_workflow", "Workflow is missing or invalid")
+    end
+  end
+
+  def add_project(conn, _params), do: error_response(conn, 422, "invalid_workflow", "workflow_path is required")
+
+  @spec remove_project(Conn.t(), map()) :: Conn.t()
+  def remove_project(conn, %{"project_id" => project_id}) do
+    case SymphonyPlus.ProjectRegistry.get(project_id) do
+      {:ok, _registration} ->
+        :ok = SymphonyPlus.ProjectRegistry.remove(project_id)
+        json(conn, %{result: "removed", project_id: project_id})
+
+      {:error, :not_found} ->
+        error_response(conn, 404, "project_not_found", "Project not found")
+    end
+  end
+
   @spec state(Conn.t(), map()) :: Conn.t()
   def state(conn, _params) do
     json(conn, Presenter.state_payload(orchestrator(), snapshot_timeout_ms()))
