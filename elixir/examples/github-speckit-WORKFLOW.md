@@ -110,7 +110,9 @@ Advance exactly one state machine:
    reviews, inline comments, merge state, and current-head checks. If any human review remains
    `CHANGES_REQUESTED`, make no mutation and end the turn; the host suppresses further
    work until dismissal, then resumes automatically. Otherwise diagnose whether failures are
-   PR-caused, repair only in-scope defects on the same branch, run targeted tests and
+   PR-caused and repair only in-scope defects on the same branch. Resolve target-branch conflicts
+   by merging the latest target into the issue branch and preserving both changes. Changed heads
+   and merge conflicts resume review and repair automatically, without human input. Run targeted tests and
    `make -C elixir all`, push through `github_git_push`, and record findings, corrections, check
    status, validation, and omissions. If required evidence is incomplete or an external blocker
    remains, checkpoint `blocked` with the exact recovery action. If the review pushes corrections,

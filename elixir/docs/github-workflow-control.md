@@ -112,7 +112,10 @@ dispatches the originating issue workspace without another human command. A late
 `CHANGES_REQUESTED` review suppresses dispatch and every Symphony mutation until that review is
 dismissed, after which processing resumes automatically. A successful trusted automatic review
 admits the exact managed head to the merge queue without human approval. Forks, cross-repository
-heads, removed labels, stale heads, closed/merged PRs, and incomplete review context do not dispatch.
+heads, removed labels, closed/merged PRs, and incomplete current-head review context do not dispatch.
+If the same managed branch advances after its checkpoint, the next review uses its current head
+and matching check context. A `merge_update_required` queue outcome also resumes automatic review
+and repair without a command, including resolving target-branch conflicts and PR-caused check failures.
 
 For Spec Kit workflows, each readable checkpoint summary is also the operator's audit trail. It
 must name every phase actually invoked, the current checkpoint and next phase, question counts and
