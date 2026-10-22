@@ -1,5 +1,9 @@
 # Symphony Elixir
 
+Terminal, JSON, and LiveView observability use one runtime-status projection. Recoverable quota
+pauses appear as quota-waiting, while input/approval pauses and failed native quota resumes appear
+as blocked with concise diagnostic context.
+
 This directory contains the current Elixir/OTP implementation of Symphony, based on
 [`SPEC.md`](../SPEC.md) at the repository root.
 

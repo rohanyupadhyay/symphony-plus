@@ -4,6 +4,13 @@ Status: Draft v1 (language-agnostic)
 
 Purpose: Define a service that orchestrates coding agents to get project work done.
 
+Runtime status surfaces MUST classify every issue exactly once as running, retrying,
+quota-waiting, or blocked. Operator-action conditions take precedence over recoverable quota
+waits, which take precedence over retrying and running records. Terminal, JSON, and LiveView
+counts and rows MUST derive from that same projection. Blocked reasons MUST be non-secret,
+single-line, and bounded; failed native quota continuation is blocked while retaining safe quota
+diagnostic context.
+
 ## Normative Language
 
 The key words `MUST`, `MUST NOT`, `REQUIRED`, `SHOULD`, `SHOULD NOT`, `RECOMMENDED`, `MAY`, and
