@@ -14,6 +14,10 @@
 
 - Q: Which installation type should the first automatic-update release support? → A: Source checkout only.
 
+### Session 2026-10-23
+
+- Q: After a newer revision becomes pending, how should Symphony Plus ensure a continuously busy service eventually reaches a safe update window? → A: Drain new dispatch while already admitted work and its automatic continuations finish.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Adopt an Available Update Safely (Priority: P1)
@@ -26,7 +30,7 @@ As an operator, I want a continuously running Symphony Plus instance to detect a
 
 **Acceptance Scenarios**:
 
-1. **Given** an eligible installation whose configured remote default branch has advanced, **When** the periodic check runs while managed work is active or waiting for an automatic continuation, **Then** the service records the pending update and continues its existing work without interruption.
+1. **Given** an eligible installation whose configured remote default branch has advanced, **When** the periodic check runs while managed work is active or waiting for an automatic continuation, **Then** the service records the pending update, stops admitting unrelated new issue work, and allows already admitted work and its automatic continuations to finish without interruption.
 2. **Given** a pending update and a quiescent runtime, **When** the safe restart conditions remain true through update admission, **Then** the service adopts exactly the detected revision and restarts using the same workflow and operator configuration.
 3. **Given** a restarted service after an update, **When** startup reconciliation runs, **Then** durable issue workspaces, workflow checkpoints, quota-wait records, and merge-queue records remain available and are reconciled under the existing lifecycle rules.
 
@@ -66,7 +70,7 @@ As an operator, I want update behavior to be explicitly configurable and observa
 
 - The remote becomes unavailable, rate-limited, or returns an authentication error during a check.
 - The remote default branch changes between detection, admission, and activation.
-- New work becomes runnable after an update is detected but before restart admission completes.
+- Unrelated new work becomes runnable after an update is detected while already admitted work is still draining.
 - A retry timer, quota renewal, workflow checkpoint, or queued merge exists while no agent process is currently executing.
 - Multiple update checks overlap or repeatedly observe the same candidate revision.
 - The candidate revision fails preparation or validation before activation.
@@ -81,9 +85,9 @@ As an operator, I want update behavior to be explicitly configurable and observa
 - **FR-001**: Automatic updating MUST be disabled by default and MUST require explicit operator configuration before the service contacts an update source or mutates its installation.
 - **FR-002**: When enabled, the service MUST check its configured GitHub repository default branch at a configurable positive interval and MUST prevent overlapping checks.
 - **FR-003**: The service MUST compare immutable revision identities and MUST treat an already observed or running revision as current without repeatedly attempting it.
-- **FR-004**: The service MUST record a newer eligible revision as pending without interrupting active agent sessions, retries eligible for automatic continuation, quota waits, workflow resumptions, automatic review, or merge-queue activity.
-- **FR-005**: The service MUST admit restart only when one authoritative lifecycle owner determines that no managed work is running or scheduled for automatic continuation and MUST re-check that condition immediately before activation.
-- **FR-006**: Once a restart has been admitted for a pending update, the service MUST temporarily stop dispatching new work until the update either activates successfully or is abandoned safely.
+- **FR-004**: The service MUST record a newer eligible revision as pending without interrupting active agent sessions, retries eligible for automatic continuation, quota waits, workflow resumptions, automatic review, or merge-queue activity, and MUST allow that already admitted work and its automatic continuations to finish.
+- **FR-005**: Once an eligible revision is pending, one authoritative lifecycle owner MUST stop admitting unrelated new issue work until the update activates successfully or is abandoned safely, so continuous arrivals cannot indefinitely postpone the update.
+- **FR-006**: The service MUST admit restart only when that lifecycle owner determines that all already admitted managed work and its scheduled automatic continuations have drained, and MUST re-check that condition immediately before activation.
 - **FR-007**: The service MUST preserve and reconcile all existing durable work state across an update restart, including issue workspaces, workflow checkpoints, quota-wait records, and merge-queue records.
 - **FR-008**: The updater MUST validate that it is operating on the configured installation and remote, MUST refuse dirty, detached, or unsupported divergent states, and MUST NOT reset, rebase, delete, or overwrite local operator work.
 - **FR-009**: The updater MUST activate exactly the immutable candidate revision that passed its admission and preparation checks; movement of the remote branch after detection MUST require a new candidate evaluation.
