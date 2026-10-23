@@ -27,6 +27,9 @@ defmodule SymphonyPlus.GitHub.MergeQueue do
   @spec poll(GenServer.server()) :: :ok
   def poll(server \\ __MODULE__), do: GenServer.cast(server, :poll)
 
+  @spec idle?(GenServer.server()) :: boolean()
+  def idle?(server \\ __MODULE__), do: GenServer.call(server, :idle?)
+
   @spec build_queues([Entry.t()]) :: %{optional(queue_key()) => [Entry.t()]}
   def build_queues(entries) do
     entries
@@ -151,6 +154,9 @@ defmodule SymphonyPlus.GitHub.MergeQueue do
   @impl true
   def handle_call(:status, _from, state),
     do: {:reply, Map.take(state, [:enabled, :queues, :last_error, :retry_attempt, :next_delay]), state}
+
+  def handle_call(:idle?, _from, state),
+    do: {:reply, map_size(state.queues) == 0 and MapSet.size(state.active_generations) == 0, state}
 
   @impl true
   def handle_cast(:poll, state), do: {:noreply, run_poll(state)}

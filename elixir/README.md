@@ -1,5 +1,12 @@
 # Symphony Plus Elixir
 
+## Automatic source updates
+
+Set `updates.enabled: true` only for the canonical source checkout. `installation_root` must be an
+absolute Git checkout outside `workspace.root`; `remote` defaults to `origin`; `interval_ms` must be
+positive. `prepare_command` runs in a detached candidate worktree and `launcher_command` runs after
+the old BEAM exits. The launcher or supervisor is responsible for keeping the service alive.
+
 Terminal, JSON, and LiveView observability use one runtime-status projection. Recoverable quota
 pauses appear as quota-waiting, while input/approval pauses and failed native quota resumes appear
 as blocked with concise diagnostic context.

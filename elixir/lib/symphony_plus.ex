@@ -49,7 +49,12 @@ defmodule SymphonyPlus.Application do
 
     legacy_children =
       if workflow_available? do
-        [SymphonyPlus.GitHub.MergeQueue, SymphonyPlus.WorkflowStore, SymphonyPlus.AgentRuntimeSupervisor]
+        [
+          SymphonyPlus.GitHub.MergeQueue,
+          SymphonyPlus.WorkflowStore,
+          SymphonyPlus.AgentRuntimeSupervisor,
+          SymphonyPlus.UpdateManager
+        ]
       else
         []
       end

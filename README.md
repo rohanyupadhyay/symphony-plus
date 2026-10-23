@@ -1,5 +1,13 @@
 # Symphony Plus
 
+## Safe automatic updates
+
+Source-checkout installations can opt into periodic updates with the `updates` workflow block.
+Updates are disabled by default. A detected default-branch revision is prepared before dispatch
+drains; active work and automatic continuations are never interrupted. Activation requires a clean
+attached checkout, fast-forward history, an idle managed runtime, and an external launcher or
+service supervisor. Allow two check intervals plus preparation and supervisor restart time.
+
 One Symphony Plus service can keep an installation-local registry of repository-owned workflows.
 It may start with no projects; projects can then be added or removed from the dashboard or CLI
 without assigning a separate service port to every repository.

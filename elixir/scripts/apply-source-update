@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+installation_root=${1:?installation root required}
+prepared_path=${2:?prepared path required}
+candidate_revision=${3:?candidate revision required}
+old_pid=${4:?old pid required}
+launcher_command=${5:?launcher command required}
+lock_dir="$installation_root/.git/symphony-plus-update.lock"
+outcome_file="$installation_root/.git/symphony-plus-update.outcome"
+
+(
+  if ! mkdir "$lock_dir" 2>/dev/null; then
+    printf '%s\n' 'blocked: update lock is held' >"$outcome_file"
+    exit 1
+  fi
+  trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT
+
+  while kill -0 "$old_pid" 2>/dev/null; do sleep 1; done
+
+  cd "$installation_root"
+  prior_revision=$(git rev-parse HEAD)
+  test "$(git -C "$prepared_path" rev-parse HEAD)" = "$candidate_revision"
+  test -z "$(git status --porcelain)"
+  git cat-file -e "$candidate_revision^{commit}"
+  git merge-base --is-ancestor "$prior_revision" "$candidate_revision"
+
+  prior_executable="$installation_root/.git/symphony-plus-prior-executable"
+  if test -x "$installation_root/elixir/bin/symphony-plus"; then
+    cp "$installation_root/elixir/bin/symphony-plus" "$prior_executable"
+    chmod 700 "$prior_executable"
+  fi
+
+  git merge --ff-only "$candidate_revision"
+  if test -d "$prepared_path/elixir/_build"; then
+    rm -rf "$installation_root/elixir/_build.update"
+    cp -R "$prepared_path/elixir/_build" "$installation_root/elixir/_build.update"
+    rm -rf "$installation_root/elixir/_build"
+    mv "$installation_root/elixir/_build.update" "$installation_root/elixir/_build"
+  fi
+
+  if ! bash -lc "$launcher_command"; then
+    printf '%s\n' 'blocked: launcher failed; starting preserved prior executable' >"$outcome_file"
+    if test -x "$prior_executable"; then "$prior_executable" & fi
+    exit 1
+  fi
+
+  printf '%s\n' "restarted:$candidate_revision" >"$outcome_file"
+) </dev/null >/dev/null 2>&1 &
+
+exit 0

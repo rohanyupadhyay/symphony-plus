@@ -42,6 +42,7 @@ defmodule SymphonyPlus.Orchestrator do
       quota_waits: %{},
       quota_store_error: nil,
       retry_attempts: %{},
+      update_drain_token: nil,
       codex_totals: nil,
       codex_rate_limits: nil
     ]
@@ -58,6 +59,15 @@ defmodule SymphonyPlus.Orchestrator do
       GenServer.start_link(__MODULE__, opts, name: name)
     end
   end
+
+  @spec begin_update_drain(GenServer.server()) :: {:ok, reference()}
+  def begin_update_drain(server \\ __MODULE__), do: GenServer.call(server, :begin_update_drain)
+
+  @spec cancel_update_drain(reference(), GenServer.server()) :: :ok | {:error, :stale_token}
+  def cancel_update_drain(token, server \\ __MODULE__), do: GenServer.call(server, {:cancel_update_drain, token})
+
+  @spec update_quiescent?(reference(), GenServer.server()) :: boolean()
+  def update_quiescent?(token, server \\ __MODULE__), do: GenServer.call(server, {:update_quiescent?, token})
 
   @impl true
   def init(opts) do
@@ -1158,7 +1168,7 @@ defmodule SymphonyPlus.Orchestrator do
          active_states,
          terminal_states
        ) do
-    candidate_issue?(issue, active_states, terminal_states) and
+    is_nil(state.update_drain_token) and candidate_issue?(issue, active_states, terminal_states) and
       !MapSet.member?(claimed, issue.id) and
       !Map.has_key?(running, issue.id) and
       !Map.has_key?(blocked, issue.id) and
@@ -1775,6 +1785,27 @@ defmodule SymphonyPlus.Orchestrator do
   defp server_available?(server), do: not is_nil(Process.whereis(server))
 
   @impl true
+  def handle_call(:begin_update_drain, _from, %{update_drain_token: nil} = state) do
+    token = make_ref()
+    {:reply, {:ok, token}, %{state | update_drain_token: token}}
+  end
+
+  def handle_call(:begin_update_drain, _from, state), do: {:reply, {:ok, state.update_drain_token}, state}
+
+  def handle_call({:cancel_update_drain, token}, _from, %{update_drain_token: token} = state),
+    do: {:reply, :ok, %{state | update_drain_token: nil}}
+
+  def handle_call({:cancel_update_drain, _token}, _from, state), do: {:reply, {:error, :stale_token}, state}
+
+  def handle_call({:update_quiescent?, token}, _from, state) do
+    quiet =
+      state.update_drain_token == token and map_size(state.running) == 0 and
+        map_size(state.retry_attempts) == 0 and map_size(state.quota_waits) == 0 and
+        MapSet.size(state.claimed) == 0
+
+    {:reply, quiet, state}
+  end
+
   def handle_call(:snapshot, _from, state) do
     state = refresh_runtime_config(state)
     now = DateTime.utc_now()

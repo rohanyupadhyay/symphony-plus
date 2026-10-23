@@ -41,6 +41,13 @@ codex:
   turn_sandbox_policy:
     type: workspaceWrite
     networkAccess: true
+updates:
+  enabled: false
+  interval_ms: 900000
+  installation_root: /absolute/path/to/symphony-plus
+  remote: origin
+  prepare_command: mise exec -- mix setup && make all && mise exec -- mix build
+  launcher_command: ./scripts/run-github
 ---
 
 You are working on a Linear ticket `{{ issue.identifier }}`

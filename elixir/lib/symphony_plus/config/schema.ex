@@ -330,6 +330,60 @@ defmodule SymphonyPlus.Config.Schema do
     end
   end
 
+  defmodule Updates do
+    @moduledoc false
+    use Ecto.Schema
+    import Ecto.Changeset
+    @primary_key false
+    @type t :: %__MODULE__{}
+    @remote ~r/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/
+    @credential ~r/(?:https?:\/\/[^\s]*@|(?:token|password|private[_-]?key|secret)\s*[=:])/i
+
+    embedded_schema do
+      field(:enabled, :boolean, default: false)
+      field(:interval_ms, :integer, default: 900_000)
+      field(:installation_root, :string)
+      field(:remote, :string, default: "origin")
+      field(:prepare_command, :string)
+      field(:launcher_command, :string)
+    end
+
+    @spec changeset(%__MODULE__{}, map()) :: Ecto.Changeset.t()
+    def changeset(schema, attrs) do
+      schema
+      |> cast(
+        attrs,
+        [:enabled, :interval_ms, :installation_root, :remote, :prepare_command, :launcher_command],
+        empty_values: []
+      )
+      |> validate_number(:interval_ms, greater_than: 0)
+      |> validate_format(:remote, @remote)
+      |> validate_enabled_fields()
+      |> validate_change(:prepare_command, &credential_free/2)
+      |> validate_change(:launcher_command, &credential_free/2)
+    end
+
+    defp validate_enabled_fields(changeset) do
+      if get_field(changeset, :enabled) do
+        changeset
+        |> validate_required([:installation_root, :prepare_command, :launcher_command])
+        |> validate_change(:installation_root, &validate_installation_root/2)
+      else
+        changeset
+      end
+    end
+
+    defp validate_installation_root(:installation_root, root) do
+      if Path.type(root) == :absolute and File.dir?(Path.join(root, ".git")),
+        do: [],
+        else: [installation_root: "must be an absolute Git checkout"]
+    end
+
+    defp credential_free(field, value) do
+      if is_binary(value) and Regex.match?(@credential, value), do: [{field, "must not contain literal credentials"}], else: []
+    end
+  end
+
   embedded_schema do
     embeds_one(:tracker, Tracker, on_replace: :update, defaults_to_struct: true)
     embeds_one(:polling, Polling, on_replace: :update, defaults_to_struct: true)
@@ -342,6 +396,7 @@ defmodule SymphonyPlus.Config.Schema do
     embeds_one(:observability, Observability, on_replace: :update, defaults_to_struct: true)
     embeds_one(:server, Server, on_replace: :update, defaults_to_struct: true)
     embeds_one(:merge_queue, MergeQueue, on_replace: :update, defaults_to_struct: true)
+    embeds_one(:updates, Updates, on_replace: :update, defaults_to_struct: true)
   end
 
   @spec parse(map()) :: {:ok, %__MODULE__{}} | {:error, {:invalid_workflow_config, String.t()}}
@@ -438,6 +493,30 @@ defmodule SymphonyPlus.Config.Schema do
     |> cast_embed(:observability, with: &Observability.changeset/2)
     |> cast_embed(:server, with: &Server.changeset/2)
     |> cast_embed(:merge_queue, with: &MergeQueue.changeset/2)
+    |> cast_embed(:updates, with: &Updates.changeset/2)
+    |> validate_update_workspace_separation()
+  end
+
+  defp validate_update_workspace_separation(changeset) do
+    updates = get_field(changeset, :updates)
+    workspace = get_field(changeset, :workspace)
+
+    if updates && updates.enabled && is_binary(updates.installation_root) && workspace do
+      install = Path.expand(updates.installation_root)
+      workspaces = Path.expand(workspace.root)
+
+      overlap? =
+        install == workspaces or String.starts_with?(install <> "/", workspaces <> "/") or
+          String.starts_with?(workspaces <> "/", install <> "/")
+
+      if overlap? do
+        add_error(changeset, :updates, "installation_root and workspace.root must not overlap")
+      else
+        changeset
+      end
+    else
+      changeset
+    end
   end
 
   defp finalize_settings(settings) do

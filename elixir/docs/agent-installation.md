@@ -1,5 +1,13 @@
 # Install Symphony Plus in a Spec Kit repository
 
+## Automatic-update prerequisites and recovery
+
+Automatic updates support only the source checkout. Keep installation and issue workspace roots
+disjoint, leave the checkout attached and clean, and supervise `scripts/run-github`. Safe idle
+includes running agents, retries, quota waits, workflow/review continuations, and merge-queue
+activity. Preparation plus supervisor restart is the activation allowance. On `blocked`, inspect
+the bounded reason and `.git/symphony-plus-update.outcome`; never reset or rebase to recover.
+
 This runbook is written for an AI coding agent onboarding a GitHub repository to Symphony Plus.
 Follow it in order. Treat every verification as a gate: do not continue after a failed gate, and do
 not replace missing operator input with an assumption.
