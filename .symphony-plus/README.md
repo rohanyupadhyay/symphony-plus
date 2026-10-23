@@ -1,5 +1,12 @@
 # Symphony Plus Self-Hosting
 
+## Update supervision
+
+When automatic source updates are enabled, run `scripts/run-github` beneath a service supervisor
+that restarts it after a deliberate update handoff. The updater drains new issue dispatch,
+preserves durable work, and only fast-forwards a clean canonical checkout. Investigate `blocked`
+status before restarting manually; never reset the checkout to clear it.
+
 GitHub Issues are the control plane for updating Symphony Plus with Symphony Plus. The local
 dashboard shows agent state, logs, retries, and token usage; requirements and approvals remain in
 GitHub issue comments.

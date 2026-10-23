@@ -785,6 +785,20 @@ stable outcome without exposing provider payloads.
 
 ## 8. Polling, Scheduling, and Reconciliation
 
+### 8.0 Safe Automatic Source Updates
+
+Automatic updates MUST be opt-in. When enabled, the service periodically resolves the configured
+Git remote's advertised default branch to a full commit SHA, prepares that immutable revision away
+from issue workspaces, and prevents overlapping checks. A pending update MUST drain unrelated new
+dispatch while allowing already claimed work and automatic continuations to finish. Activation MAY
+begin only after atomic orchestrator quiescence and an idle merge queue.
+
+The supported installation is a clean, attached source checkout that can fast-forward to the
+candidate. The updater MUST refuse dirty, detached, divergent, moved-candidate, or concurrently
+locked states and MUST NOT reset, rebase, delete history, or mutate issue workspaces. An external
+launcher or supervisor owns resurrection after handoff. Status MUST expose full running/candidate
+SHAs, last check/outcome, and a bounded non-secret reason.
+
 ### 8.1 Poll Loop
 
 At startup, the service validates config, performs startup cleanup, schedules an immediate tick, and

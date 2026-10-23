@@ -33,6 +33,9 @@ When logging Codex execution lifecycle events, include:
 - `AgentRunner`: log start/completion/failure with issue context, plus `session_id` when known.
 - `Orchestrator`: log dispatch, retry, terminal/non-active transitions, and worker exits with issue context. Include `session_id` whenever running-entry data has it.
 - `Codex.AppServer`: log session start/completion/error with issue context and `session_id`.
+- `UpdateManager`: use stable `update check`, `update candidate`, `update drain`, and
+  `update activation` wording. Include only outcome, canonical installation, and full revision SHA;
+  exclude payloads, credential-bearing URLs, environment values, and unbounded command output.
 
 ## Checklist For New Logs
 

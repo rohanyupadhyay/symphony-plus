@@ -1,5 +1,13 @@
 # Symphony Plus
 
+## Safe automatic updates
+
+Source-checkout installations can opt into periodic updates with the `updates` workflow block.
+Updates are disabled by default. A detected default-branch revision is prepared before dispatch
+drains; active work and automatic continuations are never interrupted. Activation requires a clean
+attached checkout, fast-forward history, an idle managed runtime, and an external launcher or
+service supervisor. Allow two check intervals plus preparation and supervisor restart time.
+
 The operations dashboard reports mutually exclusive running, retrying, quota-waiting, and blocked
 runtime states. “Quota-waiting” means automatic renewal or recheck remains possible; “blocked”
 means operator action is required. Counts and rows use the same classification.

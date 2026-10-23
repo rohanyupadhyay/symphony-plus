@@ -91,6 +91,9 @@ defmodule SymphonyPlus.Config do
   @spec merge_queue_settings() :: Schema.MergeQueue.t()
   def merge_queue_settings, do: settings!().merge_queue
 
+  @spec update_settings() :: Schema.Updates.t()
+  def update_settings, do: settings!().updates
+
   @doc false
   @spec local_workspace_root() :: Path.t()
   def local_workspace_root do

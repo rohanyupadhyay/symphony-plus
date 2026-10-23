@@ -41,6 +41,7 @@ defmodule SymphonyPlus.Application do
       SymphonyPlus.WorkflowStore,
       SymphonyPlus.GitHub.MergeQueue,
       SymphonyPlus.AgentRuntimeSupervisor,
+      SymphonyPlus.UpdateManager,
       SymphonyPlus.HttpServer,
       SymphonyPlus.StatusDashboard
     ]

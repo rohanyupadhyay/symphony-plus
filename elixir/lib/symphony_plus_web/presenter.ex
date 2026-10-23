@@ -26,7 +26,8 @@ defmodule SymphonyPlusWeb.Presenter do
           blocked: Enum.map(Map.get(snapshot, :blocked, []), &blocked_entry_payload/1),
           quota_waiting: Enum.map(Map.get(snapshot, :quota_waiting, []), &quota_wait_entry_payload/1),
           codex_totals: snapshot.codex_totals,
-          rate_limits: snapshot.rate_limits
+          rate_limits: snapshot.rate_limits,
+          update: snapshot.update
         }
 
       :timeout ->

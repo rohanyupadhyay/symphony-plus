@@ -317,7 +317,15 @@ defmodule SymphonyPlus.ExtensionsTest do
                "total_tokens" => 12,
                "seconds_running" => 42.5
              },
-             "rate_limits" => %{"primary" => %{"remaining" => 11}}
+             "rate_limits" => %{"primary" => %{"remaining" => 11}},
+             "update" => %{
+               "state" => "disabled",
+               "running_revision" => nil,
+               "candidate_revision" => nil,
+               "last_checked_at" => nil,
+               "last_outcome" => "disabled",
+               "reason" => nil
+             }
            }
 
     conn = get(build_conn(), "/api/v1/MT-HTTP")

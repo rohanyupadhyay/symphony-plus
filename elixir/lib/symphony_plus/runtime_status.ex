@@ -60,6 +60,11 @@ defmodule SymphonyPlus.RuntimeStatus do
     snapshot
     |> Map.merge(lists)
     |> Map.put(:counts, counts)
+    |> Map.put_new(:update, update_status())
+  end
+
+  defp update_status do
+    SymphonyPlus.UpdateManager.status()
   end
 
   @spec sanitize_reason(term(), String.t()) :: String.t()

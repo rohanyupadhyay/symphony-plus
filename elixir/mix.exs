@@ -36,6 +36,8 @@ defmodule SymphonyPlus.MixProject do
           SymphonyPlus.Codex.DynamicTool,
           SymphonyPlus.HttpServer,
           SymphonyPlus.StatusDashboard,
+          SymphonyPlus.SourceUpdate,
+          SymphonyPlus.UpdateManager,
           SymphonyPlus.LogFile,
           SymphonyPlus.Workspace,
           SymphonyPlusWeb.DashboardLive,

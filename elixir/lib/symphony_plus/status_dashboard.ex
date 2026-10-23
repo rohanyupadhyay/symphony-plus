@@ -353,6 +353,12 @@ defmodule SymphonyPlus.StatusDashboard do
         backoff_rows = format_retry_rows(retrying)
         quota_rows = format_quota_rows(Map.get(snapshot, :quota_waiting, []))
         blocked_rows = format_blocked_rows(Map.get(snapshot, :blocked, []))
+        update = Map.get(snapshot, :update, %{state: :disabled})
+
+        update_line =
+          colorize("│ Update: ", @ansi_bold) <>
+            colorize(to_string(update.state), @ansi_cyan) <>
+            if(update.candidate_revision, do: colorize(" candidate=#{update.candidate_revision}", @ansi_gray), else: "")
 
         ([
            colorize("╭─ SYMPHONY PLUS STATUS", @ansi_bold),
@@ -370,6 +376,7 @@ defmodule SymphonyPlus.StatusDashboard do
              colorize(" | ", @ansi_gray) <>
              colorize("total #{format_count(codex_total_tokens)}", @ansi_yellow),
            colorize("│ Rate Limits: ", @ansi_bold) <> format_rate_limits(rate_limits),
+           update_line,
            project_link_lines,
            project_refresh_line,
            colorize("├─ Running", @ansi_bold),
