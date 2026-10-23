@@ -52,7 +52,12 @@ defmodule SymphonyPlus.Orchestrator do
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     name = Keyword.get(opts, :name, __MODULE__)
-    GenServer.start_link(__MODULE__, opts, name: name)
+
+    if is_nil(name) do
+      GenServer.start_link(__MODULE__, opts)
+    else
+      GenServer.start_link(__MODULE__, opts, name: name)
+    end
   end
 
   @spec begin_update_drain(GenServer.server()) :: {:ok, reference()}
@@ -66,6 +71,9 @@ defmodule SymphonyPlus.Orchestrator do
 
   @impl true
   def init(opts) do
+    project_context = Keyword.get(opts, :project_context)
+    if project_context, do: Config.install_project_context(project_context)
+
     case Config.settings() do
       {:ok, config} ->
         now_ms = System.monotonic_time(:millisecond)
@@ -1023,14 +1031,17 @@ defmodule SymphonyPlus.Orchestrator do
 
   defp spawn_quota_resume(state, issue_id, wait, reserved) do
     recipient = self()
+    project_context = Config.project_context()
 
     result =
       Task.Supervisor.start_child(state.task_supervisor, fn ->
-        AgentRunner.run(wait.issue, recipient,
-          worker_host: wait.worker_host,
-          run_kind: :quota_resume,
-          continuation_reference: wait.continuation
-        )
+        Config.with_project_context(project_context, fn ->
+          AgentRunner.run(wait.issue, recipient,
+            worker_host: wait.worker_host,
+            run_kind: :quota_resume,
+            continuation_reference: wait.continuation
+          )
+        end)
       end)
 
     complete_quota_resume_spawn(result, state, issue_id, wait, reserved)
@@ -1299,8 +1310,10 @@ defmodule SymphonyPlus.Orchestrator do
   end
 
   defp spawn_issue_on_worker_host(%State{} = state, issue, attempt, recipient, worker_host) do
+    project_context = Config.project_context()
+
     case Task.Supervisor.start_child(state.task_supervisor, fn ->
-           AgentRunner.run(issue, recipient, attempt: attempt, worker_host: worker_host)
+           run_agent_with_context(project_context, issue, recipient, attempt, worker_host)
          end) do
       {:ok, pid} ->
         ref = Process.monitor(pid)
@@ -1332,6 +1345,12 @@ defmodule SymphonyPlus.Orchestrator do
           worker_host: worker_host
         })
     end
+  end
+
+  defp run_agent_with_context(project_context, issue, recipient, attempt, worker_host) do
+    Config.with_project_context(project_context, fn ->
+      AgentRunner.run(issue, recipient, attempt: attempt, worker_host: worker_host)
+    end)
   end
 
   defp new_running_entry(issue, pid, ref, worker_host, run_kind, attempt \\ nil) do
@@ -1738,7 +1757,7 @@ defmodule SymphonyPlus.Orchestrator do
 
   @spec request_refresh(GenServer.server()) :: map() | :unavailable
   def request_refresh(server) do
-    if Process.whereis(server) do
+    if server_available?(server) do
       GenServer.call(server, :request_refresh)
     else
       :unavailable
@@ -1750,7 +1769,7 @@ defmodule SymphonyPlus.Orchestrator do
 
   @spec snapshot(GenServer.server(), timeout()) :: map() | :timeout | :unavailable
   def snapshot(server, timeout) do
-    if Process.whereis(server) do
+    if server_available?(server) do
       try do
         GenServer.call(server, :snapshot, timeout)
       catch
@@ -1761,6 +1780,9 @@ defmodule SymphonyPlus.Orchestrator do
       :unavailable
     end
   end
+
+  defp server_available?(server) when is_pid(server), do: Process.alive?(server)
+  defp server_available?(server), do: not is_nil(Process.whereis(server))
 
   @impl true
   def handle_call(:begin_update_drain, _from, %{update_drain_token: nil} = state) do

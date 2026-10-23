@@ -4,6 +4,14 @@ Status: Draft v1 (language-agnostic)
 
 Purpose: Define a service that orchestrates coding agents to get project work done.
 
+One running service MUST own a durable installation-local registry of repository workflow paths
+and MUST start successfully when that registry is empty. Each registration retains
+repository-owned policy and isolated issue workspaces. Registration mutations MUST be serialized
+and atomically persisted outside tracked source files; registry records MUST NOT contain workflow
+bodies or credentials. A missing or invalid registered workflow MUST remain registered and
+unavailable without blocking healthy projects, and MUST activate automatically after becoming
+valid. The dashboard and CLI MUST expose the same add, list, and non-destructive remove semantics.
+
 Runtime status surfaces MUST classify every issue exactly once as running, retrying,
 quota-waiting, or blocked. Operator-action conditions take precedence over recoverable quota
 waits, which take precedence over retrying and running records. Terminal, JSON, and LiveView

@@ -45,6 +45,22 @@ defmodule SymphonyPlus.RuntimeStatusTest do
     refute Map.has_key?(blocked, :raw_payload)
   end
 
+  test "keeps identical provider issue ids distinct across projects" do
+    projected =
+      RuntimeStatus.project(%{
+        running: [
+          %{project_id: "alpha", issue_id: "1", identifier: "GH-1"},
+          %{project_id: "beta", issue_id: "1", identifier: "GH-1"}
+        ],
+        retrying: [],
+        blocked: [],
+        quota_waiting: []
+      })
+
+    assert projected.counts.running == 2
+    assert Enum.map(projected.running, & &1.project_id) |> Enum.sort() == ["alpha", "beta"]
+  end
+
   test "sanitizes blocked reasons and supplies stable missing cues" do
     long = String.duplicate("é", 200)
     assert RuntimeStatus.sanitize_reason(nil) == "Operator action required"

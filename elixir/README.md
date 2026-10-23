@@ -96,10 +96,21 @@ mise exec -- mix build
 mise exec -- ./bin/symphony-plus ./WORKFLOW.md
 ```
 
-`mix build` generates `bin/symphony-plus`. The final command is the generic local execution mode: it
-uses the checked-in workflow at an explicit absolute path and exposes the dashboard at
-`http://localhost:4000`. Replace the workflow argument with another explicit path when operating a
-different repository-owned workflow.
+`mix build` generates `bin/symphony-plus`. Start the service once, even before registering a
+project:
+
+```bash
+mise exec -- ./bin/symphony-plus --i-understand-that-this-will-be-running-without-the-usual-guardrails
+```
+
+The dashboard at `http://localhost:4000` accepts an absolute repository-owned workflow path. The
+same registry can be managed from another terminal with `projects list`, `projects add
+/absolute/repository/WORKFLOW.md`, and `projects remove PROJECT_ID`.
+
+Registrations contain only a generated id and canonical workflow path. They default to the ignored
+`tmp/symphony-plus/projects.json`; use `--data-root PATH` to select another installation-local
+directory. Missing or temporarily invalid workflows remain registered and are retried until they
+become valid. The former positional workflow argument remains available as a migration path.
 
 Do not use this generic command as an incomplete substitute for GitHub issue orchestration.
 GitHub mode requires an operator-owned App profile and the credential-scrubbing

@@ -6,6 +6,22 @@ defmodule SymphonyPlus.Config do
   alias SymphonyPlus.{Config.Schema, Tracker}
   alias SymphonyPlus.{Workflow, WorkflowStore}
 
+  @context_key {__MODULE__, :project_context}
+
+  @doc "Returns the installation-local directory used for mutable service data."
+  @spec data_root() :: Path.t()
+  def data_root do
+    Application.get_env(
+      :symphony_plus,
+      :data_root,
+      Path.expand("tmp/symphony-plus", File.cwd!())
+    )
+  end
+
+  @doc "Returns the durable project registry path."
+  @spec project_registry_path() :: Path.t()
+  def project_registry_path, do: Path.join(data_root(), "projects.json")
+
   @default_prompt_template """
   You are working on an issue from the configured tracker.
 
@@ -28,7 +44,45 @@ defmodule SymphonyPlus.Config do
 
   @spec settings() :: {:ok, Schema.t()} | {:error, term()}
   def settings do
-    WorkflowStore.settings()
+    case Process.get(@context_key) do
+      %{settings: settings} -> {:ok, settings}
+      _ -> WorkflowStore.settings()
+    end
+  end
+
+  @doc false
+  @spec install_project_context(map()) :: :ok
+  def install_project_context(context) when is_map(context) do
+    Process.put(@context_key, context)
+    :ok
+  end
+
+  @doc false
+  @spec project_context() :: map() | nil
+  def project_context, do: Process.get(@context_key)
+
+  @doc false
+  @spec with_project_context(map() | nil, (-> result)) :: result when result: var
+  def with_project_context(nil, fun) when is_function(fun, 0), do: fun.()
+
+  def with_project_context(context, fun) when is_map(context) and is_function(fun, 0) do
+    previous = Process.get(@context_key)
+    Process.put(@context_key, context)
+
+    try do
+      fun.()
+    after
+      if previous, do: Process.put(@context_key, previous), else: Process.delete(@context_key)
+    end
+  end
+
+  @doc false
+  @spec current_workflow() :: {:ok, Workflow.loaded_workflow()} | :none
+  def current_workflow do
+    case Process.get(@context_key) do
+      %{workflow: workflow} -> {:ok, workflow}
+      _ -> :none
+    end
   end
 
   @spec settings!() :: Schema.t()
@@ -71,7 +125,13 @@ defmodule SymphonyPlus.Config do
 
   @spec workflow_prompt() :: String.t()
   def workflow_prompt do
-    case Workflow.current() do
+    workflow =
+      case current_workflow() do
+        {:ok, value} -> {:ok, value}
+        :none -> Workflow.current()
+      end
+
+    case workflow do
       {:ok, %{prompt_template: prompt}} ->
         if String.trim(prompt) == "", do: @default_prompt_template, else: prompt
 
@@ -83,8 +143,14 @@ defmodule SymphonyPlus.Config do
   @spec server_port() :: non_neg_integer() | nil
   def server_port do
     case Application.get_env(:symphony_plus, :server_port_override) do
-      port when is_integer(port) and port >= 0 -> port
-      _ -> settings!().server.port
+      port when is_integer(port) and port >= 0 ->
+        port
+
+      _ ->
+        case settings() do
+          {:ok, settings} -> settings.server.port
+          {:error, _reason} -> 4000
+        end
     end
   end
 
@@ -97,13 +163,18 @@ defmodule SymphonyPlus.Config do
   @doc false
   @spec local_workspace_root() :: Path.t()
   def local_workspace_root do
-    workflow_dir = Workflow.workflow_file_path() |> Path.expand() |> Path.dirname()
+    workflow_dir =
+      case Process.get(@context_key) do
+        %{workflow_path: path} -> Path.dirname(path)
+        _ -> Workflow.workflow_file_path() |> Path.expand() |> Path.dirname()
+      end
+
     Path.expand(settings!().workspace.root, workflow_dir)
   end
 
   @spec validate!() :: :ok | {:error, term()}
   def validate! do
-    WorkflowStore.force_reload()
+    if Process.get(@context_key), do: :ok, else: WorkflowStore.force_reload()
   end
 
   @spec codex_runtime_settings(Path.t() | nil, keyword()) ::

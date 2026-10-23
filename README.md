@@ -8,6 +8,10 @@ drains; active work and automatic continuations are never interrupted. Activatio
 attached checkout, fast-forward history, an idle managed runtime, and an external launcher or
 service supervisor. Allow two check intervals plus preparation and supervisor restart time.
 
+One Symphony Plus service can keep an installation-local registry of repository-owned workflows.
+It may start with no projects; projects can then be added or removed from the dashboard or CLI
+without assigning a separate service port to every repository.
+
 The operations dashboard reports mutually exclusive running, retrying, quota-waiting, and blocked
 runtime states. “Quota-waiting” means automatic renewal or recheck remains possible; “blocked”
 means operator action is required. Counts and rows use the same classification.

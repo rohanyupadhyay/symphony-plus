@@ -10,6 +10,10 @@ This guide defines logging conventions for Symphony Plus so Codex can diagnose f
 
 ## Required Context Fields
 
+Project lifecycle events use stable names (`project_registry.added`, `project_registry.removed`,
+and project runtime state transitions) and include the non-secret `project_id`. Never include
+workflow contents, credentials, private keys, or raw exception payloads.
+
 When logging issue-related work, include both identifiers:
 
 - `issue_id`: Linear internal UUID (stable foreign key).
