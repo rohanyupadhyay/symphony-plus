@@ -42,13 +42,16 @@ defmodule SymphonyPlusWeb.ObservabilityApiController do
   end
 
   @spec issue(Conn.t(), map()) :: Conn.t()
-  def issue(conn, %{"issue_identifier" => issue_identifier}) do
-    case Presenter.issue_payload(issue_identifier, orchestrator(), snapshot_timeout_ms()) do
+  def issue(conn, %{"issue_identifier" => issue_identifier} = params) do
+    case Presenter.issue_payload(issue_identifier, orchestrator(), snapshot_timeout_ms(), params["project_id"]) do
       {:ok, payload} ->
         json(conn, payload)
 
       {:error, :issue_not_found} ->
         error_response(conn, 404, "issue_not_found", "Issue not found")
+
+      {:error, :ambiguous_issue} ->
+        error_response(conn, 409, "ambiguous_issue", "Issue identifier occurs in multiple projects; supply project_id")
     end
   end
 

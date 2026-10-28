@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Run the published source-install block in a fresh disposable checkout.
+if [[ ${GITHUB_REF:-} != refs/heads/main ]]; then
+  echo 'cold install requires trusted main' >&2
+  exit 1
+fi
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+command=$(awk '
+  /<!-- docs:scenario cold-source-install -->/ {marker++; expect=1; next}
+  expect && /^```bash$/ {inside=1; expect=0; next}
+  inside && /^```$/ {inside=0; done++; next}
+  inside {print}
+  END {if (marker != 1 || done != 1 || inside || expect) exit 1}
+' "$repo_root/elixir/README.md") || {
+  echo 'missing or invalid cold-source-install command' >&2
+  exit 1
+}
+scratch=$(mktemp -d "${RUNNER_TEMP:-/tmp}/symphony-plus-cold.XXXXXX")
+trap 'rm -rf "$scratch"' EXIT
+report_dir=${CANARY_REPORT_DIR:-${RUNNER_TEMP:-/tmp}}
+mkdir -p "$report_dir"
+printf 'Cold source install: %s; workflow source: %s\n' "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" "${GITHUB_SHA:-unknown}" >"$report_dir/cold-install.txt"
+mkdir -p "$scratch/home" "$scratch/config" "$scratch/data"
+export HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/config" XDG_DATA_HOME="$scratch/data"
+if ! (
+  cd "$scratch"
+  bash -c "$command"
+) >"$report_dir/cold-install.log" 2>&1; then
+  printf 'Result: failed; inspect cold-install.log\n' >>"$report_dir/cold-install.txt"
+  tail -80 "$report_dir/cold-install.log" >&2
+  exit 1
+fi
+checkout="$scratch/symphony-plus"
+test -x "$checkout/elixir/bin/symphony-plus"
+commit=$(git -C "$checkout" rev-parse HEAD)
+(
+  cd "$checkout/elixir"
+  printf 'Cold source install passed at commit %s\n' "$commit"
+  mise exec -- elixir --version
+  mise exec -- mix --version
+) | tee -a "$report_dir/cold-install.txt"

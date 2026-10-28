@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Run the documented release command against the candidate asset before publication.
+if [[ $# -ne 3 ]]; then
+  echo "usage: docs-release-smoke ASSET TARGET VERSION" >&2
+  exit 2
+fi
+asset=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
+target=$2
+version=$3
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+expected_name="symphony-plus-${version}-${target}"
+if [[ $(basename "$asset") != "$expected_name" || ! -f "$asset.sha256" ]]; then
+  echo "candidate asset or checksum has an unexpected name: $asset" >&2
+  exit 1
+fi
+expected_digest=$(awk 'NR == 1 {print $1}' "$asset.sha256")
+actual_digest=$(shasum -a 256 "$asset" | awk '{print $1}')
+if [[ "$expected_digest" != "$actual_digest" ]]; then
+  echo "candidate checksum mismatch: $asset" >&2
+  exit 1
+fi
+
+command=$(awk '
+  /<!-- docs:scenario release-service-start -->/ {marker++; expect=1; next}
+  expect && /^```bash$/ {inside=1; expect=0; next}
+  inside && /^```$/ {inside=0; done++; next}
+  inside {print}
+  END {if (marker != 1 || done != 1 || inside || expect) exit 1}
+' "$repo_root/elixir/README.md") || {
+  echo "missing or invalid release-service-start command in elixir/README.md" >&2
+  exit 1
+}
+
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/symphony-plus-release.XXXXXX")
+service_pid=
+cleanup() {
+  if [[ -n "$service_pid" ]]; then
+    # Bash job control gives the child its own process group on Linux and macOS.
+    kill -TERM -- "-$service_pid" 2>/dev/null || true
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      if ! kill -0 "$service_pid" 2>/dev/null; then break; fi
+      sleep 0.2
+    done
+    kill -KILL -- "-$service_pid" 2>/dev/null || true
+    wait "$service_pid" 2>/dev/null || true
+  fi
+  rm -rf "$scratch"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+export HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/config" XDG_DATA_HOME="$scratch/xdg"
+export CODEX_HOME="$scratch/codex" SYMPHONY_PLUS_INSTALL_DIR="$scratch/install"
+export SYMPHONY_PLUS_BIN="$asset" SYMPHONY_PLUS_DATA_ROOT="$scratch/data"
+mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$CODEX_HOME"
+chmod +x "$asset"
+
+for attempt in 1 2 3; do
+  export SYMPHONY_PLUS_PORT=$((40000 + RANDOM % 20000))
+  if ! curl --silent --fail --max-time 1 "http://127.0.0.1:$SYMPHONY_PLUS_PORT/api/v1/state" >/dev/null; then
+    break
+  fi
+done
+
+set -m
+bash -c "$command" >"$scratch/service.log" 2>&1 &
+service_pid=$!
+ready=0
+for ((attempt = 0; attempt < 150; attempt++)); do
+  if ! kill -0 "$service_pid" 2>/dev/null; then
+    echo "candidate exited before HTTP readiness" >&2
+    cat "$scratch/service.log" >&2
+    exit 1
+  fi
+  if curl --silent --fail --max-time 1 "http://127.0.0.1:$SYMPHONY_PLUS_PORT/api/v1/state" >"$scratch/state.json"; then
+    ready=1
+    break
+  fi
+  sleep 0.1
+done
+if [[ "$ready" -ne 1 ]]; then
+  echo "candidate did not reach HTTP readiness" >&2
+  cat "$scratch/service.log" >&2
+  exit 1
+fi
+if ! grep -Eq '"projects"[[:space:]]*:[[:space:]]*\[\]' "$scratch/state.json"; then
+  echo "candidate did not start with zero projects" >&2
+  cat "$scratch/state.json" >&2
+  exit 1
+fi
+echo "candidate $expected_name reached HTTP readiness with zero projects"

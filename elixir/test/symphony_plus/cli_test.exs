@@ -43,9 +43,9 @@ defmodule SymphonyPlus.CLITest do
     refute_received :started
   end
 
-  test "defaults to WORKFLOW.md when workflow path is missing" do
+  test "starts an empty service without reading a workflow when path is missing" do
     deps = %{
-      file_regular?: fn path -> Path.basename(path) == "WORKFLOW.md" end,
+      file_regular?: fn _path -> flunk("empty startup must not select a workflow") end,
       set_workflow_file_path: fn _path -> :ok end,
       set_logs_root: fn _path -> :ok end,
       set_server_port_override: fn _port -> :ok end,

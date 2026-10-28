@@ -24,7 +24,7 @@ JSON records live beneath `<workspace-root>/.symphony-plus/quota-waits/` and are
 replacement before a worker slot is released or a resume is dispatched.
 
 Records contain only issue identity, harness and pool, wait status, renewal/recheck timestamps,
-workspace key, native continuation identity, and stable outcomes. Credentials, prompts, outputs,
+workspace key, original worker host (`null` for local work), native continuation identity, and stable outcomes. Credentials, prompts, outputs,
 raw provider payloads, and authentication material are rejected or omitted.
 
 ## Native resume lifecycle
@@ -39,6 +39,12 @@ If the native thread is missing, mismatched, or unavailable, the record becomes
 operator must restore access to the original thread or explicitly revise/cancel the workflow;
 automatic reconstructed continuation is intentionally unsupported.
 
+Legacy records lacking worker identity are also operator-blocked. They cannot prove whether the
+preserved thread belongs to the local machine or an SSH worker, so recovery never guesses a host.
+Local record paths and resume checks use the same workflow-relative canonical workspace root.
+Installation update drains stop fresh admissions while allowing retained quota continuations to
+finish after renewal under the normal capacity limits.
+
 Status surfaces classify `operator_blocked` as **blocked**, not as a recoverable quota wait, while
 retaining safe harness, pool, continuation-availability, timing, and outcome fields for diagnosis.
 Recoverable records use **quota-waiting** and expose `Renewal time unavailable` when neither a
@@ -46,7 +52,7 @@ renewal nor recheck time is known.
 
 ## Operations
 
-Terminal, HTTP, and LiveView status surfaces report quota status, pool, renewal or recheck time,
+HTTP and LiveView status surfaces report quota status, pool, renewal or recheck time,
 native-context availability, and stable outcome. Logs include issue/session context when known and
 the same non-secret quota fields. Tracker cancellation, terminal state, label loss, and routing
 changes are reconciled before resume; released records follow the ordinary workspace policy.

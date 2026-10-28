@@ -3,6 +3,7 @@ tracker:
   kind: github
   provider:
     repo: OWNER/REPOSITORY
+    bootstrap_clone: true
     auth:
       kind: github_app
       app_id: $GITHUB_APP_ID
@@ -10,6 +11,7 @@ tracker:
       private_key_path: $GITHUB_APP_PRIVATE_KEY_PATH
     workflow_control:
       enabled: true
+      documentation_review_required: true
       authorized_associations: [OWNER, MEMBER, COLLABORATOR]
   required_labels: [symphony-plus]
   active_states: [open]
@@ -22,10 +24,6 @@ merge_queue:
   max_retry_backoff_ms: 300000
 workspace:
   root: /absolute/path/to/symphony-plus-workspaces/PROJECT
-hooks:
-  after_create: |
-    git clone --depth 1 https://github.com/OWNER/REPOSITORY.git .
-  timeout_ms: 300000
 agent:
   max_concurrent_agents: 1
   max_turns: 20
@@ -113,7 +111,7 @@ Advance exactly one state machine:
    the convergence cycle count.
 7. Validate, commit, call `github_git_push`, and create or update the pull request. Every pull
    request created or updated by this workflow must have a body that
-   follows `.github/pull_request_template.md`, passes `cd elixir && mix pr_body.check --file <path>`,
+   follows `.github/pull_request_template.md`, passes the configured `PROJECT_PR_BODY_CHECK_COMMAND` for that body,
    and contains exactly one `Tracks #{{ issue.id }}` line. The body must not use auto-closing
    keywords for the source issue. Preserve this single reference across create, update, retry, and
    revision. For a newly created managed pull request, post a `review_pending` checkpoint with
@@ -127,7 +125,7 @@ Advance exactly one state machine:
    PR-caused and repair only in-scope defects on the same branch. Resolve target-branch conflicts
    by merging the latest target into the issue branch and preserving both changes. Changed heads
    and merge conflicts resume review and repair automatically, without human input. Run targeted tests and
-   `make -C elixir all`, push through `github_git_push`, and record findings, corrections, check
+   `PROJECT_VALIDATION_COMMAND`, push through `github_git_push`, and record findings, corrections, check
    status, validation, and omissions. If required evidence is incomplete or an external blocker
    remains, checkpoint `blocked` with the exact recovery action. If the review pushes corrections,
    post a fresh `review_pending` checkpoint for the new head and end the turn. After a successful
@@ -168,5 +166,30 @@ proceed past intentionally unchecked reviewer-owned checklists.
 
 Use `blocked` only with a concrete recovery prompt. `/symphony-plus status` reports current artifacts
 and validation and then restores the same checkpoint. `/symphony-plus cancel` removes the `symphony-plus`
-label and posts a cancellation comment. Never merge automatically, expose credentials, install the
+label and posts a cancellation comment. Never merge directly; only the configured host queue may perform a guarded merge, expose credentials, install the
 official GitHub Spec Kit extension, or use `speckit-taskstoissues`.
+
+## Documentation impact and independent review
+
+For every feature, assess changed operator claims in the plan's documentation impact table, then
+include canonical documentation repair, generated-reference checks, and exact published-command
+verification in tasks. Give a concrete reason for no impact. Preserve normative intent; retain
+unresolved defects with repair references and acceptance criteria. Analyze and converge retain
+their installed scope and account for declared documentation work as feature intent.
+
+On automatic review, read the actual changed code and canonical instructions at the trigger's
+source head. Review the reader journey, commands, defaults, prerequisites, credential boundaries,
+and limitations. Record source SHA, checked claims, observations, current CI links, unresolved
+findings, and unavailable external checks in existing evidence sections. Do not trust only the
+author's summary. Corrections require a fresh review of the resulting source head.
+
+When host documentation review is required, supply `documentation_assessment` with a nonblank
+`summary`, an `evidence` list of current observations/references, and a `limitations` list naming
+external omissions. The host owns producer/reviewer thread IDs and reviewed source SHA; never
+supply or forge those identities. A distinct automatic-review native thread must perform the
+successful no-mutation review before `merge_queued`. Host-only integration updates retain reviewed
+source lineage but require fresh checks for the exact integration candidate.
+
+If the trigger sets `documentation_review_handoff_required`, first post `review_pending` for
+the current branch/head and end the invocation. This stamps the producer identity so the next
+fresh review thread can assess and admit the source; do not reuse the producer thread to queue it.

@@ -33,7 +33,8 @@ defmodule SymphonyPlus.SourceUpdate do
           with :ok <- File.mkdir_p(base),
                :ok <- remove_owned_worktree(root, path),
                {:ok, _} <- git(root, ["worktree", "add", "--detach", path, revision]),
-               {_, 0} <- System.cmd("bash", ["-lc", command], cd: Path.join(path, "elixir"), stderr_to_stdout: true) do
+               {_, 0} <- System.cmd("bash", ["-lc", command], cd: Path.join(path, "elixir"), stderr_to_stdout: true),
+               true <- prepared_executable?(path) || {:error, :prepared_executable_missing} do
             {:ok, path}
           else
             {:error, _} = error -> error
@@ -48,6 +49,13 @@ defmodule SymphonyPlus.SourceUpdate do
 
       {:error, reason} ->
         {:error, {:preparation_lock_failed, reason}}
+    end
+  end
+
+  defp prepared_executable?(path) do
+    case File.stat(Path.join(path, "elixir/bin/symphony-plus")) do
+      {:ok, %{type: :regular, mode: mode}} -> Bitwise.band(mode, 0o111) != 0
+      _ -> false
     end
   end
 

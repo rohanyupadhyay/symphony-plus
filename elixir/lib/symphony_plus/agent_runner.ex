@@ -60,18 +60,15 @@ defmodule SymphonyPlus.AgentRunner do
     end
   end
 
-  defp validate_existing_resume_workspace(issue, opts, nil) do
+  defp validate_existing_resume_workspace(issue, opts, worker_host) do
     case Keyword.get(opts, :run_kind) do
       :quota_resume ->
-        path = Path.join(Config.settings!().workspace.root, Workspace.workspace_key(issue.identifier))
-        if File.dir?(path), do: :ok, else: {:error, :preserved_workspace_unavailable}
+        if Workspace.existing_for_issue?(issue, worker_host), do: :ok, else: {:error, :preserved_workspace_unavailable}
 
       _ ->
         :ok
     end
   end
-
-  defp validate_existing_resume_workspace(_issue, _opts, _worker_host), do: :ok
 
   defp codex_message_handler(recipient, issue) do
     fn message ->
@@ -196,7 +193,7 @@ defmodule SymphonyPlus.AgentRunner do
   defp continue_with_issue?(%Issue{id: issue_id} = issue, issue_state_fetcher) when is_binary(issue_id) do
     case issue_state_fetcher.([issue_id]) do
       {:ok, [%Issue{} = refreshed_issue | _]} ->
-        if active_issue_state?(refreshed_issue.state) and issue_routable?(refreshed_issue) do
+        if active_issue_state?(refreshed_issue.state) and issue_routable?(refreshed_issue) and not review_handoff?(issue, refreshed_issue) do
           {:continue, refreshed_issue}
         else
           {:done, refreshed_issue}
@@ -211,6 +208,17 @@ defmodule SymphonyPlus.AgentRunner do
   end
 
   defp continue_with_issue?(issue, _issue_state_fetcher), do: {:done, issue}
+
+  defp review_handoff?(previous, refreshed) do
+    next = get_in(refreshed.native_ref || %{}, ["workflow_control", "trigger"]) || %{}
+    next["kind"] == "automatic_review" and review_generation(previous) != review_generation(refreshed)
+  end
+
+  defp review_generation(issue) do
+    control = get_in(issue.native_ref || %{}, ["workflow_control"]) || %{}
+    trigger = control["trigger"] || %{}
+    {Map.take(trigger, ~w(kind head_sha pr_number branch admission_sequence documentation_review_handoff_required)), get_in(control, ["checkpoint", "documentation_review", "author_thread_id"])}
+  end
 
   defp validate_continuation(nil, _issue, _workspace), do: :ok
 

@@ -3,14 +3,48 @@ defmodule SymphonyPlus.SourceUpdateScriptTest do
 
   @script Path.expand("../../scripts/apply-source-update", __DIR__)
 
+  test "promotes the prepared executable and launches from the Elixir directory" do
+    %{base: base, install: install, prepared: prepared, revision: revision} = repository_fixture()
+    marker = Path.join(base, "running-version")
+    assert {_, 0} = System.cmd(@script, [install, prepared, revision, "99999999", "./bin/symphony-plus > #{marker}"], stderr_to_stdout: true)
+    eventually(fn -> File.exists?(marker) and File.read!(marker) == "new\n" end)
+    assert File.read!(Path.join(install, "elixir/bin/symphony-plus")) =~ "new"
+  end
+
+  test "failed candidate launch restores the prior executable with original arguments" do
+    %{base: base, install: install, prepared: prepared, revision: revision} = repository_fixture()
+    marker = Path.join(base, "prior-restarted")
+    original_cwd = Path.join(base, "operator")
+    File.mkdir_p!(original_cwd)
+    args = Path.join(base, "restart.args")
+    File.write!(args, "--port\0" <> "4011\0")
+    File.write!(Path.join(install, "elixir/bin/symphony-plus"), "#!/bin/sh\nprintf '%s\\n' \"$@\" > #{marker}\npwd > #{marker}.cwd\n")
+    File.write!(Path.join(prepared, "elixir/bin/symphony-plus"), "#!/bin/sh\nexit 1\n")
+    assert {_, 0} = System.cmd(@script, [install, prepared, revision, "99999999", "./bin/symphony-plus", args], env: [{"SYMPHONY_PLUS_RESTART_CWD", original_cwd}])
+    eventually(fn -> File.exists?(marker <> ".cwd") end)
+    assert File.read!(marker) == "--port\n4011\n"
+    assert String.trim(File.read!(marker <> ".cwd")) == original_cwd
+    assert File.read!(Path.join(install, ".git/symphony-plus-update.outcome")) =~ "blocked: launcher failed"
+  end
+
+  test "a delayed startup failure rolls back instead of being reported as restarted" do
+    %{base: base, install: install, prepared: prepared, revision: revision} = repository_fixture()
+    marker = Path.join(base, "delayed-prior")
+    File.write!(Path.join(install, "elixir/bin/symphony-plus"), "#!/bin/sh\necho recovered > #{marker}\n")
+    File.write!(Path.join(prepared, "elixir/bin/symphony-plus"), "#!/bin/sh\nsleep 0.4\nexit 1\n")
+    assert {_, 0} = System.cmd(@script, [install, prepared, revision, "99999999", "./bin/symphony-plus"])
+    eventually(fn -> File.exists?(marker) end)
+    assert File.read!(Path.join(install, ".git/symphony-plus-update.outcome")) =~ "blocked: launcher failed"
+  end
+
   test "helper locks, waits for an exited pid, fast-forwards exactly, and launches" do
     %{base: base, install: install, prepared: prepared, revision: revision} = repository_fixture()
     marker = Path.join(base, "launched")
 
     assert {_, 0} =
-             System.cmd(@script, [install, prepared, revision, "99999999", "touch #{marker}"], stderr_to_stdout: true)
+             System.cmd(@script, [install, prepared, revision, "99999999", "touch #{marker}; exec ./bin/symphony-plus"], stderr_to_stdout: true)
 
-    eventually(fn -> File.exists?(marker) end)
+    eventually(fn -> File.exists?(marker) and File.read!(Path.join(install, ".git/symphony-plus-update.outcome")) =~ "restarted:" end)
     assert git!(install, ["rev-parse", "HEAD"]) == revision
     assert File.read!(Path.join(install, ".git/symphony-plus-update.outcome")) =~ "restarted:#{revision}"
   end
@@ -19,7 +53,7 @@ defmodule SymphonyPlus.SourceUpdateScriptTest do
     %{install: install, prepared: prepared, revision: revision} = repository_fixture()
     File.mkdir_p!(Path.join(install, ".git/symphony-plus-update.lock"))
 
-    assert {_, 0} = System.cmd(@script, [install, prepared, revision, "99999999", "true"])
+    assert {_, 1} = System.cmd(@script, [install, prepared, revision, "99999999", "true"])
     eventually(fn -> File.exists?(Path.join(install, ".git/symphony-plus-update.outcome")) end)
     assert File.read!(Path.join(install, ".git/symphony-plus-update.outcome")) == "blocked: update lock is held\n"
   end
@@ -36,6 +70,7 @@ defmodule SymphonyPlus.SourceUpdateScriptTest do
     git!(seed, ["config", "user.email", "test@example.com"])
     git!(seed, ["config", "user.name", "Test"])
     File.write!(Path.join(seed, "VERSION"), "one\n")
+    File.write!(Path.join(seed, ".gitignore"), "/elixir/bin/\n/elixir/_build/\n")
     git!(seed, ["add", "."])
     git!(seed, ["commit", "-m", "one"])
     git!(seed, ["remote", "add", "origin", remote])
@@ -48,8 +83,34 @@ defmodule SymphonyPlus.SourceUpdateScriptTest do
     revision = git!(seed, ["rev-parse", "HEAD"])
     git!(install, ["fetch", "origin"])
     git!(base, ["clone", remote, prepared])
-    on_exit(fn -> File.rm_rf!(base) end)
+
+    for {path, label} <- [{install, "old"}, {prepared, "new"}] do
+      File.mkdir_p!(Path.join(path, "elixir/bin"))
+      executable = Path.join(path, "elixir/bin/symphony-plus")
+
+      File.write!(
+        executable,
+        "#!/bin/sh\nprintf '%s\\n' #{label}\nif test -n \"${SYMPHONY_PLUS_UPDATE_READY_FILE:-}\"; then printf '%s\\n' \"$$\" > \"$SYMPHONY_PLUS_UPDATE_READY_FILE\"; fi\ntrap 'exit 0' TERM\nwhile :; do sleep 1; done\n"
+      )
+
+      File.chmod!(executable, 0o755)
+    end
+
+    on_exit(fn ->
+      stop_ready_process(install)
+      File.rm_rf!(base)
+    end)
+
     %{base: base, install: install, prepared: prepared, revision: revision}
+  end
+
+  defp stop_ready_process(install) do
+    ready = Path.join(install, ".git/symphony-plus-update.ready")
+    if File.exists?(ready), do: stop_test_pid(String.trim(File.read!(ready)))
+  end
+
+  defp stop_test_pid(pid) do
+    if Regex.match?(~r/\A[0-9]+\z/, pid), do: System.cmd("kill", ["-TERM", pid], stderr_to_stdout: true)
   end
 
   defp git!(cwd, args) do

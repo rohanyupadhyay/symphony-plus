@@ -24,15 +24,17 @@ From the source checkout:
 cd /home/rohan/code/symphony-plus/elixir
 mise exec -- mix setup
 mise exec -- mix build
-./bin/symphony-plus github-app verify rohanyupadhyay/symphony-plus --profile symphony-plus
-./scripts/run-github \
+mise exec -- ./bin/symphony-plus github-app verify rohanyupadhyay/symphony-plus --profile symphony-plus
+mise exec -- ./scripts/run-github \
   --app-profile symphony-plus \
   /home/rohan/code/symphony-plus/.symphony-plus/WORKFLOW.md \
-  --port 4001
+  --port 4001 \
+  --data-root /home/rohan/.local/share/symphony-plus/self-hosting
 ```
 
 Open `http://localhost:4001` for runtime status. Startup is intentionally manual; no systemd or
-automatic reboot service is configured. Port 4000 remains reserved for the VerityCX instance.
+automatic reboot service is configured. Port 4000 remains reserved for the VerityCX instance. The absolute self-hosting data root
+above must differ from every other instance; a different port alone does not isolate registrations.
 
 The service uses `/home/rohan/code/symphony-plus-workspaces/symphony-plus`, never this checkout, for
 issue workspaces. Do not run a second process with the same workflow and workspace root.
@@ -62,8 +64,10 @@ reviews and queues eligible PRs for a guarded merge after CI passes.
 
 ## Security and recovery
 
-The launcher supplies App identifiers and the private-key path only to the Symphony Plus host. It mints
-short-lived installation tokens and removes App credentials from Codex. Agents commit locally and
+The launcher supplies App identifiers and the private-key path to the Symphony Plus host and
+its trusted repository hooks. Hooks inherit that environment and may execute repository code;
+review them as trusted host execution. The host mints
+short-lived installation tokens and removes declared App credential variables from the later Codex child. Agents commit locally and
 push only through the host-authenticated `github_git_push` tool.
 
 `danger-full-access` is trusted-host execution, not filesystem confinement. The launcher validates

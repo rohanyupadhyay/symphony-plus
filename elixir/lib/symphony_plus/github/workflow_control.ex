@@ -7,6 +7,8 @@ defmodule SymphonyPlus.GitHub.WorkflowControl do
   a Symphony Plus-owned database.
   """
 
+  alias SymphonyPlus.GitHub.DocumentationReview
+
   @marker_regex ~r/<!-- symphony-plus-control:v1:([^\s]+) -->/
   @states ~w(awaiting_input awaiting_approval review_pending awaiting_review merge_queued merge_validating merge_update_required merge_blocked merge_merged blocked)
   @gates ~w(spec plan implementation)
@@ -31,6 +33,9 @@ defmodule SymphonyPlus.GitHub.WorkflowControl do
         cond do
           Map.get(settings, "enabled", false) not in [true, false] ->
             {:error, :invalid_github_workflow_control}
+
+          Map.get(settings, "documentation_review_required", false) not in [true, false] ->
+            {:error, :invalid_github_documentation_review_required}
 
           not valid_associations?(associations) ->
             {:error, :invalid_github_workflow_associations}
@@ -71,6 +76,7 @@ defmodule SymphonyPlus.GitHub.WorkflowControl do
     marker = normalized |> Jason.encode!() |> Base.url_encode64(padding: false)
 
     sections = [
+      Map.get(normalized, "status_summary"),
       Map.get(normalized, "summary", "Symphony Plus is waiting."),
       checkpoint_guidance(normalized)
     ]
@@ -94,7 +100,9 @@ defmodule SymphonyPlus.GitHub.WorkflowControl do
       "repository" => attrs["repository"],
       "target_branch" => attrs["target_branch"],
       "admission_sequence" => attrs["admission_sequence"],
-      "dependencies" => Map.get(attrs, "dependencies", [])
+      "dependencies" => Map.get(attrs, "dependencies", []),
+      "documentation_review" => review_checkpoint["documentation_review"],
+      "phase_ledger" => review_checkpoint["phase_ledger"]
     }
   end
 
@@ -110,7 +118,12 @@ defmodule SymphonyPlus.GitHub.WorkflowControl do
     %{
       "state" => state,
       "phase" => "merge_queue",
-      "summary" => "Merge queue outcome: #{kind} (#{inspect(detail)}).",
+      "summary" => queue_report(admission, kind, detail),
+      "phase_ledger" => Map.get(admission, :phase_ledger, []),
+      "documentation_review" => Map.get(admission, :documentation_review),
+      "source_head_sha" => admission.source_head_sha,
+      "target_sha" => outcome_revision(detail, :target_sha, Map.get(admission, :target_sha)),
+      "candidate_sha" => outcome_revision(detail, :candidate_sha, Map.get(admission, :candidate_sha)),
       "pr_number" => admission.pr_number,
       "repository" => admission.repository,
       "target_branch" => admission.target_branch,
@@ -120,6 +133,20 @@ defmodule SymphonyPlus.GitHub.WorkflowControl do
       "recovery" => queue_recovery(kind, detail)
     }
   end
+
+  defp queue_report(admission, kind, detail) do
+    ledger = Map.get(admission, :phase_ledger, []) || []
+    phases = if ledger == [], do: "Prior phase reports unavailable; no phase counts inferred.", else: Enum.map_join(ledger, "\n\n", &Map.get(&1, "summary", ""))
+    candidate = outcome_revision(detail, :candidate_sha, Map.get(admission, :candidate_sha))
+    target = outcome_revision(detail, :target_sha, Map.get(admission, :target_sha))
+
+    "Merge queue outcome: #{kind} (#{inspect(detail)}).\n\n" <>
+      "Source: `#{admission.source_head_sha}`\nTarget: `#{target || "unavailable"}`\nCandidate: `#{candidate || "unavailable"}`\n\n" <>
+      "Recorded phase reports (agent assessments retained by the host):\n\n" <> phases
+  end
+
+  defp outcome_revision(detail, key, fallback) when is_map(detail), do: Map.get(detail, key, fallback)
+  defp outcome_revision(_detail, _key, fallback), do: fallback
 
   @spec queue_candidate(map(), String.t(), String.t()) :: map()
   def queue_candidate(admission, target_sha, candidate_sha)
@@ -136,7 +163,9 @@ defmodule SymphonyPlus.GitHub.WorkflowControl do
       "target_sha" => target_sha,
       "candidate_sha" => candidate_sha,
       "admission_sequence" => admission.admission_sequence,
-      "dependencies" => admission.dependencies
+      "dependencies" => admission.dependencies,
+      "documentation_review" => Map.get(admission, :documentation_review),
+      "phase_ledger" => Map.get(admission, :phase_ledger)
     }
   end
 
@@ -325,17 +354,23 @@ defmodule SymphonyPlus.GitHub.WorkflowControl do
       |> Enum.reject(&marker_comment?/1)
       |> Enum.sort_by(&event_id/1)
 
+    command = latest_valid_command(later_comments, checkpoint)
+    command = if command != nil and command["command"] == "retry" and checkpoint["phase"] == "merge_queue", do: nil, else: command
+    terminal = terminal_pull_request_trigger(checkpoint, review_context)
+
+    command || terminal ||
+      trigger_for_state(checkpoint, checkpoint_comment, later_comments, review_context, authorized, required_labels)
+  end
+
+  defp trigger_for_state(checkpoint, checkpoint_comment, later_comments, review_context, authorized, required_labels) do
     case checkpoint["state"] do
       "awaiting_input" ->
-        latest_input_trigger(later_comments, checkpoint)
+        latest_input_trigger(later_comments)
 
       "awaiting_approval" ->
         latest_valid_command(later_comments, checkpoint)
 
-      "blocked" ->
-        blocked_trigger(checkpoint, checkpoint_comment, later_comments, review_context, required_labels)
-
-      "merge_blocked" ->
+      state when state in ["blocked", "merge_blocked"] ->
         blocked_trigger(checkpoint, checkpoint_comment, later_comments, review_context, required_labels)
 
       state when state in ["review_pending", "merge_update_required"] ->
@@ -344,8 +379,20 @@ defmodule SymphonyPlus.GitHub.WorkflowControl do
       "awaiting_review" ->
         review_trigger(checkpoint, later_comments, review_context, authorized)
 
-      state when state in ["merge_queued", "merge_validating", "merge_merged"] ->
+      state when state in ["merge_queued", "merge_validating"] ->
+        queued_review_trigger(checkpoint, checkpoint_comment, review_context, required_labels)
+
+      "merge_merged" ->
         nil
+    end
+  end
+
+  defp queued_review_trigger(checkpoint, checkpoint_comment, review_context, required_labels) do
+    source = checkpoint["source_head_sha"] || checkpoint["head_sha"]
+
+    if review_context["documentation_review_required"] == true and
+         DocumentationReview.validate(checkpoint["documentation_review"], source) != :ok do
+      automatic_review_trigger(checkpoint, checkpoint_comment, review_context, required_labels)
     end
   end
 
@@ -369,9 +416,10 @@ defmodule SymphonyPlus.GitHub.WorkflowControl do
       |> Map.put("head_sha", get_in(pull_request, ["head", "sha"]))
 
     if valid_automatic_review?(review_checkpoint, pull_request, context, required_labels) do
-      Map.take(review_checkpoint, ~w(pr_number branch head_sha))
+      Map.take(review_checkpoint, ~w(pr_number branch head_sha documentation_review))
       |> Map.put("kind", "automatic_review")
       |> Map.put("admission_sequence", event_id(checkpoint_comment))
+      |> maybe_put("documentation_review_handoff_required", if(context["documentation_review_required"] == true, do: not present?(get_in(checkpoint, ["documentation_review", "author_thread_id"]))))
     end
   end
 
@@ -430,7 +478,7 @@ defmodule SymphonyPlus.GitHub.WorkflowControl do
   defp label_name(name) when is_binary(name), do: name |> String.trim() |> String.downcase()
   defp label_name(_label), do: ""
 
-  defp latest_input_trigger(comments, checkpoint) do
+  defp latest_input_trigger(comments) do
     comments
     |> List.last()
     |> case do
@@ -438,16 +486,8 @@ defmodule SymphonyPlus.GitHub.WorkflowControl do
         nil
 
       comment ->
-        input_trigger(comment, checkpoint)
+        event_payload(comment, "answer")
     end
-  end
-
-  defp input_trigger(comment, checkpoint) do
-    command = command_event(comment)
-
-    if command && valid_command_for_checkpoint?(command, checkpoint),
-      do: command,
-      else: event_payload(comment, "answer")
   end
 
   defp latest_valid_command(comments, checkpoint) do
@@ -463,31 +503,28 @@ defmodule SymphonyPlus.GitHub.WorkflowControl do
   end
 
   defp valid_command_for_checkpoint?(%{"command" => "revise"}, checkpoint) do
-    checkpoint["state"] in ["awaiting_approval", "awaiting_review", "blocked"]
+    checkpoint["state"] in ~w(awaiting_approval awaiting_review review_pending merge_update_required merge_queued merge_validating merge_blocked blocked)
   end
 
   defp valid_command_for_checkpoint?(%{"command" => command}, checkpoint)
        when command in @commands do
     case command do
       "retry" -> checkpoint["state"] in ["blocked", "merge_blocked"]
-      _ -> true
+      _ -> checkpoint["state"] != "merge_merged"
+    end
+  end
+
+  defp terminal_pull_request_trigger(checkpoint, context) do
+    pr = Map.get(context, "pull_request", %{})
+
+    if checkpoint["state"] != "merge_merged" and pr["number"] == checkpoint["pr_number"] and pr["state"] == "closed" do
+      %{"kind" => "pull_request", "state" => if(pr["merged"] == true, do: "merged", else: "closed"), "number" => pr["number"]}
     end
   end
 
   defp review_trigger(checkpoint, issue_comments, context, authorized) do
-    pull_request = Map.get(context, "pull_request", %{})
-
-    cond do
-      pull_request["merged"] == true ->
-        %{"kind" => "pull_request", "state" => "merged", "number" => pull_request["number"]}
-
-      pull_request["state"] == "closed" ->
-        %{"kind" => "pull_request", "state" => "closed", "number" => pull_request["number"]}
-
-      true ->
-        explicit_review_command(checkpoint, issue_comments, context, authorized) ||
-          formal_review_trigger(checkpoint, context, authorized)
-    end
+    explicit_review_command(checkpoint, issue_comments, context, authorized) ||
+      formal_review_trigger(checkpoint, context, authorized)
   end
 
   defp explicit_review_command(checkpoint, issue_comments, context, authorized) do

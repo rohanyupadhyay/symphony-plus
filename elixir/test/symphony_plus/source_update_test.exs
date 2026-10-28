@@ -44,8 +44,18 @@ defmodule SymphonyPlus.SourceUpdateTest do
     git!(seed, ["commit", "-m", "two"])
     git!(seed, ["push"])
     assert {:ok, candidate} = SourceUpdate.discover(install)
-    assert {:ok, path} = SourceUpdate.prepare(install, candidate, "true")
+    assert {:ok, path} = SourceUpdate.prepare(install, candidate, "mkdir -p bin && printf '#!/bin/sh\\nexit 0\\n' > bin/symphony-plus && chmod +x bin/symphony-plus")
     assert String.trim(elem(System.cmd("git", ["rev-parse", "HEAD"], cd: path), 0)) == candidate.revision
+  end
+
+  test "rejects preparation that does not produce an executable", %{seed: seed, install: install} do
+    File.mkdir_p!(Path.join(seed, "elixir"))
+    File.write!(Path.join(seed, "elixir/.keep"), "")
+    git!(seed, ["add", "."])
+    git!(seed, ["commit", "-m", "candidate without executable"])
+    git!(seed, ["push"])
+    assert {:ok, candidate} = SourceUpdate.discover(install)
+    assert {:error, :prepared_executable_missing} = SourceUpdate.prepare(install, candidate, "true")
   end
 
   test "refuses preparation while the installation preparation lock is held", %{seed: seed, install: install} do

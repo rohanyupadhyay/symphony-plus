@@ -18,7 +18,28 @@ defmodule SymphonyPlus.GitHub.MergeQueue do
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
+    name = queue_name(opts)
+
+    case GenServer.start_link(__MODULE__, opts, name: name) do
+      {:error, {:already_started, _pid}} = error ->
+        case name do
+          {:via, Registry, {SymphonyPlus.ProjectQueueRegistry, repo}} -> {:error, {:queue_authority_conflict, repo}}
+          _ -> error
+        end
+
+      result ->
+        result
+    end
+  end
+
+  defp queue_name(opts) do
+    case Keyword.get(opts, :project_context) do
+      %{settings: %{tracker: %{kind: "github", provider: %{"repo" => repo}}}} when is_binary(repo) ->
+        {:via, Registry, {SymphonyPlus.ProjectQueueRegistry, String.downcase(repo)}}
+
+      _ ->
+        Keyword.get(opts, :name, __MODULE__)
+    end
   end
 
   @spec status(GenServer.server()) :: map()
@@ -28,7 +49,14 @@ defmodule SymphonyPlus.GitHub.MergeQueue do
   def poll(server \\ __MODULE__), do: GenServer.cast(server, :poll)
 
   @spec idle?(GenServer.server()) :: boolean()
-  def idle?(server \\ __MODULE__), do: GenServer.call(server, :idle?)
+  def idle?(server \\ __MODULE__) do
+    GenServer.call(server, :idle?, 100)
+  catch
+    :exit, _reason -> false
+  end
+
+  @spec update_project_context(GenServer.server(), map()) :: :ok
+  def update_project_context(server, context), do: GenServer.cast(server, {:update_project_context, context})
 
   @spec build_queues([Entry.t()]) :: %{optional(queue_key()) => [Entry.t()]}
   def build_queues(entries) do
@@ -100,16 +128,15 @@ defmodule SymphonyPlus.GitHub.MergeQueue do
   @spec advance(Entry.t(), map()) ::
           {:merged, map()} | {:retry, term()} | {:update_required, term()} | {:blocked, term()}
   def advance(%Entry{} = entry, adapter) when is_map(adapter) do
-    expected_head_sha = entry.candidate_sha || entry.source_head_sha
-
     with {:target, {:ok, target_sha}} <- {:target, adapter.target.(entry)},
-         {:update, {:ok, candidate_sha}} <- {:update, adapter.update.(entry, expected_head_sha)},
+         {:candidate, {:ok, candidate_sha, updated?}} <-
+           {:candidate, select_candidate(entry, target_sha, adapter)},
          candidate = %Candidate{
            source_head_sha: entry.source_head_sha,
            target_sha: target_sha,
            candidate_sha: candidate_sha
          },
-         :ok <- persist_candidate(adapter, entry, candidate),
+         :ok <- maybe_persist_candidate(updated?, adapter, entry, candidate),
          {:validate, {:ok, :passed}} <- {:validate, adapter.validate.(entry, candidate_sha)},
          {:refresh, {:ok, fresh}} <- {:refresh, adapter.refresh.(entry)},
          :ok <- freshness(candidate, fresh),
@@ -117,12 +144,29 @@ defmodule SymphonyPlus.GitHub.MergeQueue do
       {:merged, %{candidate_sha: candidate_sha, target_sha: target_sha}}
     else
       {:validate, {:error, {:checks_failed, _checks} = reason}} -> {:update_required, reason}
-      {:update, {:error, :merge_conflict}} -> {:update_required, :merge_conflict}
+      {:candidate, {:error, :merge_conflict}} -> {:update_required, :merge_conflict}
       {:error, reason} -> {:retry, reason}
       {_step, {:error, reason}} -> classify_failure(reason)
       unexpected -> {:blocked, {:unexpected_provider_response, unexpected}}
     end
   end
+
+  defp select_candidate(%Entry{candidate_sha: sha, target_sha: target}, target, _adapter)
+       when is_binary(sha), do: {:ok, sha, false}
+
+  defp select_candidate(entry, _target, adapter) do
+    expected_head_sha = entry.candidate_sha || entry.source_head_sha
+
+    case adapter.update.(entry, expected_head_sha) do
+      {:ok, sha} -> {:ok, sha, true}
+      other -> other
+    end
+  end
+
+  defp maybe_persist_candidate(true, adapter, entry, candidate),
+    do: persist_candidate(adapter, entry, candidate)
+
+  defp maybe_persist_candidate(false, _adapter, _entry, _candidate), do: :ok
 
   @spec backoff_ms(non_neg_integer(), pos_integer()) :: pos_integer()
   def backoff_ms(attempt, maximum) do
@@ -131,6 +175,7 @@ defmodule SymphonyPlus.GitHub.MergeQueue do
 
   @impl true
   def init(opts) do
+    if context = Keyword.get(opts, :project_context), do: SymphonyPlus.Config.install_project_context(context)
     configured = configured_options()
 
     state = %{
@@ -157,6 +202,12 @@ defmodule SymphonyPlus.GitHub.MergeQueue do
 
   def handle_call(:idle?, _from, state),
     do: {:reply, map_size(state.queues) == 0 and MapSet.size(state.active_generations) == 0, state}
+
+  @impl true
+  def handle_cast({:update_project_context, context}, state) do
+    :ok = SymphonyPlus.Config.install_project_context(context)
+    {:noreply, refresh_config(state)}
+  end
 
   @impl true
   def handle_cast(:poll, state), do: {:noreply, run_poll(state)}

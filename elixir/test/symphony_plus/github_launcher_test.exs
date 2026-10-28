@@ -193,7 +193,7 @@ defmodule SymphonyPlus.GitHubLauncherTest do
     assert normalized =~ "create, update, retry, and revision"
     assert normalized =~ "closed without merge"
     assert normalized =~ ".github/pull_request_template.md"
-    assert normalized =~ "mix pr_body.check --file"
+    assert normalized =~ "PROJECT_PR_BODY_CHECK_COMMAND"
     assert normalized =~ "must not use auto-closing keywords"
     assert normalized =~ "After merge, comment with final validation and close the parent issue"
   end

@@ -10,7 +10,7 @@ if [[ ! -x "${symphony_executable}" ]]; then
   exit 1
 fi
 
-app_profile=""
+app_profile="${SYMPHONY_PLUS_APP_PROFILE:-}"
 runtime_args=()
 
 while (($# > 0)); do
@@ -31,6 +31,7 @@ while (($# > 0)); do
 done
 
 if [[ -n "${app_profile}" ]]; then
+  export SYMPHONY_PLUS_APP_PROFILE="${app_profile}"
   profile_environment="$(${symphony_executable} github-app env --profile "${app_profile}")"
 
   while IFS='=' read -r name value; do
@@ -49,6 +50,8 @@ if [[ -n "${app_profile}" ]]; then
     echo "GitHub App profile is incomplete: ${app_profile}" >&2
     exit 1
   fi
+elif [[ -n "${GITHUB_APP_ID:-}" && -n "${GITHUB_APP_INSTALLATION_ID:-}" && -n "${GITHUB_APP_PRIVATE_KEY_PATH:-}" ]]; then
+  : # Preserve host App credentials across an update handoff.
 else
   if ! command -v gh >/dev/null 2>&1; then
     echo "GitHub CLI is required for PAT fallback. Install it and run 'gh auth login', or use --app-profile." >&2

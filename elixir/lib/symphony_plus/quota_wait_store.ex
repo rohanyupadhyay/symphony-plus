@@ -3,7 +3,7 @@ defmodule SymphonyPlus.QuotaWaitStore do
 
   alias SymphonyPlus.PathSafety
 
-  @fields ~w(version issue_id issue_identifier harness pool_key status renewal_at next_recheck_at workspace_key continuation last_outcome observed_at updated_at)
+  @fields ~w(version issue_id issue_identifier harness pool_key status renewal_at next_recheck_at workspace_key worker_host continuation last_outcome observed_at updated_at)
   @statuses ~w(waiting eligible resuming operator_blocked)
 
   @spec put(Path.t(), map()) :: :ok | {:error, term()}
@@ -117,6 +117,7 @@ defmodule SymphonyPlus.QuotaWaitStore do
          :ok <- validate_optional_timestamp(normalized["renewal_at"]),
          :ok <- validate_timestamp(normalized["next_recheck_at"]),
          :ok <- validate_workspace_key(normalized["workspace_key"]),
+         :ok <- validate_worker_host(normalized["worker_host"]),
          :ok <- validate_continuation(normalized["continuation"], normalized),
          :ok <- validate_string(normalized, "last_outcome", 128),
          :ok <- validate_timestamp(normalized["observed_at"]),
@@ -129,6 +130,9 @@ defmodule SymphonyPlus.QuotaWaitStore do
 
   defp validate_version(1), do: :ok
   defp validate_version(_value), do: {:error, :unknown_version}
+
+  defp validate_worker_host(nil), do: :ok
+  defp validate_worker_host(value), do: validate_string(%{"worker_host" => value}, "worker_host", 512)
   defp validate_harness("codex"), do: :ok
   defp validate_harness(_value), do: {:error, :invalid_harness}
   defp validate_status(value) when value in @statuses, do: :ok

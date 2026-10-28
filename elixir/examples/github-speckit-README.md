@@ -9,10 +9,11 @@ This directory contains this repository's Symphony Plus automation contract.
 Start Symphony Plus from its external installation, passing this repository's workflow explicitly:
 
 ```bash
-./scripts/run-github \
+mise exec -- ./scripts/run-github \
   --app-profile PROJECT_PROFILE \
   /absolute/path/to/repository/.symphony-plus/WORKFLOW.md \
-  --port 4000
+  --port 4000 \
+  --data-root /absolute/installation/data
 ```
 
 Customize this guide with the repository name, App profile, dashboard URL, workspace root, issue

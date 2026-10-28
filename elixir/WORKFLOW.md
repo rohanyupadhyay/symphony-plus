@@ -46,8 +46,8 @@ updates:
   interval_ms: 900000
   installation_root: /absolute/path/to/symphony-plus
   remote: origin
-  prepare_command: mise exec -- mix setup && make all && mise exec -- mix build
-  launcher_command: ./scripts/run-github
+  prepare_command: mise trust && mise install && mise exec -- mix setup && mise exec -- make all && mise exec -- mix build
+  launcher_command: mise exec -- ./bin/symphony-plus
 ---
 
 You are working on a Linear ticket `{{ issue.identifier }}`

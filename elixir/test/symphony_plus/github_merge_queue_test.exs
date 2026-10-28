@@ -9,6 +9,184 @@ defmodule SymphonyPlus.GitHub.MergeQueueTest do
   @sha_a String.duplicate("a", 40)
   @sha_b String.duplicate("b", 40)
 
+  test "queue authority stops pending commands and superseded checkpoints before branch writes" do
+    queued = %{entry(2, @sha_a, 1) | originating_issue: 11}
+
+    cp = %{
+      "state" => "merge_queued",
+      "phase" => "merge_queue",
+      "summary" => "Queued",
+      "repository" => "octo/repo",
+      "target_branch" => "main",
+      "branch" => "topic",
+      "pr_number" => 2,
+      "head_sha" => @sha_a,
+      "admission_sequence" => 1
+    }
+
+    trusted = %{"id" => 10, "body" => WorkflowControl.render_comment(cp), "user" => %{"type" => "Bot"}, "performed_via_github_app" => %{"id" => 42}}
+    issue = %{"state" => "open"}
+    assert :ok = Backend.queue_authority(queued, issue, [trusted], 42, %{})
+
+    for command <- ["cancel", "status", "revise fix tests"] do
+      human = %{"id" => 11, "body" => "/symphony-plus #{command}", "author_association" => "OWNER"}
+      assert {:error, :queue_authority_lost} = Backend.queue_authority(queued, issue, [trusted, human], 42, %{})
+    end
+
+    blocked = put_in(trusted, ["body"], WorkflowControl.render_comment(%{"state" => "blocked", "phase" => "implementation", "summary" => "Cancelled"}))
+    assert {:error, :queue_authority_lost} = Backend.queue_authority(queued, issue, [blocked], 42, %{})
+    assert {:error, :queue_authority_lost} = Backend.queue_authority(queued, %{"state" => "closed"}, [trusted], 42, %{})
+  end
+
+  test "lost queue authority leaves the operator command as the latest checkpoint" do
+    queued = %{entry(2, @sha_a, 1) | originating_issue: 11}
+    owner = self()
+
+    request = fn method, path, _params, _body ->
+      send(owner, {:checkpoint_write, method, path})
+      {:ok, %{}}
+    end
+
+    assert {:retry, :queue_authority_lost} =
+             Backend.persist_outcome(queued, {:blocked, :queue_authority_lost}, request)
+
+    adapter = %{
+      target: fn _ -> {:ok, @sha_b} end,
+      update: fn _, _ -> {:error, :queue_authority_lost} end,
+      validate: fn _, _ -> {:ok, :passed} end,
+      refresh: fn _ -> {:ok, %{head_sha: @sha_a, target_sha: @sha_b, eligible: true}} end,
+      merge: fn _, _ -> {:error, :queue_authority_lost} end
+    }
+
+    target_loss = %{adapter | target: fn _ -> {:error, :queue_authority_lost} end}
+    merge_entry = %{queued | candidate_sha: @sha_a, target_sha: @sha_b}
+
+    for outcome <- [
+          MergeQueue.advance(queued, target_loss),
+          MergeQueue.advance(queued, adapter),
+          MergeQueue.advance(merge_entry, adapter)
+        ] do
+      assert {:retry, :queue_authority_lost} = outcome
+      assert {:retry, :queue_authority_lost} = Backend.persist_outcome(queued, outcome, request)
+    end
+
+    refute_receive {:checkpoint_write, _, _}
+  end
+
+  test "merged host report retains phase ledger and exact validation lineage" do
+    queued = %{
+      entry(2, @sha_a, 1)
+      | originating_issue: 11,
+        phase_ledger: [
+          %{"phase" => "implementation", "summary" => "Tests: 12 passed; specify completed once; clarify not run."}
+        ],
+        target_sha: @sha_b,
+        candidate_sha: @sha_a
+    }
+
+    parent = self()
+
+    report = fn method, path, _params, body ->
+      send(parent, {:report, method, path, body})
+      {:ok, %{}}
+    end
+
+    assert {:merged, %{candidate_sha: @sha_a, target_sha: @sha_b}} =
+             Backend.complete_merged(queued, %{candidate_sha: @sha_a, target_sha: @sha_b}, report)
+
+    assert_received {:report, "POST", "/repos/octo/repo/issues/11/comments", %{"body" => body}}
+    assert body =~ "specify completed once"
+    assert body =~ "Source: `#{@sha_a}`"
+    assert body =~ "Target: `#{@sha_b}`"
+    assert body =~ "Candidate: `#{@sha_a}`"
+  end
+
+  test "operator commands arriving during branch update cannot be swallowed by candidate checkpoints" do
+    for command <- ["cancel", "revise fix tests"] do
+      {queued, comments, authority, request} = checkpoint_authority_fixture(command)
+      assert :ok = authority.(queued)
+
+      adapter = %{
+        target: fn _ -> {:ok, @sha_b} end,
+        update: fn _, _ ->
+          append_operator_command(comments, command)
+          {:ok, @sha_b}
+        end,
+        candidate: fn item, candidate -> Backend.persist_candidate_result(item, candidate, request, authority) end,
+        validate: fn _, _ -> {:ok, :passed} end,
+        refresh: fn _ -> {:ok, %{head_sha: @sha_b, target_sha: @sha_b, eligible: true}} end,
+        merge: fn item, _ -> with :ok <- authority.(item), do: {:ok, :merged} end
+      }
+
+      result = MergeQueue.advance(queued, adapter)
+      assert {:error, :queue_authority_lost} = authority.(queued)
+      assert {:retry, :queue_authority_lost} = result
+      assert length(Agent.get(comments, & &1)) == 2
+    end
+  end
+
+  test "noncompletion outcomes preserve commands arriving after admission preflight" do
+    for {command, outcome} <- [
+          {"cancel", {:blocked, {:dependency, :missing_dependency, "Repair the dependency."}}},
+          {"revise fix tests", {:update_required, {:checks_failed, ["test"]}}},
+          {"cancel", {:blocked, :eligibility_lost}}
+        ] do
+      {queued, comments, authority, request} = checkpoint_authority_fixture({command, outcome})
+      assert :ok = authority.(queued)
+      append_operator_command(comments, command)
+
+      result = Backend.persist_outcome(queued, outcome, request, authority)
+      assert {:error, :queue_authority_lost} = authority.(queued)
+      assert {:retry, :queue_authority_lost} = result
+      assert length(Agent.get(comments, & &1)) == 2
+    end
+  end
+
+  test "current queue authority permits candidate and outcome checkpoints" do
+    {queued, comments, authority, request} = checkpoint_authority_fixture(:authorized_checkpoints)
+    candidate = %{target_sha: @sha_b, candidate_sha: @sha_b}
+
+    assert :ok = Backend.persist_candidate_result(queued, candidate, request, authority)
+    assert :ok = authority.(queued)
+
+    assert {:ok, %{"state" => "merge_validating", "candidate_sha" => @sha_b}} =
+             WorkflowControl.decode_checkpoint(Agent.get(comments, &List.last(&1)["body"]))
+
+    assert {:update_required, :merge_conflict} =
+             Backend.persist_outcome(queued, {:update_required, :merge_conflict}, request, authority)
+
+    assert {:ok, %{"state" => "merge_update_required"}} =
+             WorkflowControl.decode_checkpoint(Agent.get(comments, &List.last(&1)["body"]))
+  end
+
+  test "authority lookup failures prevent candidate and outcome checkpoint writes" do
+    queued = %{entry(2, @sha_a, 1) | originating_issue: 11}
+    request = fn _, _, _, _ -> flunk("authority lookup failure must prevent checkpoint writes") end
+    authority = fn _ -> {:error, :unavailable} end
+
+    assert {:error, :unavailable} =
+             Backend.persist_candidate_result(queued, %{target_sha: @sha_b, candidate_sha: @sha_b}, request, authority)
+
+    assert {:retry, :unavailable} =
+             Backend.persist_outcome(queued, {:blocked, :eligibility_lost}, request, authority)
+  end
+
+  test "already merged outcomes complete even after queue authority has ended" do
+    queued = %{entry(2, @sha_a, 1) | originating_issue: 11}
+    owner = self()
+    authority = fn _ -> flunk("already merged outcomes must finish without queue authority") end
+
+    request = fn method, path, _params, body ->
+      send(owner, {:merged_completion, method, path, body})
+      {:ok, %{}}
+    end
+
+    assert {:merged, %{}} = Backend.persist_outcome(queued, {:merged, %{}}, request, authority)
+    assert_received {:merged_completion, "PATCH", "/repos/octo/repo/issues/11", %{"state" => "closed"}}
+    assert_received {:merged_completion, "POST", "/repos/octo/repo/issues/11/comments", %{"body" => body}}
+    assert {:ok, %{"state" => "merge_merged"}} = WorkflowControl.decode_checkpoint(body)
+  end
+
   test "loader ignores issues whose latest trusted checkpoint is not queued" do
     terminal = %{
       "id" => 99,
@@ -330,6 +508,61 @@ defmodule SymphonyPlus.GitHub.MergeQueueTest do
     assert_receive {:updated, ^old_candidate}
   end
 
+  test "unchanged target reuses the durable candidate while checking it again" do
+    candidate_sha = String.duplicate("c", 40)
+    recovered = %{entry(2, @sha_b, 1) | candidate_sha: candidate_sha, target_sha: @sha_a}
+    owner = self()
+
+    adapter = %{
+      target: fn _entry -> {:ok, @sha_a} end,
+      update: fn _, _ -> flunk("unchanged target must reuse the durable candidate") end,
+      candidate: fn _, _ -> flunk("reused candidate needs no new checkpoint") end,
+      validate: fn _, ^candidate_sha ->
+        send(owner, :checks_read)
+        {:ok, :passed}
+      end,
+      refresh: fn _ ->
+        send(owner, :context_read)
+        {:ok, %{head_sha: candidate_sha, target_sha: @sha_a, eligible: true}}
+      end,
+      merge: fn _, ^candidate_sha -> {:ok, :merged} end
+    }
+
+    assert {:merged, %{candidate_sha: ^candidate_sha, target_sha: @sha_a}} =
+             MergeQueue.advance(recovered, adapter)
+
+    assert_received :checks_read
+    assert_received :context_read
+  end
+
+  test "reused candidate stops on failed checks or stale merge context" do
+    candidate_sha = String.duplicate("c", 40)
+    recovered = %{entry(2, @sha_b, 1) | candidate_sha: candidate_sha, target_sha: @sha_a}
+
+    adapter = %{
+      target: fn _ -> {:ok, @sha_a} end,
+      update: fn _, _ -> flunk("unchanged target must not update") end,
+      validate: fn _, ^candidate_sha -> {:ok, :passed} end,
+      refresh: fn _ -> {:ok, %{head_sha: candidate_sha, target_sha: @sha_a, eligible: true}} end,
+      merge: fn _, _ -> flunk("invalid candidate must not merge") end
+    }
+
+    assert {:update_required, {:checks_failed, ["test"]}} =
+             MergeQueue.advance(recovered, %{
+               adapter
+               | validate: fn _, ^candidate_sha -> {:error, {:checks_failed, ["test"]}} end
+             })
+
+    for {fresh, reason} <- [
+          {%{head_sha: @sha_b, target_sha: @sha_a, eligible: true}, :stale_head},
+          {%{head_sha: candidate_sha, target_sha: @sha_b, eligible: true}, :stale_target},
+          {%{head_sha: candidate_sha, target_sha: @sha_a, eligible: false}, :eligibility_lost}
+        ] do
+      assert {:retry, ^reason} =
+               MergeQueue.advance(recovered, %{adapter | refresh: fn _ -> {:ok, fresh} end})
+    end
+  end
+
   test "stale targets retry and deterministic validation failures request updates" do
     candidate_sha = String.duplicate("c", 40)
     target_sha = String.duplicate("d", 40)
@@ -512,6 +745,32 @@ defmodule SymphonyPlus.GitHub.MergeQueueTest do
 
   test "default start_link delegates through the registered server name" do
     assert {:error, {:already_started, _pid}} = MergeQueue.start_link()
+  end
+
+  defp checkpoint_authority_fixture(id) do
+    queued = %{entry(2, @sha_a, 1) | originating_issue: 11}
+    checkpoint = WorkflowControl.queue_candidate(queued, @sha_b, @sha_a)
+    trusted = trusted_queue_comment(10, WorkflowControl.render_comment(checkpoint))
+    comments = start_supervised!({Agent, fn -> [trusted] end}, id: id)
+
+    authority = fn item ->
+      Backend.queue_authority(item, %{"state" => "open"}, Agent.get(comments, & &1), 42, %{})
+    end
+
+    request = fn "POST", "/repos/octo/repo/issues/11/comments", %{}, %{"body" => body} ->
+      Agent.update(comments, fn current -> current ++ [trusted_queue_comment(length(current) + 10, body)] end)
+      {:ok, %{}}
+    end
+
+    {queued, comments, authority, request}
+  end
+
+  defp append_operator_command(comments, command) do
+    Agent.update(comments, &(&1 ++ [%{"id" => 11, "body" => "/symphony-plus #{command}", "author_association" => "OWNER"}]))
+  end
+
+  defp trusted_queue_comment(id, body) do
+    %{"id" => id, "body" => body, "user" => %{"type" => "Bot"}, "performed_via_github_app" => %{"id" => 42}}
   end
 
   defp entry(number, sha, sequence, branch \\ "main", dependencies \\ []) do

@@ -200,13 +200,19 @@ The target workflow must customize all of the following:
 
 - `tracker.provider.repo`: exact `TARGET_REPO` value;
 - `workspace.root`: exact dedicated `SYMPHONY_PLUS_WORKSPACE_ROOT`;
-- `hooks.after_create`: clone URL and deterministic dependency bootstrap;
+- `tracker.provider.bootstrap_clone: true` with GitHub App auth: host-authenticated clone of the
+  configured target repository before hooks; use `hooks.after_create` only for deterministic
+  dependency bootstrap after that clone, especially for private repositories;
 - concurrency and turn limits appropriate for the host;
-- project formatting, linting, typing, test, and build commands;
+- project formatting, linting, typing, test, and build commands, including the
+  `PROJECT_VALIDATION_COMMAND` and `PROJECT_PR_BODY_CHECK_COMMAND` prompt placeholders;
+  replace the PR-body check with a repository-native check or an explicit manual template review;
 - branch naming `symphony-plus/gh-<issue>-<slug>`;
 - feature directory naming `specs/gh-<issue>-<slug>`;
 - issue and pull-request wording appropriate for the repository; and
-- the repository's merge policy, while retaining human-only merge.
+- the repository's merge policy and required GitHub reviews; only the host queue may perform
+  an automatic guarded merge, never the issue agent directly. Set `merge_queue.enabled: false`
+  if the repository requires a human to perform the merge.
 
 Retain these security and lifecycle requirements:
 
@@ -226,13 +232,13 @@ Retain these security and lifecycle requirements:
 - bounded analyze and implement/converge remediation loops;
 - review feedback routing back to the owning Spec Kit phase;
 - no `speckit-taskstoissues`;
-- no automatic merge; and
+- no direct agent merge (host queue admission remains subject to configured repository policy); and
 - no official GitHub Spec Kit extension.
 
 Review the resulting YAML front matter and prompt as code. Confirm no placeholder remains:
 
 ```bash
-rg -n 'OWNER/REPOSITORY|/absolute/path|PROJECT|TODO|TBD' \
+rg -n 'OWNER/REPOSITORY|/absolute/path|PROJECT|TODO|TBD|make -C elixir|mix pr_body.check' \
   "$TARGET_REPO_DIR/.symphony-plus/WORKFLOW.md" \
   "$TARGET_REPO_DIR/.symphony-plus/README.md"
 git -C "$TARGET_REPO_DIR" diff --check
@@ -272,7 +278,7 @@ If no profile exists, give the operator this command to run in their own termina
 
 ```bash
 cd "$SYMPHONY_PLUS_DIR/elixir"
-./bin/symphony-plus github-app setup "$TARGET_REPO" \
+mise exec -- ./bin/symphony-plus github-app setup "$TARGET_REPO" \
   --profile "$APP_PROFILE" \
   --name "UNIQUE PROJECT Symphony Plus"
 ```
@@ -285,7 +291,9 @@ recognizable operator- or organization-owned name. Required repository permissio
 - Contents: read and write;
 - Issues: read and write;
 - Pull requests: read and write;
-- Workflows: read and write; and
+- Workflows: read and write;
+- Checks: read;
+- Commit statuses: read; and
 - Metadata: read.
 
 Webhooks remain disabled because Symphony Plus polls GitHub.
@@ -304,8 +312,13 @@ After the operator reports completion, verify access:
 
 ```bash
 cd "$SYMPHONY_PLUS_DIR/elixir"
-./bin/symphony-plus github-app verify "$TARGET_REPO" --profile "$APP_PROFILE"
+mise exec -- ./bin/symphony-plus github-app verify "$TARGET_REPO" --profile "$APP_PROFILE"
 ```
+
+Verification checks identity, repository visibility, and nonmutating review read endpoints. It
+cannot establish write access, branch protection, or merge-policy eligibility; prove those with
+a controlled disposable issue/PR. Private-repository integration remains unverified until a
+dedicated authorized resource passes.
 
 Expected evidence: `Verified <app-slug>[bot] for OWNER/REPOSITORY.` Stop on any permission,
 installation, identity, or file-mode error. Do not fall back to a personal PAT unless the operator
@@ -321,10 +334,11 @@ Start App mode from the Symphony Plus checkout:
 
 ```bash
 cd "$SYMPHONY_PLUS_DIR/elixir"
-./scripts/run-github \
+mise exec -- ./scripts/run-github \
   --app-profile "$APP_PROFILE" \
   "$TARGET_REPO_DIR/.symphony-plus/WORKFLOW.md" \
-  --port 4000
+  --port 4000 \
+  --data-root "$HOME/.local/share/symphony-plus/$APP_PROFILE"
 ```
 
 Expected evidence:

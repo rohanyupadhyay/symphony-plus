@@ -120,6 +120,7 @@ defmodule SymphonyPlus.Codex.AppServer do
       Keyword.get(opts, :tool_executor, fn tool, arguments ->
         DynamicTool.execute(tool, arguments, dynamic_tool_binding,
           issue: issue,
+          trusted_thread_id: thread_id,
           workspace: workspace,
           worker_host: worker_host
         )

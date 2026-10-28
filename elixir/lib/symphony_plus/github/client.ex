@@ -5,7 +5,7 @@ defmodule SymphonyPlus.GitHub.Client do
 
   require Logger
   alias SymphonyPlus.Config
-  alias SymphonyPlus.GitHub.{Auth, WorkflowControl}
+  alias SymphonyPlus.GitHub.{Auth, DocumentationReview, WorkflowControl}
   alias SymphonyPlus.Tracker.Issue
 
   @default_api_url "https://api.github.com"
@@ -626,7 +626,7 @@ defmodule SymphonyPlus.GitHub.Client do
       derived =
         WorkflowControl.derive(
           comments,
-          review_context,
+          Map.put(review_context, "documentation_review_required", DocumentationReview.required?(settings.provider)),
           WorkflowControl.authorized_associations(settings.provider),
           trusted_bot_login,
           settings.required_labels
@@ -683,7 +683,7 @@ defmodule SymphonyPlus.GitHub.Client do
   end
 
   defp maybe_fetch_review_context(%{checkpoint: %{"state" => state, "pr_number" => pr_number}}, settings, request_fun)
-       when state in ["review_pending", "awaiting_review", "merge_update_required"] do
+       when state in ["review_pending", "awaiting_review", "merge_update_required", "merge_queued", "merge_validating", "merge_blocked"] do
     fetch_review_context(pr_number, settings, request_fun)
   end
 

@@ -77,20 +77,24 @@ defmodule SymphonyPlusWeb.Presenter do
       else: payload
   end
 
-  @spec issue_payload(String.t(), GenServer.name(), timeout()) :: {:ok, map()} | {:error, :issue_not_found}
-  def issue_payload(issue_identifier, orchestrator, snapshot_timeout_ms) when is_binary(issue_identifier) do
+  @spec issue_payload(String.t(), GenServer.name(), timeout()) ::
+          {:ok, map()} | {:error, :issue_not_found | :ambiguous_issue}
+  def issue_payload(issue_identifier, orchestrator, snapshot_timeout_ms),
+    do: issue_payload(issue_identifier, orchestrator, snapshot_timeout_ms, nil)
+
+  @spec issue_payload(String.t(), GenServer.name(), timeout(), String.t() | nil) ::
+          {:ok, map()} | {:error, :issue_not_found | :ambiguous_issue}
+  def issue_payload(issue_identifier, orchestrator, snapshot_timeout_ms, project_id) when is_binary(issue_identifier) do
     case snapshot(orchestrator, snapshot_timeout_ms) do
       %{} = snapshot ->
         snapshot = RuntimeStatus.project(snapshot)
-        running = Enum.find(snapshot.running, &(&1.identifier == issue_identifier))
-        retry = Enum.find(snapshot.retrying, &(&1.identifier == issue_identifier))
-        blocked = Enum.find(Map.get(snapshot, :blocked, []), &(&1.identifier == issue_identifier))
-        quota_wait = Enum.find(Map.get(snapshot, :quota_waiting, []), &(&1.identifier == issue_identifier))
 
-        if is_nil(running) and is_nil(retry) and is_nil(blocked) and is_nil(quota_wait) do
-          {:error, :issue_not_found}
+        if is_nil(project_id) and length(project_ids_for_issue(snapshot, issue_identifier)) > 1 do
+          {:error, :ambiguous_issue}
         else
-          {:ok, issue_payload_body(issue_identifier, running, retry, blocked, quota_wait)}
+          snapshot
+          |> filter_project_snapshot(project_id)
+          |> issue_from_snapshot(issue_identifier)
         end
 
       _ ->
@@ -98,9 +102,46 @@ defmodule SymphonyPlusWeb.Presenter do
     end
   end
 
+  defp project_ids_for_issue(snapshot, identifier) do
+    [:running, :retrying, :blocked, :quota_waiting]
+    |> Enum.flat_map(&Map.get(snapshot, &1, []))
+    |> Enum.filter(&(&1.identifier == identifier))
+    |> Enum.map(&Map.get(&1, :project_id))
+    |> Enum.uniq()
+  end
+
+  defp filter_project_snapshot(snapshot, project_id) do
+    Map.new(snapshot, fn
+      {key, entries} when key in [:running, :retrying, :blocked, :quota_waiting] ->
+        {key, Enum.filter(entries, &(is_nil(project_id) or Map.get(&1, :project_id) == project_id))}
+
+      pair ->
+        pair
+    end)
+  end
+
+  defp issue_from_snapshot(snapshot, issue_identifier) do
+    running = Enum.find(snapshot.running, &(&1.identifier == issue_identifier))
+    retry = Enum.find(snapshot.retrying, &(&1.identifier == issue_identifier))
+    blocked = Enum.find(Map.get(snapshot, :blocked, []), &(&1.identifier == issue_identifier))
+    quota_wait = Enum.find(Map.get(snapshot, :quota_waiting, []), &(&1.identifier == issue_identifier))
+
+    if is_nil(running) and is_nil(retry) and is_nil(blocked) and is_nil(quota_wait) do
+      {:error, :issue_not_found}
+    else
+      payload = issue_payload_body(issue_identifier, running, retry, blocked, quota_wait)
+      {:ok, with_project_identity(payload, running || retry || blocked || quota_wait)}
+    end
+  end
+
   @spec refresh_payload(GenServer.name()) :: {:ok, map()} | {:error, :unavailable}
   def refresh_payload(orchestrator) do
-    case Orchestrator.request_refresh(orchestrator) do
+    result =
+      if orchestrator == SymphonyPlus.Orchestrator and Process.whereis(SymphonyPlus.ProjectRuntimeSupervisor),
+        do: SymphonyPlus.ProjectRuntimeSupervisor.request_refresh(),
+        else: Orchestrator.request_refresh(orchestrator)
+
+    case result do
       :unavailable ->
         {:error, :unavailable}
 
@@ -179,6 +220,7 @@ defmodule SymphonyPlusWeb.Presenter do
         total_tokens: entry.codex_total_tokens
       }
     }
+    |> with_project_identity(entry)
   end
 
   defp retry_entry_payload(entry) do
@@ -192,6 +234,7 @@ defmodule SymphonyPlusWeb.Presenter do
       worker_host: Map.get(entry, :worker_host),
       workspace_path: Map.get(entry, :workspace_path)
     }
+    |> with_project_identity(entry)
   end
 
   defp blocked_entry_payload(entry) do
@@ -211,6 +254,7 @@ defmodule SymphonyPlusWeb.Presenter do
       last_message: summarize_message(Map.get(entry, :last_codex_message)),
       last_event_at: iso8601(Map.get(entry, :last_codex_timestamp))
     }
+    |> with_project_identity(entry)
   end
 
   defp quota_wait_entry_payload(entry) do
@@ -230,6 +274,11 @@ defmodule SymphonyPlusWeb.Presenter do
       updated_at: iso8601(entry.updated_at),
       timing_cue: Map.get(entry, :timing_cue)
     }
+    |> with_project_identity(entry)
+  end
+
+  defp with_project_identity(payload, entry) do
+    if Map.has_key?(entry, :project_id), do: Map.put(payload, :project_id, entry.project_id), else: payload
   end
 
   defp running_issue_payload(running) do

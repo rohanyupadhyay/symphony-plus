@@ -9,6 +9,35 @@ defmodule SymphonyPlus.GitHub.GitPush do
 
   @type push_result :: %{branch: String.t(), head_sha: String.t()}
 
+  @spec clone(Path.t(), map(), keyword()) :: :ok | {:error, term()}
+  def clone(workspace, tracker_settings, opts \\ []) do
+    provider = Map.get(tracker_settings, :provider, %{})
+    repository = provider["repo"]
+    token_fun = Keyword.get(opts, :token_fun, &Auth.token/1)
+    runner = Keyword.get(opts, :clone_runner, &run_authenticated_clone/3)
+
+    with true <- (is_binary(repository) and Regex.match?(~r/\A[^\/\s]+\/[^\/\s]+\z/, repository)) or {:error, :invalid_github_repo},
+         {:ok, []} <- clone_directory(workspace),
+         {:ok, %{kind: :github_app} = auth} <- Auth.config(provider, repository),
+         {:ok, token} <- token_fun.(auth),
+         {:ok, _output} <- runner.(workspace, "https://github.com/#{repository}.git", token) do
+      :ok
+    else
+      {:ok, [_ | _]} -> {:error, :github_clone_workspace_not_empty}
+      {:ok, _auth} -> {:error, :github_app_required_for_clone}
+      {:error, _reason} = error -> error
+      _ -> {:error, :github_clone_failed}
+    end
+  end
+
+  defp clone_directory(workspace) do
+    with :ok <- File.mkdir_p(workspace), do: File.ls(workspace)
+  end
+
+  defp run_authenticated_clone(workspace, remote_url, token) do
+    run_authenticated_git(workspace, ["clone", "--", remote_url, "."], token, :github_git_clone_failed)
+  end
+
   @spec prepare_workspace(Path.t(), map(), keyword()) :: :ok | {:error, term()}
   def prepare_workspace(workspace, tracker_settings, opts \\ []) when is_binary(workspace) do
     provider = Map.get(tracker_settings, :provider, %{})
@@ -134,6 +163,10 @@ defmodule SymphonyPlus.GitHub.GitPush do
   end
 
   defp run_authenticated_push(workspace, remote_url, branch, token) do
+    run_authenticated_git(workspace, ["push", remote_url, "HEAD:refs/heads/#{branch}"], token, :github_git_push_failed)
+  end
+
+  defp run_authenticated_git(workspace, arguments, token, failure) do
     askpass_root =
       Path.join(System.tmp_dir!(), "symphony-plus-git-askpass-#{System.unique_integer([:positive])}")
 
@@ -162,26 +195,18 @@ defmodule SymphonyPlus.GitHub.GitPush do
 
       case System.cmd(
              "git",
-             [
-               "-c",
-               "credential.helper=",
-               "-c",
-               "core.hooksPath=/dev/null",
-               "push",
-               remote_url,
-               "HEAD:refs/heads/#{branch}"
-             ],
+             ["-c", "credential.helper=", "-c", "core.hooksPath=/dev/null"] ++ arguments,
              cd: workspace,
              env: env,
              stderr_to_stdout: true
            ) do
         {output, 0} -> {:ok, output}
-        {_output, status} -> {:error, {:github_git_push_failed, status}}
+        {_output, status} -> {:error, {failure, status}}
       end
     after
       File.rm_rf(askpass_root)
     end
   rescue
-    _ -> {:error, :github_git_push_failed}
+    _ -> {:error, failure}
   end
 end

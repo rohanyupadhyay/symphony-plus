@@ -27,7 +27,31 @@ defmodule SymphonyPlus.GitHub.AppProfileTest do
     assert query["issues"] == "write"
     assert query["pull_requests"] == "write"
     assert query["workflows"] == "write"
+    assert query["checks"] == "read"
+    assert query["statuses"] == "read"
     refute Map.has_key?(query, "administration")
+  end
+
+  test "verification checks private-review read endpoints and reports permission denial", context do
+    profile = %{app_id: 1, installation_id: 2, private_key_path: context.source_key, bot_login: "app[bot]"}
+    identity = %{id: 9, login: "app[bot]", slug: "app"}
+
+    client = fn "GET", path, _, _, _ ->
+      case path do
+        "/repos/octo/repo" -> {:ok, %{status: 200, body: %{"default_branch" => "main"}}}
+        "/repos/octo/repo/commits/main/check-runs" -> {:ok, %{status: 403, body: %{}}}
+      end
+    end
+
+    assert {:error, {:github_app_review_permission_status, "checks", 403}} =
+             AppProfile.verify(profile, "octo/repo", identity_fun: fn _ -> {:ok, identity} end, github_client: client)
+
+    client = fn "GET", path, _, _, _ ->
+      body = if path == "/repos/octo/repo", do: %{"default_branch" => "main"}, else: %{}
+      {:ok, %{status: 200, body: body}}
+    end
+
+    assert {:ok, ^identity} = AppProfile.verify(profile, "octo/repo", identity_fun: fn _ -> {:ok, identity} end, github_client: client)
   end
 
   test "creates an atomic private profile and loads launcher environment", context do

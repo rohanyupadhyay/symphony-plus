@@ -4,7 +4,7 @@ defmodule SymphonyPlus.UpdateManager do
   use GenServer
   require Logger
 
-  alias SymphonyPlus.{Config, Orchestrator, SourceUpdate}
+  alias SymphonyPlus.{Config, Orchestrator, ProjectRuntimeSupervisor, SourceUpdate}
   alias SymphonyPlus.GitHub.MergeQueue
 
   @states [:disabled, :current, :checking, :preparing, :pending, :draining, :activating, :blocked, :failed]
@@ -21,10 +21,23 @@ defmodule SymphonyPlus.UpdateManager do
   @spec check_now(GenServer.server()) :: :ok
   def check_now(server \\ __MODULE__), do: GenServer.cast(server, :check)
 
+  @spec draining?(GenServer.server()) :: boolean()
+  def draining?(runtime_supervisor \\ ProjectRuntimeSupervisor),
+    do: :persistent_term.get({__MODULE__, :draining, runtime_supervisor}, false)
+
   @impl true
   def init(opts) do
+    registry = Keyword.get(opts, :runtime_supervisor)
+
+    if registry do
+      :persistent_term.erase({__MODULE__, :draining, registry})
+      {:ok, previous} = ProjectRuntimeSupervisor.begin_update_drain(registry)
+      :ok = ProjectRuntimeSupervisor.cancel_update_drain(registry, previous)
+    end
+
     state = %{
-      policy: Keyword.get(opts, :policy, Config.update_settings()),
+      policy: Keyword.get_lazy(opts, :policy, fn -> configured_policy(registry) end),
+      runtime_supervisor: registry,
       reload_config?: not Keyword.has_key?(opts, :policy),
       source: Keyword.get(opts, :source, SourceUpdate),
       orchestrator: Keyword.get(opts, :orchestrator, Orchestrator),
@@ -43,6 +56,16 @@ defmodule SymphonyPlus.UpdateManager do
   end
 
   @impl true
+  def terminate(_reason, state) do
+    if state.runtime_supervisor do
+      :persistent_term.erase({__MODULE__, :draining, state.runtime_supervisor})
+      if state.drain_token && state.status.state != :activating, do: cancel_runtime_drain(state)
+    end
+
+    :ok
+  end
+
+  @impl true
   def handle_call(:status, _from, state), do: {:reply, state.status, state}
 
   @impl true
@@ -54,7 +77,10 @@ defmodule SymphonyPlus.UpdateManager do
   def handle_info(:check, state), do: {:noreply, run_check(reconcile_policy(%{state | timer: nil}))}
   def handle_info(:admit, state), do: {:noreply, maybe_admit(state)}
 
-  defp run_check(%{policy: %{enabled: false}} = state), do: %{state | status: empty_status(:disabled)}
+  defp run_check(%{policy: %{enabled: false}, status: %{last_outcome: "configuration_conflict"}} = state), do: schedule(state, 1_000)
+
+  defp run_check(%{policy: %{enabled: false}} = state),
+    do: schedule(%{state | status: empty_status(:disabled)}, 1_000)
 
   defp run_check(state) do
     state = put_status(state, :checking, "checking")
@@ -94,7 +120,7 @@ defmodule SymphonyPlus.UpdateManager do
   end
 
   defp begin_drain(state) do
-    {:ok, token} = Orchestrator.begin_update_drain(state.orchestrator)
+    {:ok, token} = begin_runtime_drain(state)
     Logger.info("update drain outcome=started installation=#{state.policy.installation_root} revision=#{state.candidate.revision}")
     Process.send_after(self(), :admit, 100)
     put_status(%{state | drain_token: token}, :draining, "waiting for admitted work to finish")
@@ -103,7 +129,7 @@ defmodule SymphonyPlus.UpdateManager do
   defp maybe_admit(%{drain_token: nil} = state), do: state
 
   defp maybe_admit(state) do
-    if Orchestrator.update_quiescent?(state.drain_token, state.orchestrator) and MergeQueue.idle?(state.merge_queue) do
+    if runtime_quiescent?(state) do
       admit_current_candidate(state)
     else
       Process.send_after(self(), :admit, 250)
@@ -150,10 +176,26 @@ defmodule SymphonyPlus.UpdateManager do
   end
 
   defp reconcile_configured_policy(state) do
-    policy = Config.update_settings()
+    case policy_result(state.runtime_supervisor) do
+      {:ok, policy} ->
+        apply_policy(state, policy)
 
+      {:error, reason} ->
+        if state.drain_token, do: cancel_runtime_drain(state)
+
+        %{
+          state
+          | policy: %Config.Schema.Updates{},
+            drain_token: nil,
+            candidate: nil,
+            status: status(:blocked, nil, nil, DateTime.utc_now(), "configuration_conflict", inspect(reason))
+        }
+    end
+  end
+
+  defp apply_policy(state, policy) do
     if state.policy.enabled and not policy.enabled and state.drain_token,
-      do: Orchestrator.cancel_update_drain(state.drain_token, state.orchestrator)
+      do: cancel_runtime_drain(state)
 
     %{
       state
@@ -161,27 +203,40 @@ defmodule SymphonyPlus.UpdateManager do
         drain_token: if(policy.enabled, do: state.drain_token, else: nil),
         candidate: if(policy.enabled, do: state.candidate, else: nil)
     }
-  rescue
-    _ -> state
   end
 
   defp abandon(state, reason) do
-    if state.drain_token, do: Orchestrator.cancel_update_drain(state.drain_token, state.orchestrator)
+    if state.drain_token, do: cancel_runtime_drain(state)
     fail(%{state | drain_token: nil, candidate: nil}, :failed, "candidate_abandoned", reason)
   end
 
   defp activate(policy, candidate, pid) do
     script = Path.join(policy.installation_root, "elixir/scripts/apply-source-update")
+    launch_args = Application.get_env(:symphony_plus, :launch_arguments, [])
+    args_path = Path.join(policy.installation_root, ".git/symphony-plus-restart.args")
+    :ok = File.write(args_path, Enum.map_join(launch_args, "", &(&1 <> <<0>>)))
+    :ok = File.chmod(args_path, 0o600)
 
     args = [
       policy.installation_root,
       candidate.prepared_path,
       candidate.revision,
       to_string(pid),
-      policy.launcher_command
+      policy.launcher_command,
+      args_path
     ]
 
-    case System.cmd(script, args, cd: policy.installation_root, stderr_to_stdout: true, parallelism: true) do
+    env =
+      if launch_args == [] do
+        []
+      else
+        [
+          {"SYMPHONY_PLUS_RESTART_ARGUMENTS", Jason.encode!(launch_args)},
+          {"SYMPHONY_PLUS_RESTART_CWD", Application.get_env(:symphony_plus, :launch_cwd, File.cwd!())}
+        ]
+      end
+
+    case System.cmd(script, args, cd: policy.installation_root, env: env, stderr_to_stdout: true, parallelism: true) do
       {_output, 0} -> :ok
       {_output, status} -> {:error, {:helper_failed, status}}
     end
@@ -214,10 +269,45 @@ defmodule SymphonyPlus.UpdateManager do
   defp check_outcome({:ok, :current}), do: "current"
   defp check_outcome({:ok, _candidate}), do: "candidate"
   defp check_outcome({:error, _reason}), do: "failed"
-  defp schedule(%{policy: %{enabled: false}} = state, _delay), do: state
 
   defp schedule(state, delay) do
     if state.timer, do: Process.cancel_timer(state.timer)
     %{state | timer: Process.send_after(self(), :check, delay)}
+  end
+
+  defp configured_policy(nil) do
+    case Config.settings() do
+      {:ok, settings} -> settings.updates
+      _ -> %Config.Schema.Updates{}
+    end
+  end
+
+  defp configured_policy(supervisor) do
+    case ProjectRuntimeSupervisor.update_policy(supervisor) do
+      {:ok, policy} -> policy
+      {:error, _reason} -> %Config.Schema.Updates{}
+    end
+  end
+
+  defp policy_result(nil), do: {:ok, configured_policy(nil)}
+  defp policy_result(supervisor), do: ProjectRuntimeSupervisor.update_policy(supervisor)
+
+  defp begin_runtime_drain(%{runtime_supervisor: nil} = state), do: Orchestrator.begin_update_drain(state.orchestrator)
+
+  defp begin_runtime_drain(state) do
+    :persistent_term.put({__MODULE__, :draining, state.runtime_supervisor}, true)
+    ProjectRuntimeSupervisor.begin_update_drain(state.runtime_supervisor)
+  end
+
+  defp runtime_quiescent?(%{runtime_supervisor: nil} = state),
+    do: Orchestrator.update_quiescent?(state.drain_token, state.orchestrator) and MergeQueue.idle?(state.merge_queue)
+
+  defp runtime_quiescent?(state), do: ProjectRuntimeSupervisor.update_quiescent?(state.runtime_supervisor, state.drain_token)
+
+  defp cancel_runtime_drain(%{runtime_supervisor: nil} = state), do: Orchestrator.cancel_update_drain(state.drain_token, state.orchestrator)
+
+  defp cancel_runtime_drain(state) do
+    :persistent_term.erase({__MODULE__, :draining, state.runtime_supervisor})
+    ProjectRuntimeSupervisor.cancel_update_drain(state.runtime_supervisor, state.drain_token)
   end
 end

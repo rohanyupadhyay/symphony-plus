@@ -59,7 +59,8 @@ defmodule SymphonyPlus.MixProject do
       test_ignore_filters: [
         "test/support/github_fixtures.ex",
         "test/support/snapshot_support.exs",
-        "test/support/test_support.exs"
+        "test/support/test_support.exs",
+        "test/support/documentation_support.exs"
       ],
       dialyzer: [
         plt_add_apps: [:mix]

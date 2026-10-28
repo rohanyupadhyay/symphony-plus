@@ -18,10 +18,12 @@ mise install
 mise exec -- mix setup
 mise exec -- mix build
 make all
-mise exec -- ./bin/symphony-plus "$PWD/WORKFLOW.md" --port 4000
+mise exec -- ./bin/symphony-plus --i-understand-that-this-will-be-running-without-the-usual-guardrails \
+  --port 4000 --data-root "$HOME/.local/share/symphony-plus/development"
 ```
 
-The final command is the generic local launch path. The canonical source-install and generic-run
+The final command starts an empty installation registry; register the actual target workflow
+using the canonical guide. The canonical source-install and generic-run
 details live in [`README.md`](README.md).
 
 For GitHub issue orchestration, do not use the generic launcher or start Symphony Plus from an issue
@@ -96,3 +98,18 @@ If behavior/config changes, update docs in the same PR:
 - `../README.md` for project concept and goals.
 - `README.md` for Elixir implementation and run instructions.
 - `WORKFLOW.md` for workflow/config contract changes.
+
+## Documentation correctness
+
+Assess changed operator claims in every feature plan using the repository template's documentation
+impact table. Update canonical instructions and generated facts in the same change; justified
+no-impact results do not require unrelated README edits. Execute registered published commands with
+`make docs-check`; use `mix docs.generate` only to deliberately update reference facts. Preserve
+normative intent and track existing limitations in `docs/documentation-maintenance.md`.
+
+Independent review reads actual changed code and docs from the current source head and reports
+claims checked, observable evidence, unresolved findings, and external omissions under existing
+PR/checkpoint headings. Fixes require review of the resulting head. Link actual CI results and
+source/candidate SHAs; passing PR-body formatting does not prove evidence true. Analyze/converge
+retain their installed scope: declared documentation work is feature intent, and converge appends
+missing implementation tasks rather than becoming a Git diff auditor.

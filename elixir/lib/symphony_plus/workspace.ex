@@ -5,10 +5,31 @@ defmodule SymphonyPlus.Workspace do
 
   require Logger
   alias SymphonyPlus.{Config, PathSafety, SSH}
+  alias SymphonyPlus.GitHub.GitPush
 
   @remote_workspace_marker "__SYMPHONY_PLUS_WORKSPACE__"
 
   @type worker_host :: String.t() | nil
+
+  @doc "Checks a preserved workspace without creating or bootstrapping it."
+  @spec existing_for_issue?(map() | String.t() | nil, worker_host()) :: boolean()
+  def existing_for_issue?(issue_or_identifier, worker_host \\ nil) do
+    with {:ok, path} <- workspace_path_for_issue(workspace_key(issue_or_identifier), worker_host),
+         :ok <- validate_workspace_path(path, worker_host) do
+      preserved_workspace_exists?(path, worker_host)
+    else
+      _ -> false
+    end
+  end
+
+  defp preserved_workspace_exists?(path, nil), do: File.dir?(path)
+
+  defp preserved_workspace_exists?(path, host) do
+    case run_remote_command(host, "test -d #{shell_escape(path)}", min(Config.settings!().hooks.timeout_ms, 5_000)) do
+      {:ok, {_output, 0}} -> true
+      _ -> false
+    end
+  end
 
   @spec create_for_issue(map() | String.t() | nil, worker_host()) ::
           {:ok, Path.t()} | {:error, term()}
@@ -21,7 +42,12 @@ defmodule SymphonyPlus.Workspace do
       with {:ok, workspace} <- workspace_path_for_issue(safe_id, worker_host),
            :ok <- validate_workspace_path(workspace, worker_host),
            {:ok, workspace, created?} <- ensure_workspace(workspace, worker_host) do
-        case maybe_run_after_create_hook(workspace, issue_context, created?, worker_host) do
+        result =
+          with :ok <- bootstrap_repository(workspace, created?, worker_host) do
+            maybe_run_after_create_hook(workspace, issue_context, created?, worker_host)
+          end
+
+        case result do
           :ok ->
             {:ok, workspace}
 
@@ -34,6 +60,20 @@ defmodule SymphonyPlus.Workspace do
       error in [ArgumentError, ErlangError, File.Error] ->
         Logger.error("Workspace creation failed #{issue_log_context(issue_context)} worker_host=#{worker_host_for_log(worker_host)} error=#{Exception.message(error)}")
         {:error, error}
+    end
+  end
+
+  defp bootstrap_repository(_workspace, false, _worker_host), do: :ok
+
+  defp bootstrap_repository(workspace, true, worker_host) do
+    tracker = Config.settings!().tracker
+
+    if tracker.kind == "github" and tracker.provider["bootstrap_clone"] == true do
+      if is_nil(worker_host),
+        do: GitPush.clone(workspace, tracker),
+        else: {:error, :github_clone_remote_worker_unsupported}
+    else
+      :ok
     end
   end
 

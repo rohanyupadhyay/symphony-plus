@@ -81,6 +81,16 @@ defmodule SymphonyPlus.GitHub.AdapterTest do
            )["success"]
   end
 
+  test "bootstrap clone requires a boolean and App authentication" do
+    settings = tracker_settings()
+
+    assert {:error, :invalid_github_bootstrap_clone} =
+             GitHubAdapter.validate_config(put_in(settings, [:provider, "bootstrap_clone"], "yes"))
+
+    assert {:error, :github_app_required_for_bootstrap_clone} =
+             GitHubAdapter.validate_config(put_in(settings, [:provider, "bootstrap_clone"], true))
+  end
+
   test "github_git_push returns only validated branch metadata" do
     head_sha = String.duplicate("a", 40)
 

@@ -3,6 +3,39 @@ defmodule SymphonyPlus.GitHub.WorkflowControlTest do
 
   alias SymphonyPlus.GitHub.WorkflowControl
 
+  test "managed review and queue commands take precedence and external outcomes reconcile" do
+    sha = String.duplicate("a", 40)
+    states = ~w(review_pending merge_update_required merge_queued merge_validating merge_blocked)
+
+    for state <- states do
+      attrs = %{
+        "phase" => if(state == "review_pending", do: "review", else: "merge_queue"),
+        "pr_number" => 7,
+        "branch" => "topic",
+        "head_sha" => sha,
+        "repository" => "octo/repo",
+        "target_branch" => "main",
+        "admission_sequence" => 1
+      }
+
+      checkpoint = checkpoint_comment(80, state, attrs)
+
+      for command <- ["status", "cancel", "revise repair validation"] do
+        expected = command |> String.split() |> hd()
+
+        assert %{trigger: %{"kind" => "command", "command" => ^expected}} =
+                 WorkflowControl.derive([checkpoint, comment(81, "OWNER", "/symphony-plus #{command}")], %{}, ["OWNER"])
+      end
+
+      for outcome <- ["merged", "closed"] do
+        context = %{"pull_request" => %{"number" => 7, "state" => "closed", "merged" => outcome == "merged"}}
+
+        assert %{trigger: %{"kind" => "pull_request", "state" => ^outcome}} =
+                 WorkflowControl.derive([checkpoint], context, ["OWNER"])
+      end
+    end
+  end
+
   test "approved review evidence becomes a durable queue admission" do
     sha = String.duplicate("a", 40)
 
@@ -426,8 +459,6 @@ defmodule SymphonyPlus.GitHub.WorkflowControlTest do
     }
 
     mutations = [
-      fn context -> put_in(context, ["pull_request", "state"], "closed") end,
-      fn context -> put_in(context, ["pull_request", "merged"], true) end,
       fn context -> put_in(context, ["pull_request", "labels"], []) end,
       fn context -> put_in(context, ["pull_request", "head", "repo", "id"], 456) end,
       fn context -> put_in(context, ["pull_request", "head", "repo"], nil) end,
@@ -796,6 +827,14 @@ defmodule SymphonyPlus.GitHub.WorkflowControlTest do
     }
 
     refute WorkflowControl.derive([checkpoint], invalid_command_context, @authorized).dispatchable
+  end
+
+  test "review state ignores a closed pull request for another admission" do
+    checkpoint = checkpoint_comment(50, "awaiting_review", %{"pr_number" => 9})
+    unrelated = %{"pull_request" => %{"number" => 10, "state" => "closed", "merged" => true}}
+
+    assert %{dispatchable: false, trigger: nil} =
+             WorkflowControl.derive([checkpoint], unrelated, @authorized)
   end
 
   test "review commands are ordered by creation time across GitHub event collections" do

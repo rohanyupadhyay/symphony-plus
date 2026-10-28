@@ -1,6 +1,10 @@
 # Symphony Plus
 
-## Safe automatic updates
+Symphony Plus extends [OpenAI Symphony](https://github.com/openai/symphony) with durable GitHub
+comment-driven workflow control and repository-local Spec Kit phases. It retains OpenAI Symphony's
+isolated, autonomous implementation model so teams can manage work instead of supervising agents.
+
+## Service, status, and automatic updates
 
 Source-checkout installations can opt into periodic updates with the `updates` workflow block.
 Updates are disabled by default. A detected default-branch revision is prepared before dispatch
@@ -16,11 +20,6 @@ The operations dashboard reports mutually exclusive running, retrying, quota-wai
 runtime states. “Quota-waiting” means automatic renewal or recheck remains possible; “blocked”
 means operator action is required. Counts and rows use the same classification.
 
-Symphony Plus extends [OpenAI Symphony](https://github.com/openai/symphony) with optional, durable
-GitHub comment-driven workflow control and support for orchestrating repository-local Spec Kit
-phases. It retains Symphony Plus's isolated, autonomous implementation model so teams can manage work
-instead of supervising coding agents.
-
 [![Symphony Plus demo video preview](.github/media/symphony-plus-demo-poster.jpg)](https://player.vimeo.com/video/1186371009?h=5626e4b899)
 
 _In this [demo video](https://player.vimeo.com/video/1186371009?h=5626e4b899), Symphony Plus monitors a Linear board for work and spawns agents to handle the tasks. The agents complete the tasks and provide proof of work: CI status, PR review feedback, complexity analysis, and walkthrough videos. When accepted, the agents land the PR safely. Engineers do not need to supervise Codex; they can manage the work at a higher level._
@@ -35,7 +34,7 @@ no longer be resumed, Symphony Plus blocks for operator action instead of silent
 
 ## Quick start from source
 
-Prerequisites: [Git](https://git-scm.com/), [mise](https://mise.jdx.dev/), and the
+Prerequisites: Bash, [Git](https://git-scm.com/), [mise](https://mise.jdx.dev/), and the
 [Codex CLI](https://github.com/openai/codex). From the directory where you want the checkout:
 
 ```bash
@@ -45,11 +44,20 @@ mise trust
 mise install
 mise exec -- mix setup
 mise exec -- mix build
-mise exec -- ./bin/symphony-plus "$PWD/WORKFLOW.md" --port 4000
+export SYMPHONY_PLUS_BIN="$PWD/bin/symphony-plus"
+export SYMPHONY_PLUS_DATA_ROOT="$HOME/.local/share/symphony-plus/main"
+export SYMPHONY_PLUS_LOGS_ROOT="$HOME/.local/state/symphony-plus/main/log"
+export SYMPHONY_PLUS_PORT=4000
+mise exec -- "$SYMPHONY_PLUS_BIN" --i-understand-that-this-will-be-running-without-the-usual-guardrails \
+  --port "$SYMPHONY_PLUS_PORT" --data-root "$SYMPHONY_PLUS_DATA_ROOT" \
+  --logs-root "$SYMPHONY_PLUS_LOGS_ROOT"
 ```
 
-The final command is the generic local launch path: it starts Symphony Plus from the source
-checkout with an explicit workflow path and exposes the dashboard at `http://localhost:4000`.
+The final command starts an empty installation registry and exposes the dashboard at
+`http://localhost:4000`. It does not select the bundled workflow or dispatch Codex work.
+Follow the [canonical project registration journey](elixir/README.md#install-and-run-from-source)
+to register the actual customized workflow in your target repository. Tracker credentials and
+usable Codex authentication are required before that workflow can dispatch real issues.
 See the [Elixir implementation guide](elixir/README.md) for the canonical source-install and
 generic-run details.
 
@@ -72,7 +80,7 @@ moving from managing coding agents to managing work that needs to get done.
 Tell your favorite coding agent to build Symphony Plus in a programming language of your choice:
 
 > Implement Symphony Plus according to the following spec:
-> https://github.com/openai/symphony/blob/main/SPEC.md
+> https://github.com/rohanyupadhyay/symphony-plus/blob/main/SPEC.md
 
 ### Option 2. Use our experimental reference implementation
 

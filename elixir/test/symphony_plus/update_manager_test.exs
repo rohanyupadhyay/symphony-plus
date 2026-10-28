@@ -3,7 +3,125 @@ defmodule SymphonyPlus.UpdateManagerTest do
 
   alias SymphonyPlus.Config.Schema.Updates
   alias SymphonyPlus.GitHub.MergeQueue
+  alias SymphonyPlus.ProjectRuntime
+  alias SymphonyPlus.ProjectRuntimeSupervisor
   alias SymphonyPlus.UpdateManager
+
+  test "registry updater drains every project and defers new activations" do
+    root = Path.join(System.tmp_dir!(), "registry-update-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(Path.join(root, "installation/.git"))
+    on_exit(fn -> File.rm_rf(root) end)
+    supervisor = start_supervised!({ProjectRuntimeSupervisor, name: nil})
+
+    for id <- ["policy", "other"] do
+      path = Path.join(root, "#{id}.md")
+
+      updates =
+        if id == "policy" do
+          """
+          updates:
+            enabled: true
+            interval_ms: 60000
+            installation_root: #{root}/installation
+            prepare_command: "true"
+            launcher_command: "true"
+          """
+        else
+          ""
+        end
+
+      File.write!(path, """
+      ---
+      tracker:
+        kind: memory
+      polling:
+        interval_ms: 60000
+      workspace:
+        root: #{root}/#{id}-workspaces
+      #{updates}---
+      Prompt
+      """)
+
+      assert {:ok, _} = ProjectRuntimeSupervisor.start_project(%{id: id, workflow_path: path}, supervisor: supervisor)
+    end
+
+    eventually(fn -> Enum.all?(ProjectRuntimeSupervisor.snapshots(supervisor), &(&1.state == :active)) end)
+    [other, _policy] = ProjectRuntimeSupervisor.snapshots(supervisor)
+    :sys.replace_state(other.orchestrator, &%{&1 | claimed: MapSet.new(["retained"])})
+    owner = self()
+
+    manager =
+      start_supervised!(
+        {UpdateManager,
+         name: nil,
+         runtime_supervisor: supervisor,
+         source: __MODULE__.CandidateSource,
+         activator: fn _, _, _ ->
+           send(owner, :registry_activated)
+           :ok
+         end,
+         stopper: fn -> :ok end}
+      )
+
+    eventually(fn -> UpdateManager.status(manager).state == :draining end)
+    refute_receive :registry_activated, 150
+    assert UpdateManager.draining?(supervisor)
+
+    path = Path.join(root, "late.md")
+
+    File.write!(path, """
+    ---
+    tracker:
+      kind: memory
+    workspace:
+      root: #{root}/late-workspaces
+    ---
+    Prompt
+    """)
+
+    assert {:ok, late} = ProjectRuntimeSupervisor.start_project(%{id: "late", workflow_path: path}, supervisor: supervisor)
+    eventually(fn -> ProjectRuntime.snapshot(late).state == :unavailable end)
+    assert ProjectRuntime.snapshot(late).orchestrator == nil
+    :sys.replace_state(other.orchestrator, &%{&1 | claimed: MapSet.new()})
+    assert_receive :registry_activated, 1_000
+  end
+
+  test "disabled registry updater reports conflicting installation policies as blocked" do
+    root = Path.join(System.tmp_dir!(), "policy-conflict-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(Path.join(root, "installation/.git"))
+    on_exit(fn -> File.rm_rf(root) end)
+    supervisor = start_supervised!({ProjectRuntimeSupervisor, name: nil})
+
+    for id <- ["a", "b"] do
+      path = Path.join(root, "#{id}.md")
+
+      File.write!(
+        path,
+        """
+        ---
+        tracker:
+          kind: memory
+        workspace:
+          root: #{root}/#{id}-workspaces
+        updates:
+          enabled: true
+          installation_root: #{root}/installation
+          prepare_command: "true"
+          launcher_command: "#{id}"
+        ---
+        Prompt
+        """
+      )
+
+      assert {:ok, _} = ProjectRuntimeSupervisor.start_project(%{id: id, workflow_path: path}, supervisor: supervisor)
+    end
+
+    eventually(fn -> Enum.all?(ProjectRuntimeSupervisor.snapshots(supervisor), &(&1.state == :active)) end)
+    assert {:error, :conflicting_update_policies} = ProjectRuntimeSupervisor.update_policy(supervisor)
+    options = [name: nil, runtime_supervisor: supervisor, source: __MODULE__.CurrentSource]
+    manager = start_supervised!({UpdateManager, options})
+    eventually(fn -> UpdateManager.status(manager).state == :blocked end)
+  end
 
   defmodule CurrentSource do
     def discover(_root, _remote), do: {:ok, :current}

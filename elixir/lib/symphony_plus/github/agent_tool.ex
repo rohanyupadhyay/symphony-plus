@@ -3,7 +3,7 @@ defmodule SymphonyPlus.GitHub.AgentTool do
   Provider-native GitHub REST tool exposed to Codex app-server turns.
   """
 
-  alias SymphonyPlus.GitHub.{Client, GitPush, WorkflowControl}
+  alias SymphonyPlus.GitHub.{Client, DocumentationReview, GitPush, WorkflowControl}
   alias SymphonyPlus.Tracker.Issue
   require Logger
 
@@ -63,6 +63,14 @@ defmodule SymphonyPlus.GitHub.AgentTool do
       "pr_number" => %{"type" => ["integer", "null"]},
       "repository" => %{"type" => ["string", "null"]},
       "target_branch" => %{"type" => ["string", "null"]},
+      "documentation_assessment" => %{
+        "type" => ["object", "null"],
+        "properties" => %{
+          "summary" => %{"type" => "string"},
+          "evidence" => %{"type" => "array", "items" => %{"type" => "string"}},
+          "limitations" => %{"type" => "array", "items" => %{"type" => "string"}}
+        }
+      },
       "dependencies" => %{
         "type" => ["array", "null"],
         "items" => %{"type" => "integer", "minimum" => 1}
@@ -126,6 +134,34 @@ defmodule SymphonyPlus.GitHub.AgentTool do
   end
 
   defp execute_workflow_checkpoint(arguments, opts) do
+    issue = Keyword.get(opts, :issue)
+    control = if is_map(issue), do: get_in(issue.native_ref || %{}, ["workflow_control"]) || %{}, else: %{}
+
+    if get_in(control, ["trigger", "command"]) == "status" and is_map(control["checkpoint"]) do
+      post_status_checkpoint(arguments, issue, control["checkpoint"], opts)
+    else
+      execute_new_workflow_checkpoint(arguments, opts)
+    end
+  end
+
+  defp post_status_checkpoint(arguments, issue, checkpoint, opts) do
+    settings = Keyword.get(opts, :tracker_settings, %{})
+    client = Keyword.get(opts, :github_client, &Client.request/5)
+    summary = if is_map(arguments), do: arguments["summary"], else: nil
+
+    with true <- WorkflowControl.enabled?(Map.get(settings, :provider, %{})) or {:error, :github_workflow_control_disabled},
+         true <- present?(summary) or {:error, :invalid_workflow_summary},
+         {:ok, number, repo} <- checkpoint_issue_context(issue),
+         body = WorkflowControl.render_comment(Map.put(checkpoint, "status_summary", summary)),
+         {:ok, %{status: status, body: response}} <- client.("POST", "/repos/#{encoded_repo(repo)}/issues/#{number}/comments", %{}, %{"body" => body}, Keyword.take(opts, [:tracker_settings])) do
+      rest_response(status, response)
+    else
+      {:error, reason} -> failure_response(tool_error_payload(reason))
+      _ -> failure_response(tool_error_payload(:github_unknown_payload))
+    end
+  end
+
+  defp execute_new_workflow_checkpoint(arguments, opts) do
     tracker_settings = Keyword.get(opts, :tracker_settings, %{})
     provider = Map.get(tracker_settings, :provider, %{})
     github_client = Keyword.get(opts, :github_client, &Client.request/5)
@@ -137,6 +173,8 @@ defmodule SymphonyPlus.GitHub.AgentTool do
       with true <- WorkflowControl.enabled?(provider) or {:error, :github_workflow_control_disabled},
            {:ok, issue_number, repo} <- checkpoint_issue_context(issue),
            {:ok, checkpoint} <- normalize_checkpoint(arguments, issue),
+           checkpoint <- add_phase_ledger(checkpoint, issue),
+           {:ok, checkpoint} <- DocumentationReview.stamp(checkpoint, issue, provider, opts),
            :ok <- verify_checkpoint_head(checkpoint, repo, github_client, client_opts),
            :ok <- validate_queue_authority(checkpoint, issue, repo, github_client, client_opts),
            :ok <- prepare_managed_pull_request(checkpoint, repo, tracker_settings, github_client, client_opts),
@@ -179,11 +217,20 @@ defmodule SymphonyPlus.GitHub.AgentTool do
 
   defp checkpoint_issue_context(_issue), do: {:error, :missing_github_issue_context}
 
+  defp add_phase_ledger(checkpoint, issue) do
+    previous = if is_map(issue), do: get_in(issue.native_ref || %{}, ["workflow_control", "checkpoint"]) || %{}, else: %{}
+    ledger = Map.get(previous, "phase_ledger", []) || []
+    ledger = if ledger == [] and is_binary(previous["summary"]), do: [Map.take(previous, ["phase", "summary"])], else: ledger
+    report = Map.take(checkpoint, ["phase", "summary"])
+    ledger = Enum.reject(ledger, &(&1["phase"] == report["phase"])) ++ [report]
+    Map.put(checkpoint, "phase_ledger", Enum.take(ledger, -20))
+  end
+
   defp normalize_checkpoint(arguments, issue) when is_map(arguments) do
     checkpoint =
       Map.take(
         arguments,
-        ~w(state phase summary prompt gate branch head_sha pr_number repository target_branch dependencies)
+        ~w(state phase summary prompt gate branch head_sha pr_number repository target_branch dependencies documentation_assessment)
       )
 
     with {:ok, checkpoint} <- add_queue_sequence(checkpoint, issue),
@@ -425,6 +472,7 @@ defmodule SymphonyPlus.GitHub.AgentTool do
     client_opts = Keyword.take(opts, [:tracker_settings])
 
     with {:ok, method, path, params, body} <- normalize_arguments(arguments),
+         :ok <- reject_reserved_marker(method, body, opts),
          {:ok, %{status: status, body: response_body}} <-
            github_client.(method, path, params, body, client_opts),
          true <- is_integer(status) do
@@ -432,6 +480,17 @@ defmodule SymphonyPlus.GitHub.AgentTool do
     else
       {:error, reason} -> failure_response(tool_error_payload(reason))
       _ -> failure_response(tool_error_payload(:github_unknown_payload))
+    end
+  end
+
+  defp reject_reserved_marker(method, body, opts) do
+    provider = opts |> Keyword.get(:tracker_settings, %{}) |> Map.get(:provider, %{})
+
+    if method != "GET" and DocumentationReview.required?(provider) and
+         String.contains?(Jason.encode!(body), "symphony-plus-control:") do
+      {:error, :reserved_workflow_control_marker}
+    else
+      :ok
     end
   end
 
