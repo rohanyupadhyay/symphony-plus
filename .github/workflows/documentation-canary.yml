@@ -1,0 +1,79 @@
+name: documentation-canary
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: documentation-canary-dedicated-fixture
+  cancel-in-progress: false
+
+jobs:
+  cold-install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: main
+
+      - name: Install mise
+        uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        with:
+          install: false
+          working_directory: elixir
+
+      - name: Run published source install in disposable checkout
+        env:
+          CANARY_REPORT_DIR: ${{ runner.temp }}/documentation-cold-install
+        run: |
+          mkdir -p "$CANARY_REPORT_DIR"
+          bash elixir/scripts/docs-cold-install
+
+      - name: Upload cold-install evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: documentation-cold-install-${{ github.run_id }}
+          path: ${{ runner.temp }}/documentation-cold-install/*
+          if-no-files-found: warn
+
+  external:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: main
+
+      - name: Install Codex CLI for bounded compatibility check
+        continue-on-error: true
+        run: npm install --global @openai/codex
+
+      - name: Check dedicated external fixture
+        id: canary
+        env:
+          CANARY_REPORT_DIR: ${{ runner.temp }}/documentation-canary
+          CANARY_FIXTURE_KIND: ${{ vars.SYMPHONY_PLUS_CANARY_FIXTURE_KIND }}
+          CANARY_REPOSITORY: ${{ vars.SYMPHONY_PLUS_CANARY_REPOSITORY }}
+          CANARY_REPAIR_REPOSITORY: ${{ vars.SYMPHONY_PLUS_CANARY_REPAIR_REPOSITORY }}
+          CANARY_REPAIR_LABEL: ${{ vars.SYMPHONY_PLUS_CANARY_REPAIR_LABEL }}
+          CANARY_APP_ID: ${{ secrets.SYMPHONY_PLUS_CANARY_APP_ID }}
+          CANARY_INSTALLATION_ID: ${{ secrets.SYMPHONY_PLUS_CANARY_INSTALLATION_ID }}
+          CANARY_APP_PRIVATE_KEY: ${{ secrets.SYMPHONY_PLUS_CANARY_APP_PRIVATE_KEY }}
+          CANARY_CODEX_AUTH_JSON: ${{ secrets.SYMPHONY_PLUS_CANARY_CODEX_AUTH_JSON }}
+        run: bash elixir/scripts/docs-external-canary
+
+      - name: Upload external evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: documentation-canary-${{ github.run_id }}
+          path: ${{ runner.temp }}/documentation-canary/*
+          if-no-files-found: error

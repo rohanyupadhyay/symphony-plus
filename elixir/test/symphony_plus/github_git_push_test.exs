@@ -46,6 +46,22 @@ defmodule SymphonyPlus.GitHub.GitPushTest do
     %{root: root, workspace: workspace, head_sha: head_sha, issue: issue, settings: settings}
   end
 
+  test "host clone authenticates without recording credentials and rejects existing content", context do
+    workspace = Path.join(context.root, "clone")
+    File.mkdir_p!(workspace)
+    parent = self()
+
+    runner = fn directory, url, token ->
+      send(parent, {:clone, directory, url, token})
+      {:ok, "cloned"}
+    end
+
+    assert :ok = GitPush.clone(workspace, context.settings, token_fun: fn _ -> {:ok, "ephemeral"} end, clone_runner: runner)
+    assert_received {:clone, ^workspace, "https://github.com/octo/repo.git", "ephemeral"}
+    File.write!(Path.join(workspace, "existing"), "keep")
+    assert {:error, :github_clone_workspace_not_empty} = GitPush.clone(workspace, context.settings, token_fun: fn _ -> flunk("must not mint token") end)
+  end
+
   test "configures App bot commit identity and disables inherited credentials", context do
     identity_fun = fn _auth ->
       {:ok, %{id: 987, login: "verity-symphony-plus[bot]", slug: "verity-symphony-plus"}}

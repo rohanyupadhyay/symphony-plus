@@ -10,6 +10,7 @@ defmodule SymphonyPlus.RuntimeStatus do
   @reason_limit 160
   @truncation_marker "…"
   @quota_projection_fields [
+    :project_id,
     :issue_id,
     :identifier,
     :issue_url,

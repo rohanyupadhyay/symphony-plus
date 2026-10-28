@@ -2,6 +2,11 @@ defmodule SymphonyPlus.ProjectRuntimeSupervisor do
   @moduledoc "Dynamically supervises one isolated runtime per registered project."
   use DynamicSupervisor
 
+  alias SymphonyPlus.Config.Schema.Updates
+  alias SymphonyPlus.GitHub.MergeQueue
+  alias SymphonyPlus.Orchestrator
+  alias SymphonyPlus.ProjectRuntime
+
   @spec start_link(keyword()) :: Supervisor.on_start()
   def start_link(opts \\ []) do
     case Keyword.get(opts, :name, __MODULE__) do
@@ -18,8 +23,12 @@ defmodule SymphonyPlus.ProjectRuntimeSupervisor do
     supervisor = Keyword.get(opts, :supervisor, __MODULE__)
 
     case find_project(supervisor, registration.id) do
-      nil -> DynamicSupervisor.start_child(supervisor, {SymphonyPlus.ProjectRuntime, registration: registration})
-      pid -> {:ok, pid}
+      nil ->
+        options = [registration: registration, runtime_supervisor: supervisor]
+        DynamicSupervisor.start_child(supervisor, {ProjectRuntime, options})
+
+      pid ->
+        {:ok, pid}
     end
   end
 
@@ -35,7 +44,7 @@ defmodule SymphonyPlus.ProjectRuntimeSupervisor do
   def project_idle?(project_id, supervisor \\ __MODULE__) do
     case find_project(supervisor, project_id) do
       nil -> true
-      pid -> SymphonyPlus.ProjectRuntime.idle?(pid)
+      pid -> ProjectRuntime.idle?(pid)
     end
   end
 
@@ -44,10 +53,77 @@ defmodule SymphonyPlus.ProjectRuntimeSupervisor do
     supervisor
     |> DynamicSupervisor.which_children()
     |> Enum.flat_map(fn
-      {_id, pid, :worker, _modules} when is_pid(pid) -> [SymphonyPlus.ProjectRuntime.snapshot(pid)]
+      {_id, pid, :worker, _modules} when is_pid(pid) -> [ProjectRuntime.snapshot(pid)]
       _ -> []
     end)
     |> Enum.sort_by(& &1.registration.id)
+  end
+
+  @doc "Selects one consistent installation update policy from registered projects."
+  @spec update_policy(GenServer.server()) :: {:ok, Updates.t()} | {:error, :conflicting_update_policies}
+  def update_policy(supervisor \\ __MODULE__) do
+    policies =
+      supervisor
+      |> DynamicSupervisor.which_children()
+      |> Enum.flat_map(fn
+        {_id, pid, :worker, _modules} when is_pid(pid) ->
+          case ProjectRuntime.configuration(pid) do
+            %{updates: %{enabled: true} = policy} -> [policy]
+            _ -> []
+          end
+
+        _ ->
+          []
+      end)
+      |> Enum.uniq()
+
+    case policies do
+      [] -> {:ok, %Updates{}}
+      [policy] -> {:ok, policy}
+      _ -> {:error, :conflicting_update_policies}
+    end
+  end
+
+  @spec begin_update_drain(GenServer.server()) :: {:ok, map()}
+  def begin_update_drain(supervisor \\ __MODULE__) do
+    tokens =
+      Enum.reduce(snapshots(supervisor), %{}, fn
+        %{orchestrator: pid}, acc when is_pid(pid) ->
+          {:ok, token} = Orchestrator.begin_update_drain(pid)
+          Map.put(acc, pid, token)
+
+        _, acc ->
+          acc
+      end)
+
+    {:ok, tokens}
+  end
+
+  @spec update_quiescent?(GenServer.server(), map()) :: boolean()
+  def update_quiescent?(supervisor, tokens) do
+    Enum.all?(snapshots(supervisor), fn
+      %{orchestrator: pid, merge_queue: queue} when is_pid(pid) ->
+        token =
+          case Map.fetch(tokens, pid) do
+            {:ok, value} -> value
+            :error -> elem(Orchestrator.begin_update_drain(pid), 1)
+          end
+
+        Orchestrator.update_quiescent?(token, pid) and
+          (is_nil(queue) or MergeQueue.idle?(queue))
+
+      _ ->
+        true
+    end)
+  end
+
+  @spec cancel_update_drain(GenServer.server(), map()) :: :ok
+  def cancel_update_drain(_supervisor, tokens) do
+    Enum.each(tokens, fn {pid, token} ->
+      if Process.alive?(pid), do: Orchestrator.cancel_update_drain(token, pid)
+    end)
+
+    :ok
   end
 
   @spec aggregate_snapshot(GenServer.server()) :: map()
@@ -67,7 +143,7 @@ defmodule SymphonyPlus.ProjectRuntimeSupervisor do
     active =
       Enum.flat_map(project_snapshots, fn
         %{registration: %{id: project_id}, orchestrator: orchestrator} when is_pid(orchestrator) ->
-          case SymphonyPlus.Orchestrator.snapshot(orchestrator, 15_000) do
+          case Orchestrator.snapshot(orchestrator, 15_000) do
             %{} = snapshot -> [{project_id, snapshot}]
             _ -> []
           end
@@ -114,12 +190,36 @@ defmodule SymphonyPlus.ProjectRuntimeSupervisor do
     })
   end
 
+  @spec request_refresh(GenServer.server()) :: map()
+  def request_refresh(supervisor \\ __MODULE__) do
+    projects =
+      Enum.map(snapshots(supervisor), fn project ->
+        result =
+          if is_pid(project.orchestrator),
+            do: Orchestrator.request_refresh(project.orchestrator),
+            else: :unavailable
+
+        case result do
+          %{queued: true} = payload -> Map.put(payload, :project_id, project.registration.id)
+          :unavailable -> %{project_id: project.registration.id, queued: false, reason: :unavailable}
+        end
+      end)
+
+    %{
+      queued: Enum.any?(projects, & &1.queued),
+      coalesced: Enum.all?(projects, &Map.get(&1, :coalesced, false)),
+      requested_at: DateTime.utc_now(),
+      operations: ["poll", "reconcile"],
+      projects: projects
+    }
+  end
+
   defp find_project(supervisor, project_id) do
     supervisor
     |> DynamicSupervisor.which_children()
     |> Enum.find_value(fn
       {_id, pid, :worker, _modules} when is_pid(pid) ->
-        if SymphonyPlus.ProjectRuntime.snapshot(pid).registration.id == project_id, do: pid
+        if ProjectRuntime.snapshot(pid).registration.id == project_id, do: pid
 
       _ ->
         nil

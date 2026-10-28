@@ -40,6 +40,7 @@ defmodule SymphonyPlus.Application do
 
     service_children = [
       {Phoenix.PubSub, name: SymphonyPlus.PubSub},
+      {Registry, keys: :unique, name: SymphonyPlus.ProjectQueueRegistry},
       SymphonyPlus.GitHub.AuthCache,
       SymphonyPlus.ProjectRuntimeSupervisor,
       SymphonyPlus.ProjectRegistry,
@@ -52,14 +53,18 @@ defmodule SymphonyPlus.Application do
         [
           SymphonyPlus.GitHub.MergeQueue,
           SymphonyPlus.WorkflowStore,
-          SymphonyPlus.AgentRuntimeSupervisor,
-          SymphonyPlus.UpdateManager
+          SymphonyPlus.AgentRuntimeSupervisor
         ]
       else
         []
       end
 
-    children = service_children ++ legacy_children
+    updater =
+      if workflow_available?,
+        do: SymphonyPlus.UpdateManager,
+        else: {SymphonyPlus.UpdateManager, runtime_supervisor: SymphonyPlus.ProjectRuntimeSupervisor}
+
+    children = service_children ++ legacy_children ++ [updater]
 
     Supervisor.start_link(
       children,

@@ -24,7 +24,9 @@ defmodule SymphonyPlus.GitHub.AppProfile do
         "contents" => "write",
         "issues" => "write",
         "pull_requests" => "write",
-        "workflows" => "write"
+        "workflows" => "write",
+        "checks" => "read",
+        "statuses" => "read"
       })
 
     "https://github.com/settings/apps/new?#{query}"
@@ -100,7 +102,13 @@ defmodule SymphonyPlus.GitHub.AppProfile do
 
   @spec verify(profile(), String.t()) ::
           {:ok, %{id: pos_integer(), login: String.t(), slug: String.t()}} | {:error, term()}
-  def verify(profile, repository) do
+  def verify(profile, repository), do: verify(profile, repository, [])
+
+  @spec verify(profile(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def verify(profile, repository, opts) do
+    identity_fun = Keyword.get(opts, :identity_fun, &Auth.identity/1)
+    client = Keyword.get(opts, :github_client, &Client.request/5)
+
     tracker_settings = %{
       kind: "github",
       provider: %{
@@ -118,15 +126,30 @@ defmodule SymphonyPlus.GitHub.AppProfile do
 
     with :ok <- ensure_runtime(),
          {:ok, auth} <- Auth.config(tracker_settings.provider, repository),
-         {:ok, identity} <- Auth.identity(auth),
-         {:ok, %{status: status}} <-
-           Client.request("GET", "/repos/#{encoded_repo(repository)}", %{}, nil, tracker_settings: tracker_settings),
-         :ok <- validate_repository_status(status) do
+         {:ok, identity} <- identity_fun.(auth),
+         {:ok, %{status: status, body: repo}} <-
+           client.("GET", "/repos/#{encoded_repo(repository)}", %{}, nil, tracker_settings: tracker_settings),
+         :ok <- validate_repository_status(status),
+         :ok <- verify_review_reads(repository, repo, tracker_settings, client) do
       {:ok, identity}
     else
       {:error, _reason} = error -> error
     end
   end
+
+  defp verify_review_reads(repository, %{"default_branch" => branch}, settings, client) when is_binary(branch) do
+    root = "/repos/#{encoded_repo(repository)}/commits/#{URI.encode(branch, &URI.char_unreserved?/1)}"
+
+    Enum.reduce_while([{"checks", root <> "/check-runs"}, {"statuses", root <> "/status"}], :ok, fn {permission, path}, :ok ->
+      case client.("GET", path, %{"per_page" => 1}, nil, tracker_settings: settings) do
+        {:ok, %{status: status}} when status in 200..299 -> {:cont, :ok}
+        {:ok, %{status: status}} -> {:halt, {:error, {:github_app_review_permission_status, permission, status}}}
+        {:error, _reason} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp verify_review_reads(_repository, _repo, _settings, _client), do: {:error, :github_app_default_branch_unavailable}
 
   defp ensure_runtime do
     with {:ok, _apps} <- Application.ensure_all_started(:req),

@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+report_dir=${CANARY_REPORT_DIR:-${RUNNER_TEMP:-/tmp}/symphony-plus-canary}
+mkdir -p "$report_dir"
+report="$report_dir/summary.md"
+run_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-unknown}/actions/runs/${GITHUB_RUN_ID:-unknown}"
+date_utc=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+source_ref=${GITHUB_SHA:-unknown}
+codex_auth_json=${CANARY_CODEX_AUTH_JSON:-}
+unset CANARY_CODEX_AUTH_JSON
+printf '# Symphony Plus external documentation canary\n\nDate: %s  \nSource: `%s`  \nEnvironment: GitHub Actions trusted default branch  \nRaw run: %s\n\n' "$date_utc" "$source_ref" "$run_url" >"$report"
+failed=0
+failed_rows=()
+record() {
+  local scenario=$1 result=$2 detail=$3
+  printf -- '- %s: **%s** — %s\n' "$scenario" "$result" "$detail" >>"$report"
+  if [[ "$result" != passed ]]; then
+    failed=1
+    failed_rows+=("$scenario|$result|$detail")
+  fi
+}
+route_findings() {
+  repair_result='unavailable; inspect this failed run artifact'
+  if [[ "$failed" -eq 0 ]]; then repair_result='no finding to route'; return; fi
+  if [[ -z ${app_token:-} || -z ${CANARY_REPAIR_REPOSITORY:-} ]]; then return; fi
+  if [[ ! ${CANARY_REPAIR_REPOSITORY} =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+    repair_result='unavailable; invalid repair intake repository configuration'
+    return
+  fi
+  local existing row scenario result detail signature title body repair_label
+  repair_label=${CANARY_REPAIR_LABEL:-symphony-plus}
+  existing=$(GH_TOKEN="$app_token" gh api "repos/$CANARY_REPAIR_REPOSITORY/issues?state=open&per_page=100" 2>/dev/null) || {
+    repair_result='unavailable; App cannot read configured repair intake'
+    return
+  }
+  for row in "${failed_rows[@]}"; do
+    IFS='|' read -r scenario result detail <<<"$row"
+    signature=$(printf '%s' "$scenario|$result|$detail" | shasum -a 256 | cut -c1-12)
+    title="[docs-canary:$signature] $scenario $result"
+    if printf '%s' "$existing" | jq -e --arg title "$title" 'any(.[]; .title == $title)' >/dev/null; then
+      continue
+    fi
+    printf -v body 'Canary scenario: %s\nOutcome: %s\nSignature: %s\nSource: %s\nEvidence: %s\n\nRepair the contract or explicitly classify the unavailable capability.\n' \
+      "$scenario" "$result" "$signature" "$source_ref" "$run_url"
+    jq -n --arg title "$title" --arg body "$body" --arg label "$repair_label" \
+      '{title: $title, body: $body, labels: [$label]}' |
+      GH_TOKEN="$app_token" gh api -X POST "repos/$CANARY_REPAIR_REPOSITORY/issues" --input - >/dev/null 2>&1 || {
+      repair_result='unavailable; App cannot create a repair intake issue'
+      return
+    }
+  done
+  repair_result="routed or deduplicated in $CANARY_REPAIR_REPOSITORY by scenario and failure signature"
+}
+finish() {
+  route_findings
+  printf '\nLast successful external verification: ' >>"$report"
+  if [[ "$failed" -eq 0 ]]; then printf '%s (%s)\n' "$date_utc" "$source_ref" >>"$report"
+  else printf 'unavailable from this run; consult prior run artifacts.\n' >>"$report"; fi
+  printf 'Repair intake: %s\n' "${repair_result:-unavailable; inspect this failed run artifact}" >>"$report"
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then cat "$report" >>"$GITHUB_STEP_SUMMARY"; fi
+  cat "$report"
+  exit "$failed"
+}
+
+# These modes exercise the negative evidence path without making external calls.
+if [[ ${CANARY_FIXTURE_MODE:-} == missing ]]; then
+  record 'App checks/statuses and private clone' unavailable 'dedicated fixture credentials absent'
+  record 'bounded Codex turn' unavailable 'dedicated Codex credential absent'
+  finish
+elif [[ ${CANARY_FIXTURE_MODE:-} == failed ]]; then
+  record 'App checks/statuses and private clone' failed 'isolated fixture returned an endpoint failure'
+  record 'bounded Codex turn' failed 'isolated fixture returned a nonzero turn'
+  finish
+fi
+
+if [[ ${GITHUB_REF:-} != refs/heads/main ]]; then
+  record 'trusted source' failed 'canary requires refs/heads/main'
+  finish
+fi
+if [[ ${CANARY_FIXTURE_KIND:-} != dedicated-private-test || ! ${CANARY_REPOSITORY:-} =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ || ${CANARY_REPOSITORY:-} == "${GITHUB_REPOSITORY:-}" ]]; then
+  record 'dedicated private fixture' unavailable 'configure a separate dedicated private test repository and fixture assertion'
+  finish
+fi
+if [[ -z ${CANARY_APP_ID:-} || -z ${CANARY_INSTALLATION_ID:-} || -z ${CANARY_APP_PRIVATE_KEY:-} ]]; then
+  record 'App checks/statuses and private clone' unavailable 'dedicated App credentials absent'
+  record 'bounded Codex turn' unavailable 'App fixture prerequisite unavailable'
+  finish
+fi
+
+scratch=$(mktemp -d "${RUNNER_TEMP:-/tmp}/symphony-plus-canary.XXXXXX")
+trap 'rm -rf "$scratch"' EXIT
+umask 077
+printf '%s\n' "$CANARY_APP_PRIVATE_KEY" >"$scratch/app.pem"
+base64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+now=$(date +%s)
+header=$(printf '%s' '{"alg":"RS256","typ":"JWT"}' | base64url)
+payload=$(printf '{"iat":%s,"exp":%s,"iss":"%s"}' "$((now - 60))" "$((now + 540))" "$CANARY_APP_ID" | base64url)
+signature=$(printf '%s.%s' "$header" "$payload" | openssl dgst -sha256 -sign "$scratch/app.pem" | base64url)
+jwt="$header.$payload.$signature"
+rm -f "$scratch/app.pem"
+unset CANARY_APP_PRIVATE_KEY
+response=$(printf 'header = "Authorization: Bearer %s"\n' "$jwt" |
+  curl --config - --silent --show-error --fail-with-body --max-time 15 -X POST \
+    -H 'Accept: application/vnd.github+json' \
+    "https://api.github.com/app/installations/$CANARY_INSTALLATION_ID/access_tokens" 2>"$scratch/token-error")
+if [[ $? -ne 0 ]]; then
+  record 'App checks/statuses and private clone' failed 'installation-token request failed; see run logs'
+  record 'bounded Codex turn' unavailable 'App fixture prerequisite failed'
+  finish
+fi
+GH_TOKEN=$(printf '%s' "$response" | jq -r '.token // empty')
+unset jwt response signature
+if [[ -z "$GH_TOKEN" ]]; then
+  record 'App checks/statuses and private clone' failed 'installation-token response was invalid'
+  record 'bounded Codex turn' unavailable 'App fixture prerequisite failed'
+  finish
+fi
+export GH_TOKEN
+
+app_result=passed
+app_detail='private repository, current-head checks/statuses, and authenticated clone succeeded'
+repo_json=$(gh api "repos/$CANARY_REPOSITORY" 2>"$scratch/api-error") || app_result=failed
+if [[ "$app_result" == passed && $(printf '%s' "$repo_json" | jq -r '.private') != true ]]; then
+  app_result=failed
+  app_detail='configured fixture is not private'
+fi
+if [[ "$app_result" == passed ]]; then
+  branch=$(printf '%s' "$repo_json" | jq -r '.default_branch // empty')
+  head_sha=$(gh api "repos/$CANARY_REPOSITORY/commits/$branch" --jq '.sha' 2>"$scratch/api-error") || app_result=failed
+fi
+if [[ "$app_result" == passed ]]; then
+  gh api "repos/$CANARY_REPOSITORY/commits/$head_sha/check-runs" --jq '.total_count' >"$scratch/checks" 2>"$scratch/api-error" || app_result=failed
+  gh api "repos/$CANARY_REPOSITORY/commits/$head_sha/status" --jq '.state' >"$scratch/status" 2>"$scratch/api-error" || app_result=failed
+fi
+if [[ "$app_result" == passed ]]; then
+  cat >"$scratch/askpass" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == *Username* ]]; then printf 'x-access-token\n'; else printf '%s\n' "$GH_TOKEN"; fi
+EOF
+  chmod 700 "$scratch/askpass"
+  GIT_ASKPASS="$scratch/askpass" GIT_TERMINAL_PROMPT=0 git clone --quiet \
+    "https://github.com/$CANARY_REPOSITORY.git" "$scratch/private-clone" 2>"$scratch/clone-error" || app_result=failed
+fi
+if [[ "$app_result" == failed ]]; then app_detail='private fixture App API or authenticated clone failed; see run logs'; fi
+record 'App checks/statuses and private clone' "$app_result" "$app_detail"
+app_token=$GH_TOKEN
+unset GH_TOKEN CANARY_APP_ID CANARY_INSTALLATION_ID
+
+if [[ -z $codex_auth_json ]]; then
+  record 'bounded Codex turn' unavailable 'dedicated Codex auth absent'
+elif ! command -v codex >/dev/null 2>&1; then
+  record 'bounded Codex turn' unavailable 'Codex executable unavailable on runner'
+else
+  mkdir -p "$scratch/codex-home" "$scratch/codex-work"
+  printf '%s\n' "$codex_auth_json" >"$scratch/codex-home/auth.json"
+  unset codex_auth_json
+  if CODEX_HOME="$scratch/codex-home" timeout 120s codex exec --ephemeral --skip-git-repo-check \
+    --sandbox read-only -C "$scratch/codex-work" -o "$scratch/codex-answer" \
+    'Reply with exactly SYMPHONY_PLUS_CANARY_OK. Do not use tools.' >"$scratch/codex.log" 2>&1 &&
+    grep -Fxq 'SYMPHONY_PLUS_CANARY_OK' "$scratch/codex-answer"; then
+    record 'bounded Codex turn' passed 'authenticated read-only turn completed within 120 seconds'
+  else
+    record 'bounded Codex turn' failed 'authenticated turn failed, timed out, or returned unexpected output'
+  fi
+fi
+
+finish

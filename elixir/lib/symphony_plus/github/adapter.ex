@@ -25,8 +25,24 @@ defmodule SymphonyPlus.GitHub.Adapter do
              @terminal_states,
              :missing_github_terminal_states
            ),
-         :ok <- WorkflowControl.validate_settings(tracker_settings.provider) do
+         :ok <- WorkflowControl.validate_settings(tracker_settings.provider),
+         :ok <- validate_bootstrap(tracker_settings.provider) do
       Client.validate_settings(tracker_settings)
+    end
+  end
+
+  defp validate_bootstrap(provider) do
+    case Map.get(provider, "bootstrap_clone", false) do
+      false ->
+        :ok
+
+      true ->
+        if get_in(provider, ["auth", "kind"]) == "github_app",
+          do: :ok,
+          else: {:error, :github_app_required_for_bootstrap_clone}
+
+      _ ->
+        {:error, :invalid_github_bootstrap_clone}
     end
   end
 

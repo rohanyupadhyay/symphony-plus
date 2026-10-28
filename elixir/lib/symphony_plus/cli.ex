@@ -7,7 +7,16 @@ defmodule SymphonyPlus.CLI do
   alias SymphonyPlus.LogFile
 
   @acknowledgement_switch :i_understand_that_this_will_be_running_without_the_usual_guardrails
-  @switches [{@acknowledgement_switch, :boolean}, logs_root: :string, data_root: :string, port: :integer]
+  @options %{
+    service: [{@acknowledgement_switch, :boolean}, logs_root: :string, data_root: :string, port: :integer],
+    list: [data_root: :string, format: :string],
+    add: [service_url: :string],
+    remove: [service_url: :string]
+  }
+
+  @doc "Authoritative option types consumed by each CLI parser."
+  @spec options() :: %{atom() => keyword()}
+  def options, do: @options
 
   @type ensure_started_result :: {:ok, [atom()]} | {:error, term()}
   @type deps :: %{
@@ -28,8 +37,13 @@ defmodule SymphonyPlus.CLI do
   @doc false
   @spec main([String.t()], (-> ensure_started_result())) :: no_return()
   def main(args, ensure_all_started) do
+    args = restart_arguments(args)
+    Application.put_env(:symphony_plus, :launch_arguments, args)
+    Application.put_env(:symphony_plus, :launch_cwd, File.cwd!())
+
     case evaluate(args, runtime_deps(ensure_all_started)) do
       :ok ->
+        notify_update_ready()
         wait_for_shutdown()
 
       :command_ok ->
@@ -40,6 +54,42 @@ defmodule SymphonyPlus.CLI do
         System.halt(1)
     end
   end
+
+  defp notify_update_ready do
+    if path = System.get_env("SYMPHONY_PLUS_UPDATE_READY_FILE") do
+      System.delete_env("SYMPHONY_PLUS_UPDATE_READY_FILE")
+      File.write!(path, System.pid() <> "\n")
+      File.chmod!(path, 0o600)
+    end
+  end
+
+  defp restart_arguments([command | _] = args) when command in ["github-app", "projects"], do: args
+
+  defp restart_arguments(args) do
+    case System.get_env("SYMPHONY_PLUS_RESTART_ARGUMENTS") do
+      nil ->
+        args
+
+      encoded ->
+        System.delete_env("SYMPHONY_PLUS_RESTART_ARGUMENTS")
+        restored = decode_restart_arguments(Jason.decode(encoded))
+        restore_restart_cwd()
+        restored
+    end
+  end
+
+  defp restore_restart_cwd do
+    if cwd = System.get_env("SYMPHONY_PLUS_RESTART_CWD") do
+      System.delete_env("SYMPHONY_PLUS_RESTART_CWD")
+      File.cd!(cwd)
+    end
+  end
+
+  defp decode_restart_arguments({:ok, values}) when is_list(values) do
+    if Enum.all?(values, &is_binary/1), do: values, else: raise(ArgumentError, "Invalid update restart arguments")
+  end
+
+  defp decode_restart_arguments(_decoded), do: raise(ArgumentError, "Invalid update restart arguments")
 
   @spec evaluate([String.t()]) :: :ok | :command_ok | {:error, term()}
   def evaluate(args), do: evaluate(args, runtime_deps())
@@ -55,7 +105,7 @@ defmodule SymphonyPlus.CLI do
   end
 
   def evaluate(["projects", "list" | args], _deps) do
-    case OptionParser.parse(args, strict: [data_root: :string, format: :string]) do
+    case OptionParser.parse(args, strict: @options.list) do
       {opts, [], []} ->
         if root = opts[:data_root], do: Application.put_env(:symphony_plus, :data_root, Path.expand(root))
 
@@ -67,7 +117,8 @@ defmodule SymphonyPlus.CLI do
   end
 
   def evaluate(["projects", "add", workflow_path | args], _deps) do
-    with {opts, [], []} <- OptionParser.parse(args, strict: [service_url: :string]),
+    with {opts, [], []} <- OptionParser.parse(args, strict: @options.add),
+         {:ok, _started} <- Application.ensure_all_started(:req),
          {:ok, response} <-
            Req.post(projects_url(opts), json: %{workflow_path: Path.expand(workflow_path)}),
          true <- response.status in 200..299 do
@@ -79,7 +130,8 @@ defmodule SymphonyPlus.CLI do
   end
 
   def evaluate(["projects", "remove", project_id | args], _deps) do
-    with {opts, [], []} <- OptionParser.parse(args, strict: [service_url: :string]),
+    with {opts, [], []} <- OptionParser.parse(args, strict: @options.remove),
+         {:ok, _started} <- Application.ensure_all_started(:req),
          {:ok, response} <- Req.delete(projects_url(opts) <> "/" <> URI.encode(project_id)),
          true <- response.status in 200..299 do
       IO.puts(Jason.encode!(response.body))
@@ -90,7 +142,7 @@ defmodule SymphonyPlus.CLI do
   end
 
   def evaluate(args, deps) do
-    case OptionParser.parse(args, strict: @switches) do
+    case OptionParser.parse(args, strict: @options.service) do
       {opts, [], []} ->
         with :ok <- require_guardrails_acknowledgement(opts),
              :ok <- maybe_set_logs_root(opts, deps),

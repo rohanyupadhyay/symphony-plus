@@ -34,5 +34,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-mix-
 
-      - name: Verify make all
+      - name: Verify make all (including documentation contracts)
         run: make all
+
+      - name: Record validation environment
+        if: always()
+        run: |
+          {
+            echo "Documentation gate source: $GITHUB_SHA"
+            echo "Platform: $RUNNER_OS / $RUNNER_ARCH"
+            elixir --version
+            echo "Coverage: registered published commands with isolated memory fixtures; external canaries separate."
+          } >> "$GITHUB_STEP_SUMMARY"

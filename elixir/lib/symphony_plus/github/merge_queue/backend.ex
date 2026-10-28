@@ -4,7 +4,7 @@ defmodule SymphonyPlus.GitHub.MergeQueue.Backend do
   require Logger
 
   alias SymphonyPlus.Config
-  alias SymphonyPlus.GitHub.{Auth, Client, WorkflowControl}
+  alias SymphonyPlus.GitHub.{Auth, Client, DocumentationReview, WorkflowControl}
   alias SymphonyPlus.GitHub.MergeQueue
   alias SymphonyPlus.GitHub.MergeQueue.State
 
@@ -25,13 +25,15 @@ defmodule SymphonyPlus.GitHub.MergeQueue.Backend do
           {:merged, map()} | {:retry, term()} | {:update_required, term()} | {:blocked, term()}
   def execute({:advance, entry}) do
     result =
-      with {:ok, fresh} <- refresh(entry.repository, entry),
+      with :ok <- current_queue_authority(entry),
+           {:ok, fresh} <- refresh(entry.repository, entry),
            :ok <- admission_preflight(fresh, entry) do
         MergeQueue.advance(entry, adapter(entry.repository))
       else
         {:merged, detail} -> {:merged, detail}
         {:retry, reason} -> {:retry, reason}
         {:blocked, reason} -> {:blocked, reason}
+        {:error, :queue_authority_lost} -> {:retry, :queue_authority_lost}
         {:error, reason} -> {:blocked, reason}
       end
 
@@ -69,14 +71,16 @@ defmodule SymphonyPlus.GitHub.MergeQueue.Backend do
 
   defp admissions(repo, issue, app_id) do
     with {:ok, comments} <-
-           api("GET", "/repos/#{repo}/issues/#{issue["number"]}/comments", %{"per_page" => 100}, nil) do
+           comments(repo, issue["number"]) do
       latest =
         comments
-        |> Enum.filter(&checkpoint_trusted_for_app?(&1, app_id))
+        |> Enum.filter(&trusted_checkpoint_comment?(&1, app_id))
         |> Enum.sort_by(&(&1["id"] || 0), :desc)
-        |> Enum.find(fn comment -> match?({:ok, _checkpoint}, WorkflowControl.decode_checkpoint(comment["body"] || "")) end)
+        |> List.first()
 
-      entries = if latest, do: decode_admission(latest, issue["number"]), else: []
+      provider = Config.settings!().tracker.provider
+      entries = if latest, do: decode_admission(latest, issue["number"], DocumentationReview.required?(provider)), else: []
+      entries = Enum.filter(entries, &(queue_authority(&1, issue, comments, app_id, provider) == :ok))
 
       {:ok, entries}
     end
@@ -169,10 +173,15 @@ defmodule SymphonyPlus.GitHub.MergeQueue.Backend do
 
   @doc false
   @spec decode_admission(map(), pos_integer()) :: [State.Entry.t()]
-  def decode_admission(comment, issue_number) do
+  def decode_admission(comment, issue_number), do: decode_admission(comment, issue_number, false)
+
+  @spec decode_admission(map(), pos_integer(), boolean()) :: [State.Entry.t()]
+  def decode_admission(comment, issue_number, required?) do
     case WorkflowControl.decode_checkpoint(comment["body"] || "") do
       {:ok, %{"state" => state} = checkpoint} when state in ["merge_queued", "merge_validating"] ->
-        build_admission(checkpoint, issue_number)
+        if not required? or DocumentationReview.validate(checkpoint["documentation_review"], checkpoint["source_head_sha"] || checkpoint["head_sha"]) == :ok,
+          do: build_admission(checkpoint, issue_number),
+          else: []
 
       {:ok, _terminal_checkpoint} ->
         []
@@ -196,13 +205,76 @@ defmodule SymphonyPlus.GitHub.MergeQueue.Backend do
 
   defp adapter(repo) do
     %{
-      target: fn entry -> target_sha(repo, entry.target_branch) end,
-      update: fn entry, expected -> update_candidate(repo, entry.pr_number, expected) end,
+      target: fn entry -> with :ok <- current_queue_authority(entry), do: target_sha(repo, entry.target_branch) end,
+      update: fn entry, expected ->
+        with :ok <- mutation_preflight(entry, expected),
+             do: update_candidate(repo, entry.pr_number, expected)
+      end,
       candidate: fn entry, candidate -> persist_candidate_result(entry, candidate) end,
       validate: fn _entry, sha -> candidate_checks(repo, sha) end,
       refresh: fn entry -> refresh(repo, entry) end,
-      merge: fn entry, sha -> merge(repo, entry.pr_number, sha) end
+      merge: fn entry, sha ->
+        with :ok <- mutation_preflight(entry, sha), do: merge(repo, entry.pr_number, sha)
+      end
     }
+  end
+
+  defp mutation_preflight(entry, expected_head) do
+    with :ok <- current_queue_authority(entry),
+         {:ok, fresh} <- refresh(entry.repository, entry),
+         :ok <- admission_preflight(fresh, %{entry | candidate_sha: expected_head}) do
+      :ok
+    else
+      {:retry, reason} -> {:error, reason}
+      {:blocked, reason} -> {:error, reason}
+      {:merged, _detail} -> {:error, :already_merged}
+      error -> error
+    end
+  end
+
+  defp current_queue_authority(entry) do
+    with {:ok, app_id} <- configured_app_id(),
+         {:ok, issue} <- api("GET", "/repos/#{entry.repository}/issues/#{entry.originating_issue}", %{}, nil),
+         {:ok, comments} <- comments(entry.repository, entry.originating_issue) do
+      queue_authority(entry, issue, comments, app_id, Config.settings!().tracker.provider)
+    end
+  end
+
+  @doc false
+  @spec queue_authority(State.Entry.t(), map(), [map()], pos_integer(), map()) :: :ok | {:error, atom()}
+  def queue_authority(entry, issue, comments, app_id, provider) do
+    trusted = Enum.filter(comments, &trusted_checkpoint_comment?(&1, app_id))
+    latest = Enum.max_by(trusted, &(&1["id"] || 0), fn -> %{} end)
+    admissions = decode_admission(latest, entry.originating_issue, DocumentationReview.required?(provider))
+    checkpoint_comments = authority_comments(comments, app_id)
+    derived = WorkflowControl.derive(checkpoint_comments, %{}, Enum.uniq(["OWNER" | WorkflowControl.authorized_associations(provider)]))
+    pending? = match?(%{"kind" => "command"}, derived.trigger)
+
+    if issue["state"] == "open" and not pending? and Enum.any?(admissions, &(&1.generation == entry.generation)), do: :ok, else: {:error, :queue_authority_lost}
+  end
+
+  defp trusted_checkpoint_comment?(comment, app_id) do
+    checkpoint_trusted_for_app?(comment, app_id) and
+      match?({:ok, _}, WorkflowControl.decode_checkpoint(comment["body"] || ""))
+  end
+
+  defp authority_comments(comments, app_id) do
+    comments
+    |> Enum.reject(fn comment ->
+      match?({:ok, _}, WorkflowControl.decode_checkpoint(comment["body"] || "")) and
+        not checkpoint_trusted_for_app?(comment, app_id)
+    end)
+    |> Enum.map(fn comment ->
+      if checkpoint_trusted_for_app?(comment, app_id),
+        do: Map.put(comment, "author_association", "OWNER"),
+        else: comment
+    end)
+  end
+
+  defp comments(repo, number, page \\ 1, acc \\ []) do
+    with {:ok, events} when is_list(events) <- api("GET", "/repos/#{repo}/issues/#{number}/comments", %{"per_page" => 100, "page" => page}, nil) do
+      if length(events) < 100, do: {:ok, acc ++ events}, else: comments(repo, number, page + 1, acc ++ events)
+    end
   end
 
   defp target_sha(repo, branch) do
@@ -367,17 +439,34 @@ defmodule SymphonyPlus.GitHub.MergeQueue.Backend do
   defp same_repository_identity?(head_repo, base_repo),
     do: head_repo["full_name"] == base_repo["full_name"]
 
-  defp persist_outcome(_entry, {:retry, _reason} = result), do: result
+  defp persist_outcome(entry, result), do: persist_outcome(entry, result, &api/4)
 
-  defp persist_outcome(entry, {:merged, detail}), do: complete_merged(entry, detail, &api/4)
+  @doc false
+  @spec persist_outcome(State.Entry.t(), tuple(), function()) :: tuple()
+  def persist_outcome(entry, result, request), do: persist_outcome(entry, result, request, &current_queue_authority/1)
 
-  defp persist_outcome(entry, {kind, detail} = result) do
-    checkpoint = WorkflowControl.queue_outcome(entry, kind, detail)
-    body = %{"body" => WorkflowControl.render_comment(checkpoint)}
+  @doc false
+  @spec persist_outcome(State.Entry.t(), tuple(), function(), function()) :: tuple()
+  def persist_outcome(_entry, {_kind, :queue_authority_lost}, _request, _authority),
+    do: {:retry, :queue_authority_lost}
 
-    case api("POST", "/repos/#{entry.repository}/issues/#{entry.originating_issue}/comments", %{}, body) do
-      {:ok, _comment} -> result
-      {:error, reason} -> {:retry, {:outcome_checkpoint_failed, reason}}
+  def persist_outcome(_entry, {:retry, _reason} = result, _request, _authority), do: result
+
+  def persist_outcome(entry, {:merged, detail}, request, _authority), do: complete_merged(entry, detail, request)
+
+  def persist_outcome(entry, {kind, detail} = result, request, authority) do
+    case authority.(entry) do
+      :ok ->
+        checkpoint = WorkflowControl.queue_outcome(entry, kind, detail)
+        body = %{"body" => WorkflowControl.render_comment(checkpoint)}
+
+        case request.("POST", "/repos/#{entry.repository}/issues/#{entry.originating_issue}/comments", %{}, body) do
+          {:ok, _comment} -> result
+          {:error, reason} -> {:retry, {:outcome_checkpoint_failed, reason}}
+        end
+
+      {:error, reason} ->
+        {:retry, reason}
     end
   end
 
@@ -402,12 +491,20 @@ defmodule SymphonyPlus.GitHub.MergeQueue.Backend do
   end
 
   defp persist_candidate_result(entry, candidate) do
-    checkpoint = WorkflowControl.queue_candidate(entry, candidate.target_sha, candidate.candidate_sha)
-    body = %{"body" => WorkflowControl.render_comment(checkpoint)}
+    persist_candidate_result(entry, candidate, &api/4, &current_queue_authority/1)
+  end
 
-    case api("POST", "/repos/#{entry.repository}/issues/#{entry.originating_issue}/comments", %{}, body) do
-      {:ok, _comment} -> :ok
-      {:error, reason} -> {:error, {:candidate_checkpoint_failed, reason}}
+  @doc false
+  @spec persist_candidate_result(State.Entry.t(), map(), function(), function()) :: :ok | {:error, term()}
+  def persist_candidate_result(entry, candidate, request, authority) do
+    with :ok <- authority.(entry) do
+      checkpoint = WorkflowControl.queue_candidate(entry, candidate.target_sha, candidate.candidate_sha)
+      body = %{"body" => WorkflowControl.render_comment(checkpoint)}
+
+      case request.("POST", "/repos/#{entry.repository}/issues/#{entry.originating_issue}/comments", %{}, body) do
+        {:ok, _comment} -> :ok
+        {:error, reason} -> {:error, {:candidate_checkpoint_failed, reason}}
+      end
     end
   end
 

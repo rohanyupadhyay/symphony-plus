@@ -43,6 +43,7 @@ defmodule SymphonyPlus.Orchestrator do
       quota_store_error: nil,
       retry_attempts: %{},
       update_drain_token: nil,
+      update_drain_tokens: %{},
       codex_totals: nil,
       codex_rate_limits: nil
     ]
@@ -63,11 +64,17 @@ defmodule SymphonyPlus.Orchestrator do
   @spec begin_update_drain(GenServer.server()) :: {:ok, reference()}
   def begin_update_drain(server \\ __MODULE__), do: GenServer.call(server, :begin_update_drain)
 
+  @spec begin_reconfiguration_drain(GenServer.server()) :: {:ok, reference()}
+  def begin_reconfiguration_drain(server), do: GenServer.call(server, {:begin_update_drain, :reconfiguration})
+
   @spec cancel_update_drain(reference(), GenServer.server()) :: :ok | {:error, :stale_token}
   def cancel_update_drain(token, server \\ __MODULE__), do: GenServer.call(server, {:cancel_update_drain, token})
 
   @spec update_quiescent?(reference(), GenServer.server()) :: boolean()
   def update_quiescent?(token, server \\ __MODULE__), do: GenServer.call(server, {:update_quiescent?, token})
+
+  @spec update_project_context(GenServer.server(), map()) :: :ok
+  def update_project_context(server, context), do: GenServer.cast(server, {:update_project_context, context})
 
   @impl true
   def init(opts) do
@@ -100,6 +107,12 @@ defmodule SymphonyPlus.Orchestrator do
       {:error, reason} ->
         {:stop, reason}
     end
+  end
+
+  @impl true
+  def handle_cast({:update_project_context, context}, state) do
+    :ok = Config.install_project_context(context)
+    {:noreply, refresh_runtime_config(state)}
   end
 
   @impl true
@@ -289,7 +302,7 @@ defmodule SymphonyPlus.Orchestrator do
 
   defp maybe_complete_quota_resume(state, issue_id, running_entry) do
     if Map.get(running_entry, :run_kind) == :quota_resume do
-      :ok = QuotaWaitStore.delete(Config.settings!().workspace.root, issue_id)
+      :ok = QuotaWaitStore.delete(Config.local_workspace_root(), issue_id)
       %{state | quota_waits: Map.delete(state.quota_waits, issue_id)}
     else
       state
@@ -913,7 +926,7 @@ defmodule SymphonyPlus.Orchestrator do
   defp build_continuation(_native_id, _issue_id, _workspace_key), do: nil
 
   defp load_quota_waits(state) do
-    case QuotaWaitStore.list(Config.settings!().workspace.root) do
+    case QuotaWaitStore.list(Config.local_workspace_root()) do
       {:ok, records} ->
         waits = Map.new(records, fn record -> {record["issue_id"], wait_from_record(record)} end)
         %{state | quota_waits: waits, claimed: MapSet.union(state.claimed, MapSet.new(Map.keys(waits)))}
@@ -948,14 +961,14 @@ defmodule SymphonyPlus.Orchestrator do
       issue: nil,
       harness: :codex,
       pool_key: record["pool_key"],
-      status: String.to_existing_atom(record["status"]),
+      status: restored_quota_status(record),
       renewal_at: parse_time(record["renewal_at"]),
       next_recheck_at: parse_time(record["next_recheck_at"]),
       workspace_key: record["workspace_key"],
-      workspace_path: Path.join(Config.settings!().workspace.root, record["workspace_key"]),
-      worker_host: nil,
+      workspace_path: Path.join(quota_workspace_root(record["worker_host"]), record["workspace_key"]),
+      worker_host: record["worker_host"],
       continuation: continuation,
-      last_outcome: record["last_outcome"],
+      last_outcome: if(legacy_worker_unknown?(record), do: "original worker identity unavailable", else: record["last_outcome"]),
       observed_at: parse_time(record["observed_at"]),
       updated_at: parse_time(record["updated_at"])
     }
@@ -963,17 +976,30 @@ defmodule SymphonyPlus.Orchestrator do
 
   defp reconcile_quota_waits(state, issues) do
     issue_by_id = Map.new(issues, &{&1.id, &1})
+    missing_ids = Map.keys(state.quota_waits) -- Map.keys(issue_by_id)
 
-    Enum.reduce(state.quota_waits, state, fn {issue_id, wait}, acc ->
-      reconcile_quota_wait(acc, issue_id, wait, issue_by_id[issue_id])
-    end)
+    refreshed = if missing_ids == [], do: {:ok, []}, else: Tracker.fetch_issues_by_ids(missing_ids)
+
+    case refreshed do
+      {:ok, refreshed} ->
+        issue_by_id = Map.merge(issue_by_id, Map.new(refreshed, &{&1.id, &1}))
+
+        Enum.reduce(state.quota_waits, state, fn {issue_id, wait}, acc ->
+          reconcile_quota_wait(acc, issue_id, wait, issue_by_id[issue_id])
+        end)
+
+      {:error, reason} ->
+        Logger.warning("Unable to reconcile quota waits: #{inspect(reason)}")
+        state
+    end
   end
 
   defp reconcile_quota_wait(state, issue_id, wait, %Issue{} = issue) do
-    if issue_routable?(issue) do
+    if candidate_issue?(issue, active_state_set(), terminal_state_set()) do
       updated = %{wait | issue: issue, identifier: issue.identifier}
       %{state | quota_waits: Map.put(state.quota_waits, issue_id, updated)}
     else
+      if terminal_issue_state?(issue.state, terminal_state_set()), do: cleanup_issue_workspace(issue, wait)
       remove_quota_wait(state, issue_id)
     end
   end
@@ -981,11 +1007,12 @@ defmodule SymphonyPlus.Orchestrator do
   defp reconcile_quota_wait(state, issue_id, _wait, _issue), do: remove_quota_wait(state, issue_id)
 
   defp remove_quota_wait(state, issue_id) do
-    :ok = QuotaWaitStore.delete(Config.settings!().workspace.root, issue_id)
+    :ok = QuotaWaitStore.delete(Config.local_workspace_root(), issue_id)
 
     %{
       state
       | quota_waits: Map.delete(state.quota_waits, issue_id),
+        blocked: Map.delete(state.blocked, issue_id),
         claimed: MapSet.delete(state.claimed, issue_id)
     }
   end
@@ -993,13 +1020,7 @@ defmodule SymphonyPlus.Orchestrator do
   defp dispatch_due_quota_waits(state, _issues) do
     Enum.reduce(state.quota_waits, state, fn {issue_id, wait}, acc ->
       cond do
-        available_slots(acc) <= 0 ->
-          acc
-
-        wait.status == :operator_blocked ->
-          acc
-
-        is_nil(wait.issue) ->
+        not quota_resume_dispatchable?(acc, issue_id, wait) ->
           acc
 
         is_nil(wait.worker_host) and not File.dir?(wait.workspace_path) ->
@@ -1015,6 +1036,15 @@ defmodule SymphonyPlus.Orchestrator do
           dispatch_quota_resume(acc, issue_id, wait)
       end
     end)
+  end
+
+  defp quota_resume_dispatchable?(state, issue_id, wait) do
+    available_slots(state) > 0 and
+      not Map.has_key?(state.running, issue_id) and
+      wait.status != :operator_blocked and
+      not is_nil(wait.issue) and
+      state_slots_available?(wait.issue, state.running) and
+      quota_worker_available?(state, wait.worker_host)
   end
 
   defp dispatch_quota_resume(state, issue_id, wait) do
@@ -1104,7 +1134,7 @@ defmodule SymphonyPlus.Orchestrator do
           nil
       end
 
-    QuotaWaitStore.put(Config.settings!().workspace.root, %{
+    QuotaWaitStore.put(Config.local_workspace_root(), %{
       "version" => 1,
       "issue_id" => wait.issue_id,
       "issue_identifier" => wait.identifier,
@@ -1114,6 +1144,7 @@ defmodule SymphonyPlus.Orchestrator do
       "renewal_at" => format_time(wait.renewal_at),
       "next_recheck_at" => format_time(wait.next_recheck_at),
       "workspace_key" => wait.workspace_key,
+      "worker_host" => wait.worker_host,
       "continuation" => continuation,
       "last_outcome" => wait.last_outcome,
       "observed_at" => format_time(wait.observed_at),
@@ -1122,6 +1153,26 @@ defmodule SymphonyPlus.Orchestrator do
   end
 
   defp quota_unknown_recheck_ms, do: Config.settings!().quota.unknown_recheck_ms
+
+  defp quota_workspace_root(nil), do: Config.local_workspace_root()
+  defp quota_workspace_root(_host), do: Config.settings!().workspace.root
+
+  defp legacy_worker_unknown?(record),
+    do: not Map.has_key?(record, "worker_host")
+
+  defp restored_quota_status(record) do
+    cond do
+      legacy_worker_unknown?(record) -> :operator_blocked
+      record["status"] == "resuming" -> :waiting
+      true -> String.to_existing_atom(record["status"])
+    end
+  end
+
+  defp quota_worker_available?(_state, nil), do: Config.settings!().worker.ssh_hosts == []
+
+  defp quota_worker_available?(state, host),
+    do: host in Config.settings!().worker.ssh_hosts and worker_host_slots_available?(state, host)
+
   defp format_time(nil), do: nil
   defp format_time(%DateTime{} = value), do: DateTime.to_iso8601(value)
   defp parse_time(nil), do: nil
@@ -1785,21 +1836,27 @@ defmodule SymphonyPlus.Orchestrator do
   defp server_available?(server), do: not is_nil(Process.whereis(server))
 
   @impl true
-  def handle_call(:begin_update_drain, _from, %{update_drain_token: nil} = state) do
-    token = make_ref()
-    {:reply, {:ok, token}, %{state | update_drain_token: token}}
+  def handle_call(:begin_update_drain, from, state), do: handle_call({:begin_update_drain, :installation}, from, state)
+
+  def handle_call({:begin_update_drain, owner}, _from, state) do
+    token = Map.get(state.update_drain_tokens, owner) || make_ref()
+    tokens = Map.put(state.update_drain_tokens, owner, token)
+    updated = %{state | update_drain_tokens: tokens, update_drain_token: state.update_drain_token || token}
+    {:reply, {:ok, token}, updated}
   end
 
-  def handle_call(:begin_update_drain, _from, state), do: {:reply, {:ok, state.update_drain_token}, state}
-
-  def handle_call({:cancel_update_drain, token}, _from, %{update_drain_token: token} = state),
-    do: {:reply, :ok, %{state | update_drain_token: nil}}
-
-  def handle_call({:cancel_update_drain, _token}, _from, state), do: {:reply, {:error, :stale_token}, state}
+  def handle_call({:cancel_update_drain, token}, _from, state) do
+    if token in Map.values(state.update_drain_tokens) do
+      remaining = Map.reject(state.update_drain_tokens, fn {_owner, value} -> value == token end)
+      {:reply, :ok, %{state | update_drain_tokens: remaining, update_drain_token: List.first(Map.values(remaining))}}
+    else
+      {:reply, {:error, :stale_token}, state}
+    end
+  end
 
   def handle_call({:update_quiescent?, token}, _from, state) do
     quiet =
-      state.update_drain_token == token and map_size(state.running) == 0 and
+      token in Map.values(state.update_drain_tokens) and map_size(state.running) == 0 and
         map_size(state.retry_attempts) == 0 and map_size(state.quota_waits) == 0 and
         MapSet.size(state.claimed) == 0
 

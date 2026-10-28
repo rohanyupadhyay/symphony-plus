@@ -61,6 +61,20 @@ defmodule SymphonyPlus.RuntimeStatusTest do
     assert Enum.map(projected.running, & &1.project_id) |> Enum.sort() == ["alpha", "beta"]
   end
 
+  test "quota projection retains project identity when provider issue ids collide" do
+    projected =
+      RuntimeStatus.project(%{
+        quota_waiting:
+          for(
+            project_id <- ["alpha", "beta"],
+            do: %{project_id: project_id, issue_id: "1", identifier: "GH-1", status: :waiting}
+          )
+      })
+
+    assert projected.counts.quota_waiting == 2
+    assert Enum.sort(Enum.map(projected.quota_waiting, & &1.project_id)) == ["alpha", "beta"]
+  end
+
   test "sanitizes blocked reasons and supplies stable missing cues" do
     long = String.duplicate("é", 200)
     assert RuntimeStatus.sanitize_reason(nil) == "Operator action required"

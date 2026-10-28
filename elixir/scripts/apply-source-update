@@ -6,32 +6,65 @@ prepared_path=${2:?prepared path required}
 candidate_revision=${3:?candidate revision required}
 old_pid=${4:?old pid required}
 launcher_command=${5:?launcher command required}
+restart_args_file=${6:-}
 lock_dir="$installation_root/.git/symphony-plus-update.lock"
 outcome_file="$installation_root/.git/symphony-plus-update.outcome"
+ready_file="$installation_root/.git/symphony-plus-update.ready"
+candidate_executable="$prepared_path/elixir/bin/symphony-plus"
+executable="$installation_root/elixir/bin/symphony-plus"
+prior_executable="$installation_root/.git/symphony-plus-prior-executable"
+
+# Refuse synchronously, before requesting the old runtime's shutdown.
+if ! test -x "$candidate_executable" || ! test -x "$executable" || ! test "$(git -C "$prepared_path" rev-parse HEAD)" = "$candidate_revision"; then
+  printf '%s\n' 'blocked: prepared or prior executable or revision is unavailable' >"$outcome_file"
+  exit 1
+fi
+if ! mkdir "$lock_dir" 2>/dev/null; then
+  printf '%s\n' 'blocked: update lock is held' >"$outcome_file"
+  exit 1
+fi
+if ! cp "$executable" "$prior_executable" || ! chmod 700 "$prior_executable"; then
+  rmdir "$lock_dir"
+  printf '%s\n' 'blocked: cannot preserve prior executable' >"$outcome_file"
+  exit 1
+fi
+printf '%s\n' "activating:$candidate_revision" >"$outcome_file"
 
 (
-  if ! mkdir "$lock_dir" 2>/dev/null; then
-    printf '%s\n' 'blocked: update lock is held' >"$outcome_file"
-    exit 1
-  fi
-  trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT
-
+  recovered=0
+  phase=activation
+  launcher_pid=""
+  recover_prior() {
+    recovered=1
+    if test -n "$launcher_pid"; then kill -TERM -- "-$launcher_pid" 2>/dev/null || true; fi
+    printf '%s\n' "blocked: $phase failed; starting preserved prior executable with original arguments" >"$outcome_file"
+    cp "$prior_executable" "$executable"
+    restart_args=()
+    if test -n "$restart_args_file" && test -f "$restart_args_file"; then
+      while IFS= read -r -d '' argument; do restart_args+=("$argument"); done <"$restart_args_file"
+    fi
+    restart_cwd=${SYMPHONY_PLUS_RESTART_CWD:-$installation_root/elixir}
+    unset SYMPHONY_PLUS_RESTART_ARGUMENTS SYMPHONY_PLUS_RESTART_CWD SYMPHONY_PLUS_UPDATE_READY_FILE
+    cd "$restart_cwd"
+    "$executable" "${restart_args[@]}" &
+  }
+  finish() {
+    status=$?
+    if test "$status" -ne 0 && test "$recovered" -eq 0; then recover_prior; fi
+    rmdir "$lock_dir" 2>/dev/null || true
+  }
+  trap finish EXIT
   while kill -0 "$old_pid" 2>/dev/null; do sleep 1; done
 
   cd "$installation_root"
   prior_revision=$(git rev-parse HEAD)
-  test "$(git -C "$prepared_path" rev-parse HEAD)" = "$candidate_revision"
   test -z "$(git status --porcelain)"
   git cat-file -e "$candidate_revision^{commit}"
   git merge-base --is-ancestor "$prior_revision" "$candidate_revision"
-
-  prior_executable="$installation_root/.git/symphony-plus-prior-executable"
-  if test -x "$installation_root/elixir/bin/symphony-plus"; then
-    cp "$installation_root/elixir/bin/symphony-plus" "$prior_executable"
-    chmod 700 "$prior_executable"
-  fi
-
   git merge --ff-only "$candidate_revision"
+  cp "$candidate_executable" "$executable.update"
+  chmod 700 "$executable.update"
+  mv "$executable.update" "$executable"
   if test -d "$prepared_path/elixir/_build"; then
     rm -rf "$installation_root/elixir/_build.update"
     cp -R "$prepared_path/elixir/_build" "$installation_root/elixir/_build.update"
@@ -39,13 +72,33 @@ outcome_file="$installation_root/.git/symphony-plus-update.outcome"
     mv "$installation_root/elixir/_build.update" "$installation_root/elixir/_build"
   fi
 
-  if ! bash -lc "$launcher_command"; then
-    printf '%s\n' 'blocked: launcher failed; starting preserved prior executable' >"$outcome_file"
-    if test -x "$prior_executable"; then "$prior_executable" & fi
-    exit 1
-  fi
-
-  printf '%s\n' "restarted:$candidate_revision" >"$outcome_file"
+  cd "$installation_root/elixir"
+  rm -f "$ready_file"
+  export SYMPHONY_PLUS_UPDATE_READY_FILE="$ready_file"
+  phase=launcher
+  set -m
+  bash -lc "$launcher_command" &
+  launcher_pid=$!
+  attempts=0
+  while test "$attempts" -lt 200; do
+    if test -s "$ready_file"; then
+      read -r ready_pid <"$ready_file"
+      case "$ready_pid" in
+        ''|*[!0-9]*) ;;
+        *)
+          if kill -0 "$ready_pid" 2>/dev/null; then
+            printf '%s\n' "restarted:$candidate_revision" >"$outcome_file"
+            disown "$launcher_pid" 2>/dev/null || true
+            exit 0
+          fi
+          ;;
+      esac
+    fi
+    if ! kill -0 "$launcher_pid" 2>/dev/null; then break; fi
+    sleep 0.05
+    attempts=$((attempts + 1))
+  done
+  recover_prior
 ) </dev/null >/dev/null 2>&1 &
 
 exit 0

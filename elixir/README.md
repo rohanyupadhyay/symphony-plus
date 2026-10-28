@@ -4,10 +4,16 @@
 
 Set `updates.enabled: true` only for the canonical source checkout. `installation_root` must be an
 absolute Git checkout outside `workspace.root`; `remote` defaults to `origin`; `interval_ms` must be
-positive. `prepare_command` runs in a detached candidate worktree and `launcher_command` runs after
-the old BEAM exits. The launcher or supervisor is responsible for keeping the service alive.
+positive. `prepare_command` runs in the candidate's `elixir/` directory and must produce executable
+`bin/symphony-plus`. After the old BEAM exits, activation installs that executable and starts
+`launcher_command` from the canonical `elixir/` directory. The CLI restores the original service
+working directory and arguments and signals readiness only after successful startup. A failed startup restores and starts
+the prior executable with those arguments. A GitHub launcher also retains its host App profile.
+Keep a supervisor responsible for subsequent service failures; a readiness check is not a perpetual
+availability guarantee.
 
-Terminal, JSON, and LiveView observability use one runtime-status projection. Recoverable quota
+JSON and LiveView observability use one runtime-status projection. The legacy terminal dashboard
+is disabled during normal service startup; use the HTTP operations dashboard. Recoverable quota
 pauses appear as quota-waiting, while input/approval pauses and failed native quota resumes appear
 as blocked with concise diagnostic context.
 
@@ -18,9 +24,11 @@ This directory contains the current Elixir/OTP implementation of Symphony Plus, 
 > Symphony Plus Elixir is prototype software intended for evaluation only and is presented as-is.
 > We recommend implementing your own hardened version based on `SPEC.md`.
 
-## Screenshot
+## Historical screenshot
 
-![Symphony Plus Elixir screenshot](../.github/media/elixir-screenshot.png)
+This image shows an earlier terminal UI and branding; it does not represent the current HTTP dashboard.
+
+![Historical terminal screenshot](../.github/media/elixir-screenshot.png)
 
 ## How it works
 
@@ -39,10 +47,12 @@ workspaces, `github_git_push`, Jira Cloud serves
 tools with configured host-side auth and removes declared tracker-token environment variables from
 the Codex child, so the agent does not need a second tracker login.
 
-If a claimed issue moves to a terminal state (`Done`, `Closed`, `Cancelled`, or `Duplicate`),
+If a claimed issue moves to a configured `tracker.terminal_states` state (Linear defaults include
+`Done`, `Closed`, `Canceled`, `Cancelled`, and `Duplicate`),
 Symphony Plus stops the active agent for that issue and cleans up matching workspaces.
 
-If Codex reports that operator input, approval, or MCP elicitation is required, Symphony Plus keeps the
+With `codex.approval_policy: never`, command/file approvals and recognized MCP approval questions
+are approved automatically. Other unresolved input/approval requests keep the
 issue claimed and exposes it as blocked in the runtime state, JSON API, and dashboard. Blocked
 entries are in memory only; restarting the orchestrator clears that blocked map, so any still-active
 tracker issue can become a dispatch candidate again after restart.
@@ -54,7 +64,7 @@ When Codex omits a valid renewal time, `quota.unknown_recheck_ms` controls the b
 interval (default: 300000 ms). Native resume failure is operator-blocking; Symphony Plus never starts a
 fresh thread as an automatic fallback. See [Quota waits and native resume](docs/quota-resume.md).
 
-## How to use it
+## Linear onboarding
 
 1. Make sure your codebase is set up to work well with agents: see
    [Harness engineering](https://openai.com/index/harness-engineering/).
@@ -74,7 +84,7 @@ fresh thread as an automatic fallback. See [Quota waits and native resume](docs/
 
 ## Prerequisites
 
-Source installation requires Git, the Codex CLI, and
+Source installation requires Bash, Git, the Codex CLI, and
 [mise](https://mise.jdx.dev/) to install the repository's supported Elixir/Erlang versions.
 Run these commands from the `elixir/` directory of a Symphony Plus source checkout unless a
 command explicitly changes directory.
@@ -86,6 +96,9 @@ mise exec -- elixir --version
 
 ## Install and run from source
 
+From the directory where you want the installation checkout:
+
+<!-- docs:scenario cold-source-install -->
 ```bash
 git clone https://github.com/rohanyupadhyay/symphony-plus
 cd symphony-plus/elixir
@@ -93,35 +106,77 @@ mise trust
 mise install
 mise exec -- mix setup
 mise exec -- mix build
-mise exec -- ./bin/symphony-plus ./WORKFLOW.md
 ```
 
-`mix build` generates `bin/symphony-plus`. Start the service once, even before registering a
-project:
+`mix build` produces the development escript. In a terminal with the pinned Erlang runtime on
+PATH (for example `mise exec -- bash`), define your installation inputs. Use an absolute data
+root for each separately running service; different ports alone do not isolate registrations.
+Only one active GitHub project can own a repository's queue in an installation. A duplicate
+repository workflow remains registered but unavailable until the existing owner is removed.
+These variables are operator inputs, not application environment settings:
 
 ```bash
-mise exec -- ./bin/symphony-plus --i-understand-that-this-will-be-running-without-the-usual-guardrails
+export SYMPHONY_PLUS_BIN="$PWD/bin/symphony-plus"
+export SYMPHONY_PLUS_DATA_ROOT="$HOME/.local/share/symphony-plus/main"
+export SYMPHONY_PLUS_LOGS_ROOT="$HOME/.local/state/symphony-plus/main/log"
+export SYMPHONY_PLUS_PORT=4000
+export SYMPHONY_PLUS_SERVICE_URL="http://127.0.0.1:$SYMPHONY_PLUS_PORT"
+export SYMPHONY_PLUS_WORKFLOW="/absolute/target-repository/.symphony-plus/WORKFLOW.md"
 ```
 
-The dashboard at `http://localhost:4000` accepts an absolute repository-owned workflow path. The
-same registry can be managed from another terminal with `projects list`, `projects add
-/absolute/repository/WORKFLOW.md`, and `projects remove PROJECT_ID`.
+Start an empty registry first. It needs no tracker or Codex credentials while no projects exist:
 
-Registrations contain only a generated id and canonical workflow path. They default to the ignored
-`tmp/symphony-plus/projects.json`; use `--data-root PATH` to select another installation-local
-directory. Missing or temporarily invalid workflows remain registered and are retried until they
-become valid. The former positional workflow argument remains available as a migration path.
+<!-- docs:scenario service-start -->
+```bash
+"$SYMPHONY_PLUS_BIN" --i-understand-that-this-will-be-running-without-the-usual-guardrails \
+  --port "$SYMPHONY_PLUS_PORT" \
+  --data-root "$SYMPHONY_PLUS_DATA_ROOT" \
+  --logs-root "$SYMPHONY_PLUS_LOGS_ROOT"
+```
 
-Do not use this generic command as an incomplete substitute for GitHub issue orchestration.
-GitHub mode requires an operator-owned App profile and the credential-scrubbing
-`scripts/run-github` launcher described under the [GitHub Issues adapter](#github-issues-adapter)
-and the [AI-agent installation runbook](docs/agent-installation.md).
+Open the service URL. In another terminal with the same input variables, register the actual
+customized target workflow. Before registering live work, configure the selected tracker,
+authenticate Codex, and review the workflow's hooks and dispatch filters. The bundled Linear
+workflow is an example and is never selected implicitly.
+
+<!-- docs:scenario project-add -->
+```bash
+"$SYMPHONY_PLUS_BIN" projects add "$SYMPHONY_PLUS_WORKFLOW" \
+  --service-url "$SYMPHONY_PLUS_SERVICE_URL"
+```
+
+List durable registrations from any working directory, including while the service is stopped:
+
+<!-- docs:scenario project-list -->
+```bash
+"$SYMPHONY_PLUS_BIN" projects list --data-root "$SYMPHONY_PLUS_DATA_ROOT"
+```
+
+Copy the generated id from add/list into `SYMPHONY_PLUS_PROJECT_ID`. Removal requires an idle
+project and preserves its workspace files:
+
+<!-- docs:scenario project-remove -->
+```bash
+"$SYMPHONY_PLUS_BIN" projects remove "$SYMPHONY_PLUS_PROJECT_ID" \
+  --service-url "$SYMPHONY_PLUS_SERVICE_URL"
+```
+
+Registrations store only the generated id and canonical workflow path. Restart with the same
+absolute data root to restore them. Missing/temporarily invalid registered workflows are displayed
+as unavailable and retried after repair. Default data location is cwd-relative
+`tmp/symphony-plus/projects.json`; explicit `--data-root` avoids accidentally selecting a different
+installation when cwd changes. The positional workflow argument registers that explicit workflow
+in addition to existing registrations; it does not select an exclusive single-project mode.
+
+GitHub orchestration requires an operator-owned App profile and the credential-scrubbing
+`scripts/run-github` launcher. Follow the [AI-agent installation runbook](docs/agent-installation.md),
+which preserves the same explicit data-root and service-address requirements.
 
 ## Burrito releases
 
 Symphony Plus ships self-contained executables built with
 [Burrito](https://github.com/burrito-elixir/burrito). They embed Erlang/OTP, Elixir, and Symphony Plus,
-but still expect `codex`, `git`, and the selected tracker credentials on the target machine.
+but local issue execution still requires Bash, `codex`, `git`, and the selected tracker credentials.
 
 Supported release targets:
 
@@ -138,12 +193,29 @@ After all four platform smoke tests pass, it updates the rolling
 [`nightly` prerelease](https://github.com/rohanyupadhyay/symphony-plus/releases/tag/nightly),
 including binaries and checksums. Nightly binaries use a `-nightly` version suffix;
 the release notes identify the source commit. Stable releases remain unchanged.
+For a stable tag `vX.Y.Z`, use `https://github.com/rohanyupadhyay/symphony-plus/releases/tag/vX.Y.Z`
+and select the asset named `symphony-plus-vX.Y.Z-TARGET` plus its `.sha256` file. For nightly,
+select `symphony-plus-nightly-TARGET` from the linked prerelease. The release workflow verifies
+the exact asset name, checksum, documented launch command, HTTP readiness, and empty project list
+on all four targets before publication.
 
-After downloading the executable for your platform from a release:
+After downloading the executable for your platform from a release, set these inputs to the
+downloaded asset name, an unused local port, and an installation-specific data root:
 
 ```bash
-chmod +x ./symphony-plus-v0.0.1-macos_arm64
-./symphony-plus-v0.0.1-macos_arm64 ./WORKFLOW.md
+# Replace VERSION and TARGET with the downloaded release's version and platform.
+export SYMPHONY_PLUS_BIN="$PWD/symphony-plus-VERSION-TARGET"
+export SYMPHONY_PLUS_PORT=4000
+export SYMPHONY_PLUS_DATA_ROOT="$HOME/.local/share/symphony-plus/main"
+chmod +x "$SYMPHONY_PLUS_BIN"
+```
+
+Start the empty installation; it requires no tracker or Codex credentials:
+
+<!-- docs:scenario release-service-start -->
+```bash
+"$SYMPHONY_PLUS_BIN" --i-understand-that-this-will-be-running-without-the-usual-guardrails \
+  --port "$SYMPHONY_PLUS_PORT" --data-root "$SYMPHONY_PLUS_DATA_ROOT"
 ```
 
 ## Configuration
@@ -151,15 +223,19 @@ chmod +x ./symphony-plus-v0.0.1-macos_arm64
 Pass a custom workflow file path to `./bin/symphony-plus` when starting the service:
 
 ```bash
-./bin/symphony-plus /path/to/custom/WORKFLOW.md
+./bin/symphony-plus --i-understand-that-this-will-be-running-without-the-usual-guardrails \
+  --port 4000 --data-root /absolute/installation/data /absolute/target-repository/WORKFLOW.md
 ```
 
-If no path is passed, Symphony Plus defaults to `./WORKFLOW.md`.
+If no path is passed, Symphony Plus starts/restores the installation registry without implicitly
+registering `./WORKFLOW.md`.
 
 Optional flags:
 
 - `--logs-root` tells Symphony Plus to write logs under a different directory (default: `./log`)
-- `--port` also starts the Phoenix observability service (default: disabled)
+- `--data-root` selects installation-local durable registry data (default: cwd-relative `tmp/symphony-plus`)
+- `--port` starts the Phoenix observability service; omit it for no HTTP listener unless a
+  restored project config supplies `server.port`. Choose an explicit port for operator access.
 
 The `WORKFLOW.md` file uses YAML front matter for configuration, plus a Markdown body used as the
 Codex session prompt.
@@ -191,7 +267,8 @@ Title: {{ issue.title }} Body: {{ issue.description }}
 
 Notes:
 
-- If a value is missing, defaults are used.
+- Optional values use defaults; adapter-required settings must still be supplied. See the
+  [generated configuration and CLI reference](docs/configuration-reference.md) for raw defaults.
 - `tracker.kind` selects an adapter. Adapter-owned endpoint, scope, and auth settings belong under
   `tracker.provider`; the current Linear adapter still accepts the older flat `endpoint`,
   `api_key`, `project_slug`, and `assignee` aliases for compatibility.
@@ -204,6 +281,8 @@ Notes:
   - `codex.turn_sandbox_policy` defaults to a `workspaceWrite` policy rooted at the current issue workspace
 - `codex.turn_timeout_ms` is the maximum silence interval while a turn is streaming. Each
   app-server update resets it; it is not a total turn runtime cap.
+- `codex.stall_timeout_ms` is a separate scheduler watchdog for silent workers (default: `300000`
+  ms). Set it to `0` to disable that watchdog. Raising turn timeout alone does not disable it.
 - Supported `codex.approval_policy` values depend on the targeted Codex app-server version. In the current local Codex schema, string values include `untrusted`, `on-failure`, `on-request`, and `never`, and object-form `reject` is also supported.
 - Supported `codex.thread_sandbox` values: `read-only`, `workspace-write`, `danger-full-access`.
 - When `codex.turn_sandbox_policy` is set explicitly, Symphony Plus passes the map through to Codex
@@ -219,6 +298,8 @@ Notes:
   invocation when a turn completes normally but the issue is still in an active state. Default: `20`.
 - If the Markdown body is blank, Symphony Plus uses a default prompt template that includes the issue
   identifier, title, and body.
+- Hooks are trusted host execution: they inherit the host environment, including credential
+  references, before Codex-child scrubbing. Review all hook code and code it invokes.
 - Use `hooks.after_create` to bootstrap a fresh workspace. For a Git-backed repo, you can run
   `git clone ... .` there, along with any other setup commands you need.
 - If a hook needs `mise exec` inside a freshly cloned workspace, trust the repo config and fetch
@@ -228,7 +309,8 @@ Notes:
 - Do not put a literal tracker token in a repo-owned `WORKFLOW.md` if Codex can read that
   workspace. Use `$VAR`/host-side secret references so Symphony Plus can keep the token out of the
   child environment.
-- For path values, `~` is expanded to the home directory.
+- For path values, `~` expands to the home directory. Relative local workspace roots resolve
+  against the registered workflow directory. Prefer absolute paths for operational clarity.
 - For env-backed path values, use `$VAR`. `workspace.root` resolves `$VAR` before path handling,
   while `codex.command` stays a shell command string and any `$VAR` expansion there happens in the
   launched shell.
@@ -246,11 +328,17 @@ codex:
   command: "$CODEX_BIN --config 'model=\"gpt-5.5\"' app-server"
 ```
 
-- If `WORKFLOW.md` is missing or has invalid YAML at startup, Symphony Plus does not boot.
+- A missing/invalid registered workflow is unavailable while the installation service remains
+  running; its registration is retained for repair. An explicitly supplied missing positional
+  workflow is rejected.
 - If a later reload fails, Symphony Plus keeps running with the last known good workflow and logs the
   reload error until the file is fixed.
-- `server.port` or CLI `--port` enables the optional Phoenix LiveView dashboard and JSON API at
+- CLI `--port` selects the installation's Phoenix LiveView dashboard and JSON API at
   `/`, `/api/v1/state`, `/api/v1/<issue_identifier>`, and `/api/v1/refresh`.
+  State rows include `project_id`. When multiple projects have the same issue identifier,
+  use `/api/v1/<issue_identifier>?project_id=<id>`; an ambiguous unqualified lookup returns HTTP 409.
+  A startup workflow can supply `server.port` before the endpoint starts; a subsequently registered
+  project's `server.port` does not rebind the installation endpoint. Prefer explicit `--port`.
 
 ### Linear adapter profile
 
@@ -311,6 +399,10 @@ codex:
   uses a short-lived installation token without placing it in the Codex environment or tool
   response. App-authenticated Git pushes are initially local-workspace only. Symphony Plus removes all
   configured GitHub credential variables from the Codex child.
+- Private bootstrap: set `tracker.provider.bootstrap_clone: true` with GitHub App auth to have
+  the host clone the configured repository using a short-lived installation token before
+  `hooks.after_create`. The token is not passed to the hook or Codex child. Keep the hook for
+  repository setup after cloning; a plain HTTPS clone cannot access a private repository.
 - Optional workflow control: `tracker.provider.workflow_control.enabled: true` makes versioned
   issue comments a restart-safe pause/resume mechanism. The `github_workflow_checkpoint` tool
   posts checkpoints for the current issue, and only configured GitHub author associations can
@@ -374,8 +466,8 @@ agent, follow the [agent installation runbook](docs/agent-installation.md).
 - Config: use `tracker.kind: jira` with provider `base_url`, `email`, `api_token`, and required
   `project_key`; the first three default to `JIRA_BASE_URL`, `JIRA_EMAIL`, and `JIRA_API_TOKEN`
   and accept `$VAR`. Set explicit Jira-native `active_states` and `terminal_states`.
-- Issues and reads: candidate reads and ID refreshes stay scoped to the configured project and
-  requested statuses; `issue.id` is Jira's immutable ID and `issue.identifier` is the issue key.
+- Issues and reads: candidate reads filter the configured project and requested statuses.
+  ID refreshes filter requested IDs and project, including terminal transitions outside active statuses; `issue.id` is Jira's immutable ID and `issue.identifier` is the issue key.
 - Blockers: inward `Blocks` links populate `blocked_by`; issues in Jira's `new` status category
   wait until blockers reach configured terminal states, while in-progress categories keep running.
 - Tool: `jira_rest` sends relative `/rest/api/3/` requests host-side with configured Basic auth,
@@ -385,9 +477,11 @@ agent, follow the [agent installation runbook](docs/agent-installation.md).
 
 - Config: use `tracker.kind: asana` with required `tracker.provider.project_gid`, optional
   `endpoint` (default `https://app.asana.com/api/1.0`), and `api_key` (defaults to `ASANA_PAT` and
-  accepts `$VAR`); `active_states` and `terminal_states` are project section names.
+  accepts `$VAR`). Both `tracker.active_states` and `tracker.terminal_states` must be
+  explicitly configured with project section names; Linear defaults do not apply.
 - Scope: Symphony Plus polls tasks in the configured project, treats their section as state, and omits
-  deleted or out-of-project tasks during ID refreshes.
+  deleted or out-of-project tasks during ID refreshes. Tasks must have an actual named section;
+  only incomplete tasks in a configured active section are eligible.
 - Tool: `asana_api` sends relative Asana REST requests host-side with the configured auth; Symphony Plus
   strips `ASANA_PAT` and configured token variables from the Codex child, while raw tool calls are
   not limited to the configured project.
@@ -395,7 +489,8 @@ agent, follow the [agent installation runbook](docs/agent-installation.md).
 ### GitLab adapter
 
 - Configure `tracker.kind: gitlab` with `tracker.provider.project_path`, optional `api_url`, and
-  `api_key` (default `GITLAB_PAT`); use `opened` and `closed` tracker states.
+  `api_key` (default `GITLAB_PAT`). Explicitly set both `tracker.active_states: [opened]`
+  and `tracker.terminal_states: [closed]`; Linear defaults do not apply.
 - Symphony Plus reads project issues by IID and exposes route-safe `GL-<iid>` identifiers.
 - `gitlab_api` forwards raw GitLab REST requests with host-side auth and keeps configured tracker
   credentials and provider authentication aliases out of the Codex child.
@@ -423,11 +518,14 @@ The observability UI now runs on a minimal Phoenix stack:
 make all
 ```
 
+Every provider live suite requires a physical `${CODEX_HOME:-~/.codex}/auth.json` file, including
+local tests. A keychain-only or API-key-only login does not satisfy that harness prerequisite.
+Commands below start in this `elixir/` directory with the pinned runtime on PATH.
+
 Run the real external end-to-end test only when you want Symphony Plus to create disposable Linear
 resources and launch a real `codex app-server` session:
 
 ```bash
-cd elixir
 export LINEAR_API_KEY=...
 make e2e
 ```
@@ -456,7 +554,6 @@ Linear issue, then marks the project completed so the run remains visible in Lin
 Run the opt-in GitHub Issues live test with a disposable/scratch repository:
 
 ```bash
-cd elixir
 export SYMPHONY_PLUS_LIVE_GITHUB_REPO=owner/scratch-repo
 export GITHUB_TOKEN=...
 SYMPHONY_PLUS_RUN_GITHUB_LIVE_E2E=1 mix test test/symphony_plus/github_live_e2e_test.exs
@@ -466,7 +563,6 @@ Run the opt-in Jira Cloud live test against a disposable project whose credentia
 create, comment on, transition, and delete issues:
 
 ```bash
-cd elixir
 export JIRA_BASE_URL=https://your-site.atlassian.net
 export JIRA_EMAIL=...
 export JIRA_API_TOKEN=...
@@ -477,7 +573,6 @@ SYMPHONY_PLUS_RUN_JIRA_LIVE_E2E=1 mix test test/symphony_plus/jira_live_e2e_test
 Run the opt-in Asana live E2E against disposable Asana resources:
 
 ```bash
-cd elixir
 export ASANA_PAT=...
 export SYMPHONY_PLUS_LIVE_ASANA_WORKSPACE_GID=...
 # Required only when the workspace is an organization:
@@ -488,7 +583,6 @@ SYMPHONY_PLUS_RUN_ASANA_LIVE_E2E=1 mix test test/symphony_plus/asana_live_e2e_te
 Run the opt-in GitLab live E2E against a disposable project:
 
 ```bash
-cd elixir
 export GITLAB_PAT=...
 export SYMPHONY_PLUS_LIVE_GITLAB_PROJECT_ID=...
 SYMPHONY_PLUS_RUN_GITLAB_LIVE_E2E=1 mix test test/symphony_plus/gitlab_live_e2e_test.exs

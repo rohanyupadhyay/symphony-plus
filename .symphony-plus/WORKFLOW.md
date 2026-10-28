@@ -3,6 +3,7 @@ tracker:
   kind: github
   provider:
     repo: rohanyupadhyay/symphony-plus
+    bootstrap_clone: true
     auth:
       kind: github_app
       app_id: $GITHUB_APP_ID
@@ -10,6 +11,7 @@ tracker:
       private_key_path: $GITHUB_APP_PRIVATE_KEY_PATH
     workflow_control:
       enabled: true
+      documentation_review_required: true
       authorized_associations:
         - OWNER
         - MEMBER
@@ -30,7 +32,6 @@ workspace:
   root: /home/rohan/code/symphony-plus-workspaces/symphony-plus
 hooks:
   after_create: |
-    git clone --depth 1 https://github.com/rohanyupadhyay/symphony-plus.git .
     ./.codex/worktree_init.sh
   timeout_ms: 300000
 agent:
@@ -281,3 +282,28 @@ head to automatic review through a fresh `review_pending` checkpoint.
 Retry recoverable failures within the current turn when safe. Otherwise post one concise issue
 comment and checkpoint `blocked` with the exact failure, completed work, validation evidence, and
 the command or human action needed to resume. Do not close an issue on failure.
+
+## Documentation impact and independent review
+
+For every feature, assess changed operator claims in the plan's documentation impact table, then
+include canonical documentation repair, generated-reference checks, and exact published-command
+verification in tasks. Give a concrete reason for no impact. Preserve normative intent; retain
+unresolved defects with repair references and acceptance criteria. Analyze and converge retain
+their installed scope and account for declared documentation work as feature intent.
+
+On automatic review, read the actual changed code and canonical instructions at the trigger's
+source head. Review the reader journey, commands, defaults, prerequisites, credential boundaries,
+and limitations. Record source SHA, checked claims, observations, current CI links, unresolved
+findings, and unavailable external checks in existing evidence sections. Do not trust only the
+author's summary. Corrections require a fresh review of the resulting source head.
+
+When host documentation review is required, supply `documentation_assessment` with a nonblank
+`summary`, an `evidence` list of current observations/references, and a `limitations` list naming
+external omissions. The host owns producer/reviewer thread IDs and reviewed source SHA; never
+supply or forge those identities. A distinct automatic-review native thread must perform the
+successful no-mutation review before `merge_queued`. Host-only integration updates retain reviewed
+source lineage but require fresh checks for the exact integration candidate.
+
+If the trigger sets `documentation_review_handoff_required`, first post `review_pending` for
+the current branch/head and end the invocation. This stamps the producer identity so the next
+fresh review thread can assess and admit the source; do not reuse the producer thread to queue it.

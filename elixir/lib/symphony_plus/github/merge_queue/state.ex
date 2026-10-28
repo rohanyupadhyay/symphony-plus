@@ -19,6 +19,8 @@ defmodule SymphonyPlus.GitHub.MergeQueue.State do
                   dependencies: [],
                   dependency_blocker: nil,
                   admitted_at: nil,
+                  documentation_review: nil,
+                  phase_ledger: [],
                   target_sha: nil,
                   candidate_sha: nil
                 ]
@@ -34,6 +36,8 @@ defmodule SymphonyPlus.GitHub.MergeQueue.State do
             dependencies: [pos_integer()],
             dependency_blocker: atom() | nil,
             admitted_at: String.t() | nil,
+            documentation_review: map() | nil,
+            phase_ledger: [map()],
             target_sha: String.t() | nil,
             candidate_sha: String.t() | nil
           }
@@ -81,6 +85,8 @@ defmodule SymphonyPlus.GitHub.MergeQueue.State do
       sequence: attr(attrs, "admission_sequence", :admission_sequence),
       issue: attr(attrs, "originating_issue", :originating_issue),
       admitted_at: attr(attrs, "admitted_at", :admitted_at),
+      documentation_review: attr(attrs, "documentation_review", :documentation_review),
+      phase_ledger: attr(attrs, "phase_ledger", :phase_ledger) || [],
       target_sha: attr(attrs, "target_sha", :target_sha),
       candidate_sha: attr(attrs, "candidate_sha", :candidate_sha),
       dependencies: attr(attrs, "dependencies", :dependencies) || []
@@ -109,6 +115,8 @@ defmodule SymphonyPlus.GitHub.MergeQueue.State do
       originating_issue: values.issue,
       admission_sequence: values.sequence,
       admitted_at: values.admitted_at,
+      documentation_review: values.documentation_review,
+      phase_ledger: values.phase_ledger,
       target_sha: values.target_sha,
       candidate_sha: values.candidate_sha,
       dependencies: dependencies,
