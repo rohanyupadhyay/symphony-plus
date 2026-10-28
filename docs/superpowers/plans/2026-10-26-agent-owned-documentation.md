@@ -20,8 +20,9 @@ opt-in live tests skipped, 100% measured coverage, and clean lint/type analysis.
 `make-all` and `validate-pr-description`, with no bypass actors; a controlled failing check blocked
 PR #35 before the valid body was restored. Implementation PR CI is recorded at delivery. Dedicated private
 App/Codex and real SSH capabilities have not been established: those live acceptance boundaries
-remain unavailable, not silently completed. A four-platform candidate release is checked by the
-release workflow before publication; no new release is claimed by this implementation.
+remain unavailable, not silently completed. The [first post-merge nightly](https://github.com/rohanyupadhyay/symphony-plus/actions/runs/40639531701)
+passed the actual candidate commands on all four supported platforms at source `7eb757b` before
+nightly publication. No stable release tag was created.
 
 **Goal:** Have agents maintain and demonstrate the correctness of operational documentation, with deterministic checks required before merge and independent agent review of narrative claims. Correcting the existing findings is required delivery work in the [companion remediation plan](2026-10-26-existing-documentation-findings-remediation.md).
 

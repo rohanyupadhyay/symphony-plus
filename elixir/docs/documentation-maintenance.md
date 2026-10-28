@@ -26,7 +26,10 @@ These checks do not automatically execute arbitrary Markdown or certify unrelate
 
 This local deterministic lane establishes Linux behavior. The Burrito release workflow runs the
 marked `release-service-start` command against each candidate executable on Linux and macOS,
-checks HTTP readiness and zero projects, and blocks publication if any target fails. A disposable
+checks HTTP readiness and zero projects, and blocks publication if any target fails. The first
+[post-merge nightly](https://github.com/rohanyupadhyay/symphony-plus/actions/runs/40639531701), source
+`7eb757b1e0e7ffbd9ae40eead656a06b44a8026f`, passed builds and these command smokes on all four
+Linux/macOS x86_64/arm64 targets before publication on 2026-10-28. A disposable
 cold source installation and the controlled private GitHub/Codex canary report dated execution
 evidence separately. On 2026-10-28 the published cold-install block passed from an isolated HOME,
 cloning public default-branch commit `16283fcc7c904549f9bba4a1a4b7cb812e260102` and installing
@@ -109,7 +112,11 @@ Runtime repair rows link their acceptance suites above. Final independent review
 Important/Critical blocker after checking the queue checkpoint race, suspended scheduler reload,
 repository identity casing, and retained launch-directory regressions. The full local gate on 2026-10-28 passed
 537 tests with zero failures, six opt-in live tests skipped, 100% measured coverage, and clean lint
-and Dialyzer. This is fixture evidence, not proof that arbitrary prose or every deployment is correct. External reports
+and Dialyzer. The first post-merge main run exposed an intermittent two-second test wait in the
+handoff fixture. A controlled 2.2-second startup failure reproduces that deadline defect; the fixture
+now uses a bounded 15-second monotonic deadline covering the helper's ten-second readiness budget
+plus local promotion/rollback work. Runtime readiness and rollback policy are unchanged. This is
+fixture evidence, not proof that arbitrary prose or every deployment is correct. External reports
 must state date, source ref, environment, scenario, raw evidence link, outcome, and last successful
 verification; missing credentials/capability remain unavailable. The `documentation-canary`
 workflow runs weekly or by manual dispatch from trusted `main` only. It requires a separate private

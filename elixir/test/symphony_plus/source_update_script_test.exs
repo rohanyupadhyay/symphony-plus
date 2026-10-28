@@ -31,7 +31,7 @@ defmodule SymphonyPlus.SourceUpdateScriptTest do
     %{base: base, install: install, prepared: prepared, revision: revision} = repository_fixture()
     marker = Path.join(base, "delayed-prior")
     File.write!(Path.join(install, "elixir/bin/symphony-plus"), "#!/bin/sh\necho recovered > #{marker}\n")
-    File.write!(Path.join(prepared, "elixir/bin/symphony-plus"), "#!/bin/sh\nsleep 0.4\nexit 1\n")
+    File.write!(Path.join(prepared, "elixir/bin/symphony-plus"), "#!/bin/sh\nsleep 2.2\nexit 1\n")
     assert {_, 0} = System.cmd(@script, [install, prepared, revision, "99999999", "./bin/symphony-plus"])
     eventually(fn -> File.exists?(marker) end)
     assert File.read!(Path.join(install, ".git/symphony-plus-update.outcome")) =~ "blocked: launcher failed"
@@ -120,17 +120,22 @@ defmodule SymphonyPlus.SourceUpdateScriptTest do
     end
   end
 
-  defp eventually(fun, attempts \\ 100)
-
-  defp eventually(fun, attempts) when attempts > 0 do
-    if fun.(),
-      do: :ok,
-      else:
-        (
-          Process.sleep(20)
-          eventually(fun, attempts - 1)
-        )
+  # The helper allows ten seconds for readiness, in addition to promotion and rollback.
+  defp eventually(fun, timeout_ms \\ 15_000) do
+    await(fun, System.monotonic_time(:millisecond) + timeout_ms)
   end
 
-  defp eventually(_fun, 0), do: flunk("condition did not become true")
+  defp await(fun, deadline) do
+    cond do
+      fun.() ->
+        :ok
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        flunk("condition did not become true before the handoff deadline")
+
+      true ->
+        Process.sleep(20)
+        await(fun, deadline)
+    end
+  end
 end
